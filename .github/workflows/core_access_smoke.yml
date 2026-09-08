@@ -1,0 +1,64 @@
+name: Private core access smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: product_kabu branch/tag/SHA to test
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout public actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private product_kabu core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ inputs.core_ref }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: _core
+          persist-credentials: false
+
+      - name: Verify core layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f _core/requirements.txt
+          test -f _core/scripts/screen_candidates.py
+          test -f _core/scripts/select_final_candidates.py
+          test -f _core/scripts/check_screening_regressions.py
+          test -d _core/data
+          echo "Private core checkout: OK"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: _core/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r _core/requirements.txt
+
+      - name: Run screening regression cases
+        working-directory: _core
+        run: python scripts/check_screening_regressions.py
+
+      - name: Confirm private checkout is not part of public git index
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files '_core/**' | grep -q .; then
+            echo "::error::Private core files are tracked by the public repository"
+            exit 1
+          fi
+          echo "Private core is runtime-only: OK"
