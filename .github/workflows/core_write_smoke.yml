@@ -1,0 +1,51 @@
+name: Core write access smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "trigger/core_write_smoke.txt"
+      - ".github/workflows/core_write_smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  write-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout public actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout product_kabu core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: main
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: _core
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify PAT write permission without changing main
+        working-directory: _core
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_BRANCH="actions-write-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$TEST_BRANCH"
+          mkdir -p trigger
+          printf 'public Actions PAT write smoke: %s\n' "$GITHUB_RUN_ID" > trigger/public_actions_write_smoke.txt
+          git add trigger/public_actions_write_smoke.txt
+          git commit -m "ci: verify public Actions write access"
+          git push origin "HEAD:refs/heads/$TEST_BRANCH"
+          git ls-remote --exit-code --heads origin "$TEST_BRANCH" >/dev/null
+          git push origin --delete "$TEST_BRANCH"
+          if git ls-remote --exit-code --heads origin "$TEST_BRANCH" >/dev/null 2>&1; then
+            echo "::error::Temporary write-test branch still exists"
+            exit 1
+          fi
+          echo "PAT write and cleanup: OK"
