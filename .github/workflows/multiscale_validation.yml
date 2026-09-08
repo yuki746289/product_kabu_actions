@@ -1,0 +1,254 @@
+name: P1/P2 multiscale validation (public runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: product_kabu branch/tag/SHA
+        required: false
+        default: main
+      p2_trading_days:
+        description: P2/P2+ validation trading days
+        required: false
+        default: "60"
+      p1_trading_days:
+        description: P1/P1+ validation trading days
+        required: false
+        default: "300"
+      horizons:
+        description: Forward trading-day horizons (space-separated)
+        required: false
+        default: "5 10 20"
+      period_end:
+        description: Optional explicit period end (YYYY-MM-DD)
+        required: false
+        default: ""
+      commit_results:
+        description: Commit validation periods back to product_kabu main
+        required: false
+        type: boolean
+        default: false
+  push:
+    paths:
+      - "trigger/multiscale_validation.txt"
+      - ".github/workflows/multiscale_validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multiscale-public-validation
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout public actions repository
+        uses: actions/checkout@v4
+
+      - name: Resolve arguments
+        id: args
+        shell: bash
+        run: |
+          CORE_REF="${{ inputs.core_ref }}"
+          P2_DAYS="${{ inputs.p2_trading_days }}"
+          P1_DAYS="${{ inputs.p1_trading_days }}"
+          HORIZONS="${{ inputs.horizons }}"
+          PERIOD_END="${{ inputs.period_end }}"
+          if [ -z "$CORE_REF" ]; then CORE_REF="main"; fi
+          if [ -z "$P2_DAYS" ]; then P2_DAYS="60"; fi
+          if [ -z "$P1_DAYS" ]; then P1_DAYS="300"; fi
+          if [ -z "$HORIZONS" ]; then HORIZONS="5 10 20"; fi
+          echo "core_ref=$CORE_REF" >> "$GITHUB_OUTPUT"
+          echo "p2_days=$P2_DAYS" >> "$GITHUB_OUTPUT"
+          echo "p1_days=$P1_DAYS" >> "$GITHUB_OUTPUT"
+          echo "horizons=$HORIZONS" >> "$GITHUB_OUTPUT"
+          echo "period_end=$PERIOD_END" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout product_kabu core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.args.outputs.core_ref }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: _core
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: _core/requirements.txt
+
+      - name: Install Japanese fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          fc-cache -fv >/dev/null
+          fc-match "Noto Sans CJK JP"
+
+      - name: Install dependencies
+        run: pip install -r _core/requirements.txt
+
+      - name: Run P2 validation
+        working-directory: _core
+        shell: bash
+        run: |
+          ARGS=(--scope p2 --trading-days "${{ steps.args.outputs.p2_days }}" --horizons ${{ steps.args.outputs.horizons }} --output-root data/backtests/p2)
+          if [ -n "${{ steps.args.outputs.period_end }}" ]; then
+            ARGS+=(--period-end "${{ steps.args.outputs.period_end }}")
+          fi
+          python scripts/backtest_multiscale_validation.py "${ARGS[@]}"
+
+      - name: Resolve P2 period
+        id: p2
+        working-directory: _core
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          latest = json.loads(Path('data/backtests/p2/latest_period.json').read_text(encoding='utf-8'))
+          status = json.loads(Path(latest['status']).read_text(encoding='utf-8'))
+          if not status.get('overall_pass'):
+              raise SystemExit(f"P2 validation failed: {status}")
+          print(json.dumps(status, ensure_ascii=False, indent=2))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+              fh.write(f"period_id={latest['period_id']}\n")
+              fh.write(f"path={latest['path']}\n")
+          PY
+
+      - name: Generate P2 review charts
+        id: p2-review
+        working-directory: _core
+        shell: bash
+        run: |
+          OUTPUT_DIR="backtest_review_charts/${{ steps.p2.outputs.period_id }}"
+          if [ -f scripts/generate_backtest_review_charts_triangles.py ]; then
+            python scripts/generate_backtest_review_charts_triangles.py \
+              --period-dir "${{ steps.p2.outputs.path }}" \
+              --output-dir "$OUTPUT_DIR" \
+              --daily-context-bars 30 \
+              --weekly-context-bars 70
+          else
+            python scripts/generate_backtest_review_charts.py \
+              --period-dir "${{ steps.p2.outputs.path }}" \
+              --output-dir "$OUTPUT_DIR" \
+              --daily-context-bars 30 \
+              --weekly-context-bars 70
+          fi
+          echo "path=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Upload P2 review charts
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2_review_charts-${{ steps.p2.outputs.period_id }}
+          path: _core/${{ steps.p2-review.outputs.path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload P2 validation data
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2_backtest-${{ steps.p2.outputs.period_id }}
+          path: _core/${{ steps.p2.outputs.path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Run P1 validation
+        working-directory: _core
+        shell: bash
+        run: |
+          ARGS=(--scope p1 --trading-days "${{ steps.args.outputs.p1_days }}" --horizons ${{ steps.args.outputs.horizons }} --output-root data/backtests/p1)
+          if [ -n "${{ steps.args.outputs.period_end }}" ]; then
+            ARGS+=(--period-end "${{ steps.args.outputs.period_end }}")
+          fi
+          python scripts/backtest_multiscale_validation.py "${ARGS[@]}"
+
+      - name: Resolve P1 period
+        id: p1
+        working-directory: _core
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          latest = json.loads(Path('data/backtests/p1/latest_period.json').read_text(encoding='utf-8'))
+          status = json.loads(Path(latest['status']).read_text(encoding='utf-8'))
+          if not status.get('overall_pass'):
+              raise SystemExit(f"P1 validation failed: {status}")
+          print(json.dumps(status, ensure_ascii=False, indent=2))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+              fh.write(f"period_id={latest['period_id']}\n")
+              fh.write(f"path={latest['path']}\n")
+          PY
+
+      - name: Generate P1 review charts
+        id: p1-review
+        working-directory: _core
+        shell: bash
+        run: |
+          OUTPUT_DIR="backtest_review_charts/${{ steps.p1.outputs.period_id }}"
+          if [ -f scripts/generate_backtest_review_charts_triangles.py ]; then
+            python scripts/generate_backtest_review_charts_triangles.py \
+              --period-dir "${{ steps.p1.outputs.path }}" \
+              --output-dir "$OUTPUT_DIR" \
+              --daily-context-bars 20 \
+              --weekly-context-bars 20
+          else
+            python scripts/generate_backtest_review_charts.py \
+              --period-dir "${{ steps.p1.outputs.path }}" \
+              --output-dir "$OUTPUT_DIR" \
+              --daily-context-bars 20 \
+              --weekly-context-bars 20
+          fi
+          echo "path=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Upload P1 review charts
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1_review_charts-${{ steps.p1.outputs.period_id }}
+          path: _core/${{ steps.p1-review.outputs.path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload P1 validation data
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1_backtest-${{ steps.p1.outputs.period_id }}
+          path: _core/${{ steps.p1.outputs.path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit validation periods back to product_kabu
+        if: github.event_name == 'workflow_dispatch' && inputs.commit_results && steps.args.outputs.core_ref == 'main'
+        working-directory: _core
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/backtests/p1 data/backtests/p2
+          if git diff --cached --quiet; then
+            echo "No multiscale backtest changes to commit."
+            exit 0
+          fi
+          git commit -m "data: add P1/P2 multiscale validation periods"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              echo "Validation data pushed to product_kabu main."
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          echo "Failed to push validation data after 3 attempts."
+          exit 1
