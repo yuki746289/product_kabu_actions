@@ -1,0 +1,50 @@
+name: P2 v12 daily-anchor diagnostic
+
+on:
+  push:
+    paths:
+      - ".github/workflows/p2_v12_diagnostic.yml"
+      - "trigger/p2_v12_diagnostic.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout public actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private product_kabu prototype branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: fix/p2-daily-anchor-pullback-cases
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: _core
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: _core/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r _core/requirements.txt
+
+      - name: Run P2 v12 diagnostics
+        working-directory: _core
+        run: python scripts/diagnose_p2_v12_cases.py
+
+      - name: Upload P2 v12 diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-v12-diagnostics
+          path: _core/data/diagnostics/p2_v12
+          if-no-files-found: error
+          retention-days: 14
