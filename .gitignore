@@ -1,0 +1,11 @@
+# Private source checkout used only inside Actions runners
+_core/
+
+# Generated chart work directories (published as Actions artifacts)
+review_charts/
+primary_review_charts/
+backtest_review_charts/
+
+# Python
+__pycache__/
+*.pyc
