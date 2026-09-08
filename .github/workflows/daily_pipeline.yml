@@ -1,0 +1,331 @@
+name: Nikkei 225 daily pipeline (public runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: product_kabu branch/tag/SHA
+        required: false
+        default: main
+      fetch_current:
+        description: Fetch current OHLCV before screening
+        required: false
+        type: boolean
+        default: true
+      commit_generated_data:
+        description: Commit generated data back to product_kabu main
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: "30 10 * * 1-5" # 19:30 JST weekdays
+  push:
+    paths:
+      - "trigger/daily_pipeline.txt"
+      - ".github/workflows/daily_pipeline.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nikkei225-public-daily
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout public actions repository
+        uses: actions/checkout@v4
+
+      - name: Resolve core ref
+        id: core-ref
+        shell: bash
+        run: |
+          REF="${{ inputs.core_ref }}"
+          if [ -z "$REF" ]; then REF="main"; fi
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Core ref: $REF"
+
+      - name: Checkout product_kabu core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.core-ref.outputs.ref }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: _core
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: _core/requirements.txt
+
+      - name: Install Japanese font
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          fc-cache -f -v >/dev/null
+
+      - name: Install dependencies
+        run: pip install -r _core/requirements.txt
+
+      - name: Fetch current Nikkei 225 OHLCV
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.fetch_current)
+        working-directory: _core
+        run: python scripts/fetch_nikkei225.py
+
+      - name: Build indicators
+        working-directory: _core
+        run: python scripts/calc_indicators.py
+
+      - name: Run screening regression cases
+        working-directory: _core
+        run: python scripts/check_screening_regressions.py
+
+      - name: Build primary candidates
+        working-directory: _core
+        run: python scripts/screen_candidates.py
+
+      - name: Apply final selection
+        working-directory: _core
+        run: python scripts/select_final_candidates.py
+
+      - name: Resolve candidate metadata
+        id: meta
+        working-directory: _core
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import pandas as pd
+
+          candidates = pd.read_csv('data/screening/candidates.csv')
+          final = pd.read_csv('data/screening/final_candidates.csv')
+          screening = json.loads(Path('data/screening/screening_status.json').read_text(encoding='utf-8'))
+          as_of = str(candidates['as_of'].max()) if not candidates.empty else str(screening.get('as_of') or 'no-candidates')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+              fh.write(f"primary_count={len(candidates)}\n")
+              fh.write(f"final_count={len(final)}\n")
+              fh.write(f"as_of={as_of}\n")
+          print(f"Primary={len(candidates)} Final={len(final)} as_of={as_of}")
+          PY
+
+      - name: Generate primary review charts
+        if: steps.meta.outputs.primary_count != '0'
+        working-directory: _core
+        run: >-
+          python scripts/generate_primary_review_charts.py
+          --candidates data/screening/candidates.csv
+          --review-screen data/screening/review_screen.csv
+          --output-dir primary_review_charts
+
+      - name: Create empty primary chart package
+        if: steps.meta.outputs.primary_count == '0'
+        working-directory: _core
+        run: |
+          mkdir -p primary_review_charts
+          cp data/screening/candidates.csv primary_review_charts/candidates.csv
+          python - <<'PY'
+          import pandas as pd
+          columns = [
+              'rank', 'ticker', 'name', 'as_of', 'direction', 'pattern', 'pattern_name', 'state',
+              'monthly_summary', 'weekly_summary', 'daily_summary', 'next_wait',
+              'gate_reasons', 'image', 'status', 'error'
+          ]
+          pd.DataFrame(columns=columns).to_csv('primary_review_charts/chart_manifest.csv', index=False)
+          PY
+
+      - name: Persist primary chart status
+        working-directory: _core
+        run: |
+          cp data/screening/candidates.csv primary_review_charts/candidates.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          candidates = pd.read_csv('data/screening/candidates.csv')
+          manifest = pd.read_csv('primary_review_charts/chart_manifest.csv')
+          screening = json.loads(Path('data/screening/screening_status.json').read_text(encoding='utf-8'))
+          if not candidates.empty and not manifest.empty and {'ticker','pattern','pattern_name'}.issubset(manifest.columns):
+              display = manifest[['ticker', 'pattern', 'pattern_name']].rename(
+                  columns={'pattern': 'display_pattern', 'pattern_name': 'display_pattern_name'}
+              )
+              packaged = candidates.drop(columns=['display_pattern', 'display_pattern_name'], errors='ignore').merge(
+                  display, on='ticker', how='left'
+              )
+          else:
+              packaged = candidates.copy()
+              packaged['display_pattern'] = pd.Series(dtype='object')
+              packaged['display_pattern_name'] = pd.Series(dtype='object')
+          packaged.to_csv('primary_review_charts/candidates.csv', index=False, encoding='utf-8')
+          ok_count = int((manifest['status'] == 'ok').sum()) if not manifest.empty else 0
+          failed = manifest.loc[manifest['status'] != 'ok', 'ticker'].astype(str).tolist() if not manifest.empty else []
+          as_of = str(candidates['as_of'].max()) if not candidates.empty else screening.get('as_of')
+          status = {
+              'as_of': as_of,
+              'requested': int(len(candidates)),
+              'generated': ok_count,
+              'failed': failed,
+              'artifact_name': f"primary_review_charts-{as_of or 'no-candidates'}",
+              'overall_pass': bool(len(manifest) == len(candidates) and ok_count == len(candidates) and not failed),
+          }
+          Path('primary_review_charts/primary_chart_status.json').write_text(json.dumps(status, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          Path('data/screening/primary_chart_status.json').write_text(json.dumps(status, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(status, ensure_ascii=False, indent=2))
+          if not status['overall_pass']:
+              raise SystemExit('primary chart package validation failed')
+          PY
+
+      - name: Generate final review charts
+        if: steps.meta.outputs.final_count != '0'
+        working-directory: _core
+        run: >-
+          python scripts/generate_final_review_charts.py
+          --candidates data/screening/final_candidates.csv
+          --output-dir review_charts
+
+      - name: Create empty final chart package
+        if: steps.meta.outputs.final_count == '0'
+        working-directory: _core
+        run: |
+          mkdir -p review_charts
+          cp data/screening/final_candidates.csv review_charts/candidates.csv
+          python - <<'PY'
+          import pandas as pd
+          columns = [
+              'rank', 'ticker', 'name', 'as_of', 'direction', 'state',
+              'monthly_summary', 'weekly_summary', 'daily_summary', 'next_wait',
+              'gate_reasons', 'image', 'status', 'error'
+          ]
+          pd.DataFrame(columns=columns).to_csv('review_charts/chart_manifest.csv', index=False)
+          PY
+
+      - name: Persist final chart status
+        working-directory: _core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          manifest = pd.read_csv('review_charts/chart_manifest.csv')
+          final = pd.read_csv('data/screening/final_candidates.csv')
+          final_status = json.loads(Path('data/screening/final_screen_status.json').read_text(encoding='utf-8'))
+          ok_count = int((manifest['status'] == 'ok').sum()) if not manifest.empty else 0
+          failed = manifest.loc[manifest['status'] != 'ok', 'ticker'].astype(str).tolist() if not manifest.empty else []
+          expected = int(len(final))
+          status = {
+              'as_of': final_status['as_of'],
+              'requested': expected,
+              'generated': ok_count,
+              'failed': failed,
+              'artifact_name': f"review_charts-{final_status['as_of']}",
+              'overall_pass': bool(len(manifest) == expected and ok_count == expected and not failed),
+          }
+          Path('data/screening').mkdir(parents=True, exist_ok=True)
+          manifest.to_csv('data/screening/chart_manifest.csv', index=False, encoding='utf-8')
+          Path('data/screening/chart_status.json').write_text(json.dumps(status, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(status, ensure_ascii=False, indent=2))
+          if not status['overall_pass']:
+              raise SystemExit('final chart package validation failed')
+          PY
+
+      - name: Assert complete pipeline
+        working-directory: _core
+        run: |
+          if [ -f scripts/check_full_selection_pipeline.py ]; then
+            python scripts/check_full_selection_pipeline.py
+          else
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in [
+              'data/fetch_status.json',
+              'data/derived/indicator_status.json',
+              'data/screening/screening_status.json',
+              'data/screening/final_screen_status.json',
+              'data/screening/primary_chart_status.json',
+              'data/screening/chart_status.json',
+          ]:
+              status = json.loads(Path(path).read_text(encoding='utf-8'))
+              if status.get('overall_pass') is False:
+                  raise SystemExit(f"failed status: {path}: {status}")
+          print('PASS: basic pipeline integrity')
+          PY
+          fi
+
+      - name: Upload primary review charts
+        uses: actions/upload-artifact@v4
+        with:
+          name: primary_review_charts-${{ steps.meta.outputs.as_of }}
+          path: _core/primary_review_charts/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload final review charts
+        uses: actions/upload-artifact@v4
+        with:
+          name: review_charts-${{ steps.meta.outputs.as_of }}
+          path: _core/review_charts/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload validation data
+        uses: actions/upload-artifact@v4
+        with:
+          name: nikkei225-analysis-validation-${{ steps.meta.outputs.as_of }}
+          path: |
+            _core/data/fetch_status.json
+            _core/data/manifest.csv
+            _core/data/latest_snapshot.csv
+            _core/data/constituents.csv
+            _core/data/derived/indicator_status.json
+            _core/data/derived/indicator_manifest.csv
+            _core/data/derived/latest_indicators.csv
+            _core/data/screening/screening_status.json
+            _core/data/screening/final_screen_status.json
+            _core/data/screening/review_screen.csv
+            _core/data/screening/final_candidates.csv
+            _core/data/screening/watchlist.csv
+            _core/data/screening/chart_status.json
+            _core/data/screening/chart_manifest.csv
+            _core/data/screening/primary_chart_status.json
+            _core/data/screening/candidates.csv
+            _core/data/screening/all_scores.csv
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit generated data back to product_kabu
+        if: (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.commit_generated_data)) && steps.core-ref.outputs.ref == 'main'
+        working-directory: _core
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No generated-data changes to commit."
+            exit 0
+          fi
+          git commit -m "data: update Nikkei 225 OHLCV indicators and screening"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              echo "Generated data pushed to product_kabu main."
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          echo "Failed to push generated data after 3 attempts."
+          exit 1
