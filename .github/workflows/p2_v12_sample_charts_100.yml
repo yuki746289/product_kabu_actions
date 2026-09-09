@@ -40,6 +40,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r _core/requirements.txt
 
+      - name: Verify rendering rules exist
+        run: test -f _core/docs/10_HISTORICAL_REVIEW_CHART_RULES.md
+
       - name: Reuse validated P2 v12 signal artifact
         uses: actions/download-artifact@v4
         with:
@@ -49,37 +52,45 @@ jobs:
           repository: yuki746289/product_kabu_actions
           run-id: 34230258166
 
-      - name: Generate 50 long + 50 short charts from v12 signals
+      - name: Generate 50 long + 50 short charts using canonical renderer
         working-directory: _core
-        run: python scripts/generate_p2_v12_sample_charts.py --per-direction 50
+        run: python scripts/generate_p2_v12_review_samples.py --per-direction 50
 
-      - name: Verify 100 charts and marker directions
+      - name: Verify 100 charts, membership and marker counts
         working-directory: _core
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           import pandas as pd
-          root = Path('data/diagnostics/p2_v12_sample_charts')
+
+          root = Path('data/diagnostics/p2_v12_review_samples')
           status = json.loads((root / 'status.json').read_text(encoding='utf-8'))
           manifest = pd.read_csv(root / 'manifest.csv')
+          render_manifest = pd.read_csv(root / 'rendered' / 'chart_manifest.csv')
+
           assert status['verification'] == 'PASS', status
           assert status['long_images'] == 50, status
           assert status['short_images'] == 50, status
-          assert status['total_images'] == 100, status
-          assert len(manifest) == 100
-          assert set(manifest.loc[manifest.direction == 'long', 'symbol']) == {'△'}
-          assert set(manifest.loc[manifest.direction == 'short', 'symbol']) == {'▽'}
-          assert (manifest['target_marker_count'] == 1).all()
-          assert (manifest['old_marker_count'] == 0).all()
-          images = list((root / 'long').glob('*.png')) + list((root / 'short').glob('*.png'))
-          assert len(images) == 100, len(images)
-          print(status)
+          assert status['long_membership_ok'], status
+          assert status['short_membership_ok'], status
+          assert status['marker_counts_match_v12'], status
+          assert status['triangle_labels_ok'], status
+          assert status['multi_marker_chart_count'] > 0, status
+          assert len(manifest) == 100, len(manifest)
+          assert (manifest.loc[manifest.bucket == 'long', 'long_signal_count'] >= 1).all()
+          assert (manifest.loc[manifest.bucket == 'short', 'short_signal_count'] >= 1).all()
+          assert len(list((root / 'long').glob('*.png'))) == 50
+          assert len(list((root / 'short').glob('*.png'))) == 50
+          assert (render_manifest['signal_count'].astype(int) >= 1).all()
+          assert 'generate_backtest_review_charts.py' in status['renderer']
+          assert status['rules'] == 'docs/10_HISTORICAL_REVIEW_CHART_RULES.md'
+          print(json.dumps(status, ensure_ascii=False, indent=2))
           PY
 
       - uses: actions/upload-artifact@v4
         with:
           name: p2-v12-sample-charts-100
-          path: _core/data/diagnostics/p2_v12_sample_charts
+          path: _core/data/diagnostics/p2_v12_review_samples
           if-no-files-found: error
           retention-days: 14
