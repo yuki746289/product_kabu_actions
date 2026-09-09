@@ -8,11 +8,12 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -39,9 +40,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r _core/requirements.txt
 
-      - name: Rebuild P2 v12 signals
-        working-directory: _core
-        run: python scripts/diagnose_p2_v12_fast_full.py
+      - name: Reuse validated P2 v12 signal artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-v12-fast-full
+          path: _core/data/diagnostics/p2_v12_fast
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: yuki746289/product_kabu_actions
+          run-id: 34230258166
 
       - name: Generate 50 long + 50 short charts from v12 signals
         working-directory: _core
