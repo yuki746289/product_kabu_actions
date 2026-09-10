@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: fix/p2-daily-anchor-pullback-cases
+          ref: 6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: _core
           persist-credentials: false
@@ -81,7 +81,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: fix/p2-daily-anchor-pullback-cases
+          ref: 6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: _core
           persist-credentials: false
@@ -141,6 +141,7 @@ jobs:
           assert charts['overall_pass'], charts
           assert validation['active_module'] == 'scripts/final_screen_rules_active.py'
           assert validation['active_logic_id'] == 'active-2026-09-10-p1-current-p2-v12'
+          assert validation['private_core_sha'] == '6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8'
           assert validation['period_count'] == 1
           assert validation['validation_failures'] == 0
           assert len(signals) == charts['signal_count']
@@ -167,7 +168,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: fix/p2-daily-anchor-pullback-cases
+          ref: 6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: _core
           persist-credentials: false
@@ -211,7 +212,7 @@ jobs:
           signals = pd.read_csv(root / 'signals.csv')
           stats = pd.read_csv(root / 'performance_by_regime_direction.csv')
           periods = pd.read_csv(root / 'period_status.csv')
-          manifest = pd.read_csv(root / 'chart_manifest.csv') if (root / 'chart_manifest.csv').stat().st_size else pd.DataFrame()
+          manifest = pd.read_csv(root / 'chart_manifest.csv')
           membership = pd.read_csv(root / 'direction_membership.csv')
 
           assert validation['overall_pass'], validation
@@ -222,6 +223,7 @@ jobs:
           assert validation['shard_count'] == 10
           assert validation['period_count'] == 10
           assert validation['active_logic_id'] == 'active-2026-09-10-p1-current-p2-v12'
+          assert validation['private_core_sha'] == '6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8'
           assert validation['validation_failures'] == 0
           assert len(periods) == 10
           assert len(stats) == 30
