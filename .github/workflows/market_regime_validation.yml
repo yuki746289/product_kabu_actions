@@ -93,7 +93,7 @@ jobs:
                       continue
                   dst_dir = root / 'charts' / scope / regime / direction
                   dst_dir.mkdir(parents=True, exist_ok=True)
-                  dst = dst_dir / image
+                  dst = dst_dir / Path(image).name
                   shutil.copy2(src, dst)
                   memberships.append({
                       'scope': scope, 'regime': regime, 'direction': direction,
@@ -101,7 +101,8 @@ jobs:
                       'direction_signal_count': count,
                   })
 
-          membership = pd.DataFrame(memberships)
+          membership_columns = ['scope','regime','direction','ticker','image','direction_signal_count']
+          membership = pd.DataFrame(memberships, columns=membership_columns)
           membership.to_csv(root / 'direction_membership.csv', index=False)
           perf.to_csv(root / 'market_regime_summary.csv', index=False)
 
@@ -144,9 +145,9 @@ jobs:
 
           status = {
               'membership_rows': int(len(membership)),
-              'long_images': int((membership.direction == 'long').sum()) if not membership.empty else 0,
-              'short_images': int((membership.direction == 'short').sum()) if not membership.empty else 0,
-              'all_memberships_have_signal': bool((membership.direction_signal_count >= 1).all()) if not membership.empty else True,
+              'long_images': int((membership.direction == 'long').sum()),
+              'short_images': int((membership.direction == 'short').sum()),
+              'all_memberships_have_signal': bool((membership.direction_signal_count >= 1).all()),
           }
           (root / 'direction_status.json').write_text(json.dumps(status, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
           print(json.dumps(status, ensure_ascii=False, indent=2))
@@ -175,13 +176,14 @@ jobs:
           assert direction['all_memberships_have_signal'], direction
           assert validation['active_module'] == 'scripts/final_screen_rules_active.py', validation
           assert validation['active_logic_id'] == 'active-2026-09-10-p1-current-p2-v12', validation
+          assert validation['as_of_frame_policy'] == 'rebuild-current-partial-week-and-month-from-daily-through-as_of', validation
           assert set(periods['scope']) == {'p1', 'p2'}
           assert set(periods['regime']) == {'uptrend','downtrend','range','consolidation','mixed'}
           assert len(periods) == 10
           assert len(signals) == int(chart['signal_count'])
           assert len(manifest) == int(chart['rendered_images'])
           assert int(manifest['signal_count'].sum()) == len(signals)
-          assert set(signals['active_logic_id'].astype(str)) == {validation['active_logic_id']} if len(signals) else True
+          assert (set(signals['active_logic_id'].astype(str)) == {validation['active_logic_id']}) if len(signals) else True
 
           for row in membership.itertuples(index=False):
               p = root / str(row.image)
