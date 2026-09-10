@@ -34,9 +34,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r _core/requirements.txt
 
-      - name: Calculate P1/P2 market-regime candidate periods
+      - name: Calculate extended P1/P2 market-regime candidate periods
         working-directory: _core
-        run: python scripts/select_market_regime_periods.py --topn 5
+        run: python scripts/select_market_regime_periods.py --analysis-start 2005-01-01 --fetch-start 2003-01-01 --topn 5
 
       - name: Verify outputs
         working-directory: _core
@@ -64,7 +64,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: market-regime-candidates-p1-p2
+          name: market-regime-candidates-p1-p2-extended
           path: _core/data/diagnostics/market_regimes
           if-no-files-found: error
           retention-days: 30
