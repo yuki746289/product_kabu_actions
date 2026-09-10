@@ -1,0 +1,218 @@
+name: Active P1/P2 market regime validation
+
+on:
+  push:
+    paths:
+      - ".github/workflows/market_regime_validation.yml"
+      - "trigger/market_regime_validation.txt"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout private active logic
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: fix/p2-daily-anchor-pullback-cases
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: _core
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: _core/requirements.txt
+
+      - name: Install Japanese fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto-cjk
+
+      - name: Install dependencies
+        run: pip install -r _core/requirements.txt
+
+      - name: Verify active policy and syntax
+        working-directory: _core
+        run: |
+          test -f docs/11_ACTIVE_LOGIC_POLICY.md
+          test -f docs/10_HISTORICAL_REVIEW_CHART_RULES.md
+          test -f docs/12_MARKET_REGIME_VALIDATION_PLAN.md
+          test -f config/market_regime_periods_active.csv
+          python -m py_compile \
+            scripts/final_screen_rules_active.py \
+            scripts/check_active_logic_policy.py \
+            scripts/fetch_historical_validation_data.py \
+            scripts/validate_market_regimes_active.py \
+            scripts/generate_market_regime_review_charts.py
+          python scripts/check_active_logic_policy.py
+
+      - name: Fetch historical replay data
+        working-directory: _core
+        run: python scripts/fetch_historical_validation_data.py --batch-size 20
+
+      - name: Run P1/P2 x 5 regime validation with active logic
+        working-directory: _core
+        run: python scripts/validate_market_regimes_active.py --workers 4
+
+      - name: Generate canonical review charts
+        working-directory: _core
+        run: python scripts/generate_market_regime_review_charts.py
+
+      - name: Build long/short folders and summaries
+        working-directory: _core
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import shutil
+          import pandas as pd
+
+          root = Path('data/diagnostics/market_regime_validation')
+          manifest = pd.read_csv(root / 'chart_manifest.csv')
+          signals = pd.read_csv(root / 'signals.csv')
+          perf = pd.read_csv(root / 'performance_by_regime_direction.csv')
+
+          memberships = []
+          for row in manifest.itertuples(index=False):
+              scope = str(row.scope)
+              regime = str(row.regime)
+              image = str(row.image)
+              src = root / 'charts' / scope / regime / image
+              assert src.exists(), src
+              for direction, count in [('long', int(row.long_signal_count)), ('short', int(row.short_signal_count))]:
+                  if count < 1:
+                      continue
+                  dst_dir = root / 'charts' / scope / regime / direction
+                  dst_dir.mkdir(parents=True, exist_ok=True)
+                  dst = dst_dir / image
+                  shutil.copy2(src, dst)
+                  memberships.append({
+                      'scope': scope, 'regime': regime, 'direction': direction,
+                      'ticker': str(row.ticker), 'image': dst.relative_to(root).as_posix(),
+                      'direction_signal_count': count,
+                  })
+
+          membership = pd.DataFrame(memberships)
+          membership.to_csv(root / 'direction_membership.csv', index=False)
+          perf.to_csv(root / 'market_regime_summary.csv', index=False)
+
+          horizons = (5, 10, 20)
+          overall_rows = []
+          pattern_rows = []
+          case_rows = []
+
+          def summarize(group, fixed):
+              out = dict(fixed)
+              out['signal_count'] = int(len(group))
+              out['unique_tickers'] = int(group['ticker'].astype(str).nunique()) if not group.empty else 0
+              for h in horizons:
+                  rc = f'directional_return_{h}d_pct'
+                  wc = f'moved_predicted_{h}d'
+                  rets = pd.to_numeric(group[rc], errors='coerce').dropna() if rc in group else pd.Series(dtype=float)
+                  wins = group[wc].dropna().astype(str).str.lower().map({'true': True, 'false': False}) if wc in group else pd.Series(dtype=bool)
+                  wins = wins.dropna()
+                  out[f'n_{h}d'] = int(len(rets))
+                  out[f'win_rate_{h}d_pct'] = float(wins.mean() * 100.0) if not wins.empty else float('nan')
+                  out[f'avg_directional_return_{h}d_pct'] = float(rets.mean()) if not rets.empty else float('nan')
+              return out
+
+          for scope in ('p1', 'p2'):
+              part = signals.loc[signals.scope.astype(str).eq(scope)]
+              for direction in ('all', 'long', 'short'):
+                  g = part if direction == 'all' else part.loc[part.direction.astype(str).eq(direction)]
+                  overall_rows.append(summarize(g, {'scope': scope, 'direction': direction}))
+
+          if not signals.empty:
+              for keys, g in signals.groupby(['scope', 'regime', 'pattern', 'direction'], dropna=False):
+                  pattern_rows.append(summarize(g, dict(zip(['scope','regime','pattern','direction'], keys))))
+              p2 = signals.loc[signals.scope.astype(str).eq('p2')].copy()
+              for keys, g in p2.groupby(['regime', 'case', 'direction'], dropna=False):
+                  case_rows.append(summarize(g, dict(zip(['regime','case','direction'], keys))))
+
+          pd.DataFrame(overall_rows).to_csv(root / 'overall_summary.csv', index=False)
+          pd.DataFrame(pattern_rows).to_csv(root / 'performance_by_pattern_direction.csv', index=False)
+          pd.DataFrame(case_rows).to_csv(root / 'performance_by_p2_case_direction.csv', index=False)
+
+          status = {
+              'membership_rows': int(len(membership)),
+              'long_images': int((membership.direction == 'long').sum()) if not membership.empty else 0,
+              'short_images': int((membership.direction == 'short').sum()) if not membership.empty else 0,
+              'all_memberships_have_signal': bool((membership.direction_signal_count >= 1).all()) if not membership.empty else True,
+          }
+          (root / 'direction_status.json').write_text(json.dumps(status, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(status, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Verify results and active logic provenance
+        working-directory: _core
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+          import json
+          import pandas as pd
+
+          root = Path('data/diagnostics/market_regime_validation')
+          validation = json.loads((root / 'validation_status.json').read_text(encoding='utf-8'))
+          chart = json.loads((root / 'chart_status.json').read_text(encoding='utf-8'))
+          direction = json.loads((root / 'direction_status.json').read_text(encoding='utf-8'))
+          signals = pd.read_csv(root / 'signals.csv')
+          manifest = pd.read_csv(root / 'chart_manifest.csv')
+          membership = pd.read_csv(root / 'direction_membership.csv')
+          periods = pd.read_csv('config/market_regime_periods_active.csv')
+
+          assert validation['overall_pass'], validation
+          assert chart['overall_pass'], chart
+          assert direction['all_memberships_have_signal'], direction
+          assert validation['active_module'] == 'scripts/final_screen_rules_active.py', validation
+          assert validation['active_logic_id'] == 'active-2026-09-10-p1-current-p2-v12', validation
+          assert set(periods['scope']) == {'p1', 'p2'}
+          assert set(periods['regime']) == {'uptrend','downtrend','range','consolidation','mixed'}
+          assert len(periods) == 10
+          assert len(signals) == int(chart['signal_count'])
+          assert len(manifest) == int(chart['rendered_images'])
+          assert int(manifest['signal_count'].sum()) == len(signals)
+          assert set(signals['active_logic_id'].astype(str)) == {validation['active_logic_id']} if len(signals) else True
+
+          for row in membership.itertuples(index=False):
+              p = root / str(row.image)
+              assert p.exists(), p
+              m = manifest.loc[(manifest.scope.astype(str) == str(row.scope)) & (manifest.regime.astype(str) == str(row.regime)) & (manifest.ticker.astype(str) == str(row.ticker))]
+              assert len(m) == 1, (row, len(m))
+              col = 'long_signal_count' if row.direction == 'long' else 'short_signal_count'
+              assert int(m.iloc[0][col]) >= 1, (row.direction, row.ticker)
+
+          active_text = Path('scripts/final_screen_rules_active.py').read_text(encoding='utf-8')
+          tree = ast.parse(active_text)
+          imported = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  imported.extend(a.name for a in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imported.append(node.module)
+          assert not any(name.startswith('final_screen_rules_v10') for name in imported), imported
+          print('verification=PASS')
+          print(validation)
+          print(chart)
+          print(direction)
+          PY
+
+      - name: Remove bulky replay price history from artifact
+        working-directory: _core
+        run: rm -rf data/diagnostics/market_regime_validation/historical_derived
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: market-regime-validation-active-p1-p2
+          path: _core/data/diagnostics/market_regime_validation
+          if-no-files-found: error
+          retention-days: 30
