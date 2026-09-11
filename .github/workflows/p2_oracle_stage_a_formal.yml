@@ -1,0 +1,199 @@
+name: P2 Oracle Stage A formal validation
+
+on:
+  push:
+    branches:
+      - research/p2-oracle-stage-a-20260911
+  workflow_dispatch:
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  prepare-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private core research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install pandas numpy scipy yfinance requests beautifulsoup4 lxml
+
+      - name: Fetch audited historical replay data
+        working-directory: core
+        run: |
+          python scripts/fetch_historical_validation_data.py \
+            --periods config/p2_oracle_stage_a_period.csv \
+            --output-dir data/diagnostics/p2_oracle_stage_a/historical \
+            --warmup-calendar-days 1100 \
+            --forward-calendar-days 120 \
+            --batch-size 20
+
+      - name: Verify historical replay
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('data/diagnostics/p2_oracle_stage_a/historical/historical_status.json')
+          s = json.loads(p.read_text(encoding='utf-8'))
+          assert s.get('price_anomaly_count') == 0, s
+          assert int(s.get('derived_tickers', 0)) >= 220, s
+          print(s)
+          PY
+
+      - name: Upload historical replay
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-oracle-stage-a-historical
+          path: core/data/diagnostics/p2_oracle_stage_a/historical
+          retention-days: 7
+          compression-level: 6
+
+  validate-shards:
+    needs: prepare-history
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - name: Checkout actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private core research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install pandas numpy scipy
+
+      - name: Download historical replay
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-oracle-stage-a-historical
+          path: core/data/diagnostics/p2_oracle_stage_a/historical
+
+      - name: Run causal P2 + Oracle shard
+        working-directory: core
+        run: |
+          python scripts/validate_p2_oracle_stage_a_shard.py \
+            --historical-root data/diagnostics/p2_oracle_stage_a/historical \
+            --output-dir data/diagnostics/p2_oracle_stage_a/shards/shard_${{ matrix.shard }} \
+            --start 2008-01-04 \
+            --end 2026-07-03 \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 12 \
+            --workers 2
+
+      - name: Verify shard
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          shard = os.environ['SHARD']
+          p = Path(f'data/diagnostics/p2_oracle_stage_a/shards/shard_{shard}/status.json')
+          s = json.loads(p.read_text(encoding='utf-8'))
+          assert s['overall_pass'] is True, s
+          assert s['causal_violations'] == 0, s
+          print(s)
+          PY
+        env:
+          SHARD: ${{ matrix.shard }}
+
+      - name: Upload shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-oracle-stage-a-shard-${{ matrix.shard }}
+          path: core/data/diagnostics/p2_oracle_stage_a/shards/shard_${{ matrix.shard }}
+          retention-days: 7
+          compression-level: 6
+
+  aggregate:
+    needs: validate-shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private core research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install pandas numpy
+
+      - name: Download all shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-oracle-stage-a-shard-*
+          path: core/data/diagnostics/p2_oracle_stage_a/downloaded-shards
+          merge-multiple: false
+
+      - name: Aggregate formal Stage A
+        working-directory: core
+        run: |
+          python scripts/aggregate_p2_oracle_stage_a.py \
+            --shards-root data/diagnostics/p2_oracle_stage_a/downloaded-shards \
+            --output-dir data/diagnostics/p2_oracle_stage_a/final \
+            --expected-shards 12
+
+      - name: Verify final result
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('data/diagnostics/p2_oracle_stage_a/final')
+          s = json.loads((root/'status.json').read_text(encoding='utf-8'))
+          assert s['overall_pass'] is True, s
+          assert s['causal_violations'] == 0, s
+          for name in ['signals.csv','setups.csv','summary_signal.csv','summary_setup.csv','uplift_by_year.csv','oracle_window_comparison.csv','report.md']:
+              assert (root/name).exists(), name
+          print(s)
+          print((root/'report.md').read_text(encoding='utf-8'))
+          PY
+
+      - name: Upload final Stage A artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-oracle-stage-a-formal
+          path: core/data/diagnostics/p2_oracle_stage_a/final
+          retention-days: 7
+          compression-level: 6
