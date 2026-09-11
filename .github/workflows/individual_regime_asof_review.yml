@@ -1,0 +1,80 @@
+name: Individual regime as-of review
+
+on:
+  push:
+    branches:
+      - test/regime-asof-image-review
+  workflow_dispatch:
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private core branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: test/regime-asof-image-review
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Japanese font and Python dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto-cjk
+          python -m pip install --upgrade pip
+          python -m pip install pandas numpy matplotlib yfinance scipy requests beautifulsoup4 lxml
+
+      - name: Generate causal individual-regime review charts
+        working-directory: core
+        env:
+          MPLBACKEND: Agg
+        run: |
+          python scripts/render_individual_regime_asof_review.py \
+            --analysis-start 2005-01-01 \
+            --fetch-start 2003-01-01 \
+            --include-unknown \
+            --output-dir data/diagnostics/individual_regime_review
+          echo '--- regime_share_overall.csv ---'
+          cat data/diagnostics/individual_regime_review/regime_share_overall.csv
+          echo '--- status.json ---'
+          cat data/diagnostics/individual_regime_review/status.json
+
+      - name: Verify outputs
+        working-directory: core
+        run: |
+          test -f data/diagnostics/individual_regime_review/p1_regime_share.png
+          test -f data/diagnostics/individual_regime_review/p2_regime_share.png
+          test -f data/diagnostics/individual_regime_review/regime_share_overall.csv
+          test -f data/diagnostics/individual_regime_review/regime_share_by_ticker.csv
+          test -f data/diagnostics/individual_regime_review/image_manifest.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          root = Path('data/diagnostics/individual_regime_review')
+          status = json.loads((root/'status.json').read_text(encoding='utf-8'))
+          manifest = pd.read_csv(root/'image_manifest.csv')
+          assert status['overall_pass'] is True, status
+          assert len(status['tickers_completed']) == 8, status
+          assert len(manifest) >= 60, len(manifest)
+          assert manifest['path'].map(lambda p: (root/p).exists()).all()
+          print({'images': len(manifest), 'classified_rows': status['classified_rows']})
+          PY
+
+      - name: Upload review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: individual-regime-asof-review
+          path: core/data/diagnostics/individual_regime_review
+          retention-days: 7
+          compression-level: 6
