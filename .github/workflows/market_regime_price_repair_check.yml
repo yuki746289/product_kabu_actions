@@ -1,0 +1,80 @@
+name: Market regime historical price repair check
+
+on:
+  push:
+    paths:
+      - ".github/workflows/market_regime_price_repair_check.yml"
+      - "trigger/market_regime_price_repair_check.txt"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  price-repair-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout private core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0fb702c5db8aaa9975b3590cb7b3c357d9bedadf
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: _core
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: _core/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r _core/requirements.txt
+
+      - name: Verify syntax
+        working-directory: _core
+        run: python -m py_compile scripts/fetch_historical_validation_data.py
+
+      - name: Fetch repaired historical replay and audit jumps
+        working-directory: _core
+        run: |
+          python scripts/fetch_historical_validation_data.py \
+            --batch-size 20 \
+            --price-jump-threshold-pct 50 \
+            --output-dir data/diagnostics/market_regime_price_repair_check
+
+      - name: Verify zero price anomalies
+        working-directory: _core
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import pandas as pd
+          root = Path('data/diagnostics/market_regime_price_repair_check')
+          status = json.loads((root / 'historical_status.json').read_text(encoding='utf-8'))
+          anomalies = pd.read_csv(root / 'historical_price_anomalies.csv')
+          assert status['yfinance_repair'] is True, status
+          assert 'no second Stock Splits back-adjust' in status['price_adjustment_policy'], status
+          assert status['price_anomaly_count'] == 0, status
+          assert len(anomalies) == 0, anomalies.head(20)
+          assert status['overall_pass'], status
+          print('price_repair_verification=PASS')
+          print(status)
+          PY
+
+      - name: Upload lightweight audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-regime-price-repair-audit
+          path: |
+            _core/data/diagnostics/market_regime_price_repair_check/historical_status.json
+            _core/data/diagnostics/market_regime_price_repair_check/historical_manifest.csv
+            _core/data/diagnostics/market_regime_price_repair_check/historical_failures.csv
+            _core/data/diagnostics/market_regime_price_repair_check/historical_price_anomalies.csv
+          if-no-files-found: warn
+          retention-days: 7
