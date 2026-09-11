@@ -1,0 +1,98 @@
+name: Bundle market regime review images
+
+on:
+  push:
+    branches:
+      - test/p2-v12-diagnostic
+    paths:
+      - .github/workflows/bundle_market_regime_images.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  bundle-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SOURCE_RUN_ID: '34548084532'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download 10 shard artifacts from validated run
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'market-regime-shard-*' \
+            --dir source
+
+      - name: Build review folder by P and regime
+        shell: python
+        run: |
+          from pathlib import Path
+          import csv
+          import shutil
+
+          source = Path('source')
+          bundle = Path('bundle')
+          mapping = {
+              ('p1', 'uptrend'): ('P1', '上昇'),
+              ('p1', 'downtrend'): ('P1', '下降'),
+              ('p1', 'range'): ('P1', 'レンジ'),
+              ('p1', 'consolidation'): ('P1', 'もみ合い'),
+              ('p1', 'mixed'): ('P1', '混在'),
+              ('p2', 'uptrend'): ('P2', '上昇'),
+              ('p2', 'downtrend'): ('P2', '下降'),
+              ('p2', 'range'): ('P2', 'レンジ'),
+              ('p2', 'consolidation'): ('P2', 'もみ合い'),
+              ('p2', 'mixed'): ('P2', '混在'),
+          }
+          counts = []
+          for (scope, regime), (pname, rname) in mapping.items():
+              shard = source / f'market-regime-shard-{scope}-{regime}'
+              src_images = shard / 'charts' / scope / regime / 'images'
+              if not src_images.exists():
+                  raise SystemExit(f'missing images: {src_images}')
+              dest = bundle / pname / rname
+              dest_images = dest / 'images'
+              dest_images.mkdir(parents=True, exist_ok=True)
+              pngs = sorted(src_images.glob('*.png'))
+              for p in pngs:
+                  shutil.copy2(p, dest_images / p.name)
+              for filename in ('selected_period.csv',):
+                  src = shard / filename
+                  if src.exists():
+                      shutil.copy2(src, dest / filename)
+              manifest = shard / 'charts' / scope / regime / 'chart_manifest.csv'
+              if manifest.exists():
+                  shutil.copy2(manifest, dest / 'chart_manifest.csv')
+              counts.append((pname, rname, len(pngs)))
+
+          total = sum(x[2] for x in counts)
+          with (bundle / 'image_counts.csv').open('w', newline='', encoding='utf-8-sig') as f:
+              w = csv.writer(f)
+              w.writerow(['P', '相場', '画像数'])
+              w.writerows(counts)
+              w.writerow(['TOTAL', '', total])
+          (bundle / 'README.txt').write_text(
+              '相場環境別バックテスト確認画像\n'
+              f'元run: {34548084532}\n'
+              '構成: P1/P2 × 上昇/下降/レンジ/もみ合い/混在\n'
+              '各フォルダにPNG画像、selected_period.csv、chart_manifest.csvを収録。\n',
+              encoding='utf-8'
+          )
+          if total != 2096:
+              raise SystemExit(f'unexpected image count: {total} != 2096')
+          print(f'total_images={total}')
+
+      - name: Upload single review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-regime-images-review
+          path: bundle/
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
