@@ -10,6 +10,10 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: market-regime-price-repair-check
+  cancel-in-progress: true
+
 jobs:
   price-repair-check:
     runs-on: ubuntu-latest
