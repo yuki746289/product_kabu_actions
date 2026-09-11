@@ -10,10 +10,16 @@ permissions:
   contents: read
   actions: read
 
+# Execution policy: private core docs/13_MARKET_REGIME_EXECUTION_RULES.md
+# Shared history/audit once -> P1/P2 x 5 regimes as 10 shards -> aggregate once.
+concurrency:
+  group: active-market-regime-validation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   prepare-history:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8
+          ref: fcd46ac74cf18589945c2208b35ba48311ab3d5e
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: _core
           persist-credentials: false
@@ -35,25 +41,58 @@ jobs:
       - name: Install dependencies
         run: pip install -r _core/requirements.txt
 
-      - name: Verify active policy and sharded validation code
+      - name: Verify active policy, price sanitizer and sharded validation code
         working-directory: _core
         run: |
           python -m py_compile \
             scripts/final_screen_rules_active.py \
             scripts/check_active_logic_policy.py \
             scripts/fetch_historical_validation_data.py \
+            scripts/sanitize_historical_replay_prices.py \
             scripts/validate_market_regimes_active.py \
             scripts/validate_market_regime_shard.py \
             scripts/generate_market_regime_review_charts.py \
             scripts/aggregate_market_regime_shards.py
           python scripts/check_active_logic_policy.py
+          test -f docs/13_MARKET_REGIME_EXECUTION_RULES.md
 
-      - name: Fetch historical replay data once
+      - name: Fetch, repair and sanitize shared historical replay once
         working-directory: _core
         run: |
+          set +e
           python scripts/fetch_historical_validation_data.py \
             --batch-size 20 \
+            --price-jump-threshold-pct 50 \
             --output-dir data/diagnostics/market_regime_shared
+          fetch_rc=$?
+          set -e
+          if [ "$fetch_rc" -ne 0 ] && [ "$fetch_rc" -ne 2 ]; then
+            exit "$fetch_rc"
+          fi
+          python scripts/sanitize_historical_replay_prices.py \
+            --root data/diagnostics/market_regime_shared \
+            --price-jump-threshold-pct 50
+
+      - name: Verify shared historical replay price integrity
+        working-directory: _core
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import pandas as pd
+
+          root = Path('data/diagnostics/market_regime_shared')
+          status = json.loads((root / 'historical_status.json').read_text(encoding='utf-8'))
+          anomalies = pd.read_csv(root / 'historical_price_anomalies.csv')
+          assert status['overall_pass'], status
+          assert status['derived_tickers'] == status['constituents'], status
+          assert status['price_anomaly_count'] == 0, status
+          assert len(anomalies) == 0, anomalies.head(20)
+          assert status['price_sanitizer'] == 'scripts/sanitize_historical_replay_prices.py', status
+          assert 'no second Stock Splits back-adjust' in status['price_adjustment_policy'], status
+          print('shared_historical_price_integrity=PASS')
+          print(status)
+          PY
 
       - name: Upload shared historical replay
         uses: actions/upload-artifact@v4
@@ -63,6 +102,20 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 6
+
+      - name: Upload lightweight historical audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-regime-historical-audit
+          path: |
+            _core/data/diagnostics/market_regime_shared/historical_status.json
+            _core/data/diagnostics/market_regime_shared/historical_manifest.csv
+            _core/data/diagnostics/market_regime_shared/historical_failures.csv
+            _core/data/diagnostics/market_regime_shared/historical_price_discontinuities_detected.csv
+            _core/data/diagnostics/market_regime_shared/historical_price_trimmed_tickers.csv
+            _core/data/diagnostics/market_regime_shared/historical_price_anomalies.csv
+          if-no-files-found: error
+          retention-days: 30
 
   validate-shard:
     needs: prepare-history
@@ -81,7 +134,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8
+          ref: fcd46ac74cf18589945c2208b35ba48311ab3d5e
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: _core
           persist-credentials: false
@@ -136,12 +189,15 @@ jobs:
           root = Path('data/diagnostics/market_regime_shard')
           validation = json.loads((root / 'validation_status.json').read_text(encoding='utf-8'))
           charts = json.loads((root / 'chart_status.json').read_text(encoding='utf-8'))
+          historical = json.loads((root / 'historical_status.json').read_text(encoding='utf-8'))
           signals = pd.read_csv(root / 'signals.csv')
           assert validation['overall_pass'], validation
           assert charts['overall_pass'], charts
+          assert historical['overall_pass'], historical
+          assert historical['price_anomaly_count'] == 0, historical
           assert validation['active_module'] == 'scripts/final_screen_rules_active.py'
           assert validation['active_logic_id'] == 'active-2026-09-10-p1-current-p2-v12'
-          assert validation['private_core_sha'] == '6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8'
+          assert validation['private_core_sha'] == 'fcd46ac74cf18589945c2208b35ba48311ab3d5e'
           assert validation['period_count'] == 1
           assert validation['validation_failures'] == 0
           assert len(signals) == charts['signal_count']
@@ -168,7 +224,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8
+          ref: fcd46ac74cf18589945c2208b35ba48311ab3d5e
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: _core
           persist-credentials: false
@@ -189,12 +245,64 @@ jobs:
           path: _core/data/diagnostics/market_regime_shards
           merge-multiple: false
 
+      - name: Download historical audit
+        uses: actions/download-artifact@v4
+        with:
+          name: market-regime-historical-audit
+          path: _core/data/diagnostics/market_regime_historical_audit
+
       - name: Aggregate summaries and long/short folders
         working-directory: _core
         run: |
           python scripts/aggregate_market_regime_shards.py \
             --shards-root data/diagnostics/market_regime_shards \
             --root data/diagnostics/market_regime_validation
+
+      - name: Add price audit and P-direction-regime accuracy report
+        working-directory: _core
+        run: |
+          cp docs/13_MARKET_REGIME_EXECUTION_RULES.md \
+            data/diagnostics/market_regime_validation/MARKET_REGIME_EXECUTION_RULES.md
+          cp data/diagnostics/market_regime_historical_audit/historical_price_discontinuities_detected.csv \
+            data/diagnostics/market_regime_validation/
+          cp data/diagnostics/market_regime_historical_audit/historical_price_trimmed_tickers.csv \
+            data/diagnostics/market_regime_validation/
+          cp data/diagnostics/market_regime_historical_audit/historical_price_anomalies.csv \
+            data/diagnostics/market_regime_validation/
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+
+          root = Path('data/diagnostics/market_regime_validation')
+          stats = pd.read_csv(root / 'performance_by_regime_direction.csv')
+          stats = stats.loc[stats['direction'].isin(['long', 'short'])].copy()
+          p_order = {'p1': 0, 'p2': 1}
+          direction_order = {'long': 0, 'short': 1}
+          regime_order = {'uptrend': 0, 'downtrend': 1, 'range': 2, 'consolidation': 3, 'mixed': 4}
+          stats['_p'] = stats['scope'].map(p_order)
+          stats['_d'] = stats['direction'].map(direction_order)
+          stats['_r'] = stats['regime'].map(regime_order)
+          stats = stats.sort_values(['_p', '_d', '_r']).drop(columns=['_p', '_d', '_r'])
+          rename = {
+              'scope': 'P',
+              'direction': 'direction',
+              'regime': 'regime',
+              'signal_count': 'count',
+              'win_rate_5d_pct': 'accuracy_5d_pct',
+              'win_rate_10d_pct': 'accuracy_10d_pct',
+              'win_rate_20d_pct': 'accuracy_20d_pct',
+          }
+          report = stats.rename(columns=rename)
+          preferred = [
+              'P', 'direction', 'regime', 'regime_ja', 'count',
+              'accuracy_5d_pct', 'accuracy_10d_pct', 'accuracy_20d_pct',
+              'avg_directional_return_5d_pct', 'avg_directional_return_10d_pct', 'avg_directional_return_20d_pct',
+              'median_directional_return_5d_pct', 'median_directional_return_10d_pct', 'median_directional_return_20d_pct',
+          ]
+          report = report[[c for c in preferred if c in report.columns]]
+          report.to_csv(root / 'accuracy_by_p_direction_regime.csv', index=False, encoding='utf-8')
+          print(report.to_string(index=False))
+          PY
 
       - name: Final consistency verification
         working-directory: _core
@@ -214,19 +322,24 @@ jobs:
           periods = pd.read_csv(root / 'period_status.csv')
           manifest = pd.read_csv(root / 'chart_manifest.csv')
           membership = pd.read_csv(root / 'direction_membership.csv')
+          accuracy = pd.read_csv(root / 'accuracy_by_p_direction_regime.csv')
+          anomalies = pd.read_csv(root / 'historical_price_anomalies.csv')
 
           assert validation['overall_pass'], validation
           assert charts['overall_pass'], charts
           assert direction['all_memberships_have_signal'], direction
           assert historical['overall_pass'], historical
+          assert historical['price_anomaly_count'] == 0, historical
+          assert len(anomalies) == 0
           assert validation['execution_mode'] == '10-shard-matrix'
           assert validation['shard_count'] == 10
           assert validation['period_count'] == 10
           assert validation['active_logic_id'] == 'active-2026-09-10-p1-current-p2-v12'
-          assert validation['private_core_sha'] == '6bd9aa72de2f72e547b2d896c7ef4d8d32a97df8'
+          assert validation['private_core_sha'] == 'fcd46ac74cf18589945c2208b35ba48311ab3d5e'
           assert validation['validation_failures'] == 0
           assert len(periods) == 10
           assert len(stats) == 30
+          assert len(accuracy) == 20
           assert set(stats['direction']) == {'all', 'long', 'short'}
           assert set(periods['scope']) == {'p1', 'p2'}
           assert set(periods['regime']) == {'uptrend','downtrend','range','consolidation','mixed'}
@@ -237,10 +350,19 @@ jobs:
           for row in membership.itertuples(index=False):
               assert (root / str(row.image)).exists(), row.image
               assert int(row.direction_signal_count) >= 1
+          expected_order = [
+              (p, d, r)
+              for p in ('p1', 'p2')
+              for d in ('long', 'short')
+              for r in ('uptrend', 'downtrend', 'range', 'consolidation', 'mixed')
+          ]
+          actual_order = list(zip(accuracy['P'], accuracy['direction'], accuracy['regime']))
+          assert actual_order == expected_order, actual_order
           print('final_verification=PASS')
           print(validation)
           print(charts)
           print(direction)
+          print(historical)
           PY
 
       - name: Upload final market-regime artifact
@@ -248,5 +370,26 @@ jobs:
         with:
           name: market-regime-validation-active-p1-p2-sharded
           path: _core/data/diagnostics/market_regime_validation
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload lightweight CSV-only review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-regime-validation-csv-only
+          path: |
+            _core/data/diagnostics/market_regime_validation/accuracy_by_p_direction_regime.csv
+            _core/data/diagnostics/market_regime_validation/performance_by_regime_direction.csv
+            _core/data/diagnostics/market_regime_validation/overall_summary.csv
+            _core/data/diagnostics/market_regime_validation/performance_by_pattern_direction.csv
+            _core/data/diagnostics/market_regime_validation/performance_by_p2_case_direction.csv
+            _core/data/diagnostics/market_regime_validation/period_status.csv
+            _core/data/diagnostics/market_regime_validation/signals.csv
+            _core/data/diagnostics/market_regime_validation/validation_status.json
+            _core/data/diagnostics/market_regime_validation/historical_status.json
+            _core/data/diagnostics/market_regime_validation/historical_price_discontinuities_detected.csv
+            _core/data/diagnostics/market_regime_validation/historical_price_trimmed_tickers.csv
+            _core/data/diagnostics/market_regime_validation/historical_price_anomalies.csv
+            _core/data/diagnostics/market_regime_validation/MARKET_REGIME_EXECUTION_RULES.md
           if-no-files-found: error
           retention-days: 30
