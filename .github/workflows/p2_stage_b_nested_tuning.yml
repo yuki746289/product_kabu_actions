@@ -1,0 +1,117 @@
+name: P2 Stage B nested combination coefficient tuning
+
+on:
+  push:
+    branches: [research/p2-stage-b-nested-tune-20260912]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        direction: [long, short]
+        model: [logistic, lightgbm]
+        selector: [auc, ret60]
+        year_group: ['2013-2016', '2017-2020', '2021-2026']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn lightgbm tabulate
+      - name: Download causal weekly-state aggregate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b9w-aggregate
+          path: core/data/diagnostics/p2_stage_b/nested/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34681101657
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run nested tuning shard
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_nested_tuning.py \
+            --features data/diagnostics/p2_stage_b/nested/input/features.csv \
+            --output-dir data/diagnostics/p2_stage_b/nested/${{ matrix.direction }}_${{ matrix.model }}_${{ matrix.selector }}_${{ matrix.year_group }} \
+            --direction ${{ matrix.direction }} \
+            --model ${{ matrix.model }} \
+            --selector ${{ matrix.selector }} \
+            --years ${{ matrix.year_group }}
+      - name: Verify shard
+        working-directory: core
+        env:
+          OUT: data/diagnostics/p2_stage_b/nested/${{ matrix.direction }}_${{ matrix.model }}_${{ matrix.selector }}_${{ matrix.year_group }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path(os.environ['OUT'])/'status.json'
+          s=json.loads(p.read_text())
+          assert s['overall_pass'] is True and s['causal_violations']==0 and s['outer_folds']>0, s
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-nested-${{ matrix.direction }}-${{ matrix.model }}-${{ matrix.selector }}-${{ matrix.year_group }}
+          path: core/data/diagnostics/p2_stage_b/nested/${{ matrix.direction }}_${{ matrix.model }}_${{ matrix.selector }}_${{ matrix.year_group }}
+          retention-days: 7
+
+  aggregate:
+    needs: tune
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-stage-b-nested-*
+          path: core/data/diagnostics/p2_stage_b/nested/downloaded
+          merge-multiple: false
+      - name: Aggregate nested tuning results
+        working-directory: core
+        run: |
+          python scripts/aggregate_p2_stage_b_nested_tuning.py \
+            --root data/diagnostics/p2_stage_b/nested/downloaded \
+            --output-dir data/diagnostics/p2_stage_b/nested/final
+      - name: Verify final
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('data/diagnostics/p2_stage_b/nested/final/status.json').read_text())
+          assert s['overall_pass'] is True and set(s['directions'])=={'long','short'}, s
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-nested-tuning-final
+          path: core/data/diagnostics/p2_stage_b/nested/final
+          retention-days: 7
