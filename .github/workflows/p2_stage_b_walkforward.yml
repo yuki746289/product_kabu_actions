@@ -1,0 +1,96 @@
+name: P2 Stage B B1 walk-forward
+
+on:
+  push:
+    branches:
+      - research/p2-stage-b-20260912
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  stage-b-b1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private core research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install pandas numpy scikit-learn
+
+      - name: Download formal Stage A artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-oracle-stage-a-formal
+          path: core/data/diagnostics/p2_stage_b/stage_a
+          repository: yuki746289/product_kabu_actions
+          run-id: 34652868585
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Stage A input
+        working-directory: core
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          root = Path('data/diagnostics/p2_stage_b/stage_a')
+          required = ['setups.csv', 'status.json', 'report.md']
+          for name in required:
+              p = root / name
+              assert p.exists(), p
+              print(name, p.stat().st_size)
+          PY
+
+      - name: Run Stage B B1 walk-forward
+        working-directory: core
+        run: |
+          python scripts/pilot_p2_stage_b_walkforward.py \
+            --stage-a-dir data/diagnostics/p2_stage_b/stage_a \
+            --output-dir data/diagnostics/p2_stage_b/b1 \
+            --stage-a-run-id 34652868585
+
+      - name: Verify B1 result
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('data/diagnostics/p2_stage_b/b1')
+          s = json.loads((root/'status.json').read_text(encoding='utf-8'))
+          assert s.get('overall_pass') is True, s
+          assert int(s.get('causal_violations', -1)) == 0, s
+          for name in [
+              'summary.csv', 'walkforward_folds.csv', 'retention_thresholds.csv',
+              'risk_deciles.csv', 'feature_coefficients_summary.csv',
+              'oos_predictions.csv', 'causal_violations.csv', 'report.md', 'status.json'
+          ]:
+              assert (root/name).exists(), name
+          print(s)
+          print((root/'report.md').read_text(encoding='utf-8'))
+          PY
+
+      - name: Upload Stage B B1 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b1-walkforward
+          path: core/data/diagnostics/p2_stage_b/b1
+          retention-days: 7
+          compression-level: 6
