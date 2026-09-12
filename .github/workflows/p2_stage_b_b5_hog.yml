@@ -1,0 +1,156 @@
+name: P2 Stage B B5 chart HOG
+
+on:
+  push:
+    branches: [research/p2-stage-b-b5-20260912]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  extract-hog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-image pillow
+      - name: Download B3 aggregate feature matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b3-aggregate
+          path: core/data/diagnostics/p2_stage_b/b5/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34671952644
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract chart HOG features
+        working-directory: core
+        run: |
+          python scripts/extract_p2_stage_b_hog_features.py \
+            --features data/diagnostics/p2_stage_b/b5/input/features.csv \
+            --output-dir data/diagnostics/p2_stage_b/b5/hog
+      - name: Verify HOG extraction
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/b5/hog')
+          s=json.loads((p/'status.json').read_text())
+          assert s['overall_pass'] is True and s['causal_violations']==0 and s['hog_dim']>0, s
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b5-hog-features
+          path: core/data/diagnostics/p2_stage_b/b5/hog
+          retention-days: 7
+
+  models:
+    needs: extract-hog
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [hog_logistic,b1_hog_logistic,b1_hog_svm,b1_hog_histgb]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn tabulate
+      - name: Download B3 aggregate feature matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b3-aggregate
+          path: core/data/diagnostics/p2_stage_b/b5/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34671952644
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b5-hog-features
+          path: core/data/diagnostics/p2_stage_b/b5/hog
+      - name: Run HOG annual walk-forward
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_hog_walkforward.py \
+            --features data/diagnostics/p2_stage_b/b5/input/features.csv \
+            --hog-dir data/diagnostics/p2_stage_b/b5/hog \
+            --output-dir data/diagnostics/p2_stage_b/b5/${{ matrix.model }} \
+            --model ${{ matrix.model }}
+      - name: Verify result
+        working-directory: core
+        env:
+          MODEL: ${{ matrix.model }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/b5')/os.environ['MODEL']
+          s=json.loads((p/'status.json').read_text())
+          assert s['overall_pass'] is True and s['causal_violations']==0, s
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b5-${{ matrix.model }}
+          path: core/data/diagnostics/p2_stage_b/b5/${{ matrix.model }}
+          retention-days: 7
+
+  compare:
+    needs: models
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-stage-b-b5-*
+          path: results
+          merge-multiple: false
+      - name: Build comparison
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,pandas as pd
+          frames=[pd.read_csv(p) for p in Path('results').glob('**/summary.csv')]
+          x=pd.concat(frames,ignore_index=True)
+          Path('final').mkdir(exist_ok=True)
+          x.to_csv('final/model_comparison.csv',index=False)
+          r=x.loc[x.target_retention_pct.eq(60)].copy().sort_values(['direction','pooled_win_uplift_20d_pp','mean_auc'],ascending=[True,False,False])
+          r.to_csv('final/rank_retention60.csv',index=False)
+          cols=['model','direction','mean_auc','baseline_entries','kept_entries','pooled_retention_pct','baseline_win_5d_pct','kept_win_5d_pct','pooled_win_uplift_5d_pp','baseline_win_10d_pct','kept_win_10d_pct','pooled_win_uplift_10d_pp','baseline_win_20d_pct','kept_win_20d_pct','pooled_win_uplift_20d_pp','positive_win_year_share_20d_pct']
+          Path('final/report.md').write_text('# B5 HOG comparison\n\n'+r[cols].to_markdown(index=False)+'\n',encoding='utf-8')
+          Path('final/status.json').write_text(json.dumps({'models':sorted(x.model.unique().tolist()),'rows':len(x),'overall_pass':len(x)==32},indent=2)+'\n')
+          print(r[cols].to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b5-final
+          path: final
+          retention-days: 7
