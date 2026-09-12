@@ -1,0 +1,119 @@
+name: P2 Stage B redo weekly state
+
+on:
+  push:
+    branches: [research/p2-stage-b-redo-20260912]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [logistic, lightgbm]
+        variant: [b1_control,b1_plus_fan,b1_plus_ema_motion,b1_plus_price_phase,b1_plus_rci,b1_plus_all_state,b1_plus_path_all_state]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn lightgbm tabulate
+      - name: Download causal weekly-state aggregate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b9w-aggregate
+          path: core/data/diagnostics/p2_stage_b/redo/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34681101657
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run Stage B redo
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_redo_weekly_state.py \
+            --features data/diagnostics/p2_stage_b/redo/input/features.csv \
+            --output-dir data/diagnostics/p2_stage_b/redo/${{ matrix.model }}_${{ matrix.variant }} \
+            --model ${{ matrix.model }} \
+            --variant ${{ matrix.variant }}
+      - name: Verify result
+        working-directory: core
+        env:
+          MODEL: ${{ matrix.model }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/redo')/(os.environ['MODEL']+'_'+os.environ['VARIANT'])
+          s=json.loads((p/'status.json').read_text())
+          assert s['overall_pass'] is True, s
+          assert s['causal_violations']==0, s
+          assert s['embargo_days']==35, s
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-redo-${{ matrix.model }}-${{ matrix.variant }}
+          path: core/data/diagnostics/p2_stage_b/redo/${{ matrix.model }}_${{ matrix.variant }}
+          retention-days: 7
+
+  compare:
+    needs: models
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-stage-b-redo-*
+          path: results
+          merge-multiple: false
+      - name: Build comparison
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import pandas as pd
+
+          frames=[pd.read_csv(p) for p in Path('results').glob('**/summary.csv')]
+          x=pd.concat(frames,ignore_index=True)
+          Path('final').mkdir(exist_ok=True)
+          x.to_csv('final/model_comparison.csv',index=False)
+
+          for direction in ('long','short'):
+              r=x.loc[x.direction.eq(direction) & x.target_retention_pct.eq(60)].copy()
+              r=r.sort_values(['break_rate_reduction_pp','win_uplift_20d_pp','positive_year_share_win_20d_pct'],ascending=[False,False,False])
+              r.to_csv(f'final/rank_{direction}_retention60.csv',index=False)
+          cols=['model','variant','direction','feature_count','mean_auc','mean_ap','baseline_entries','kept_entries','pooled_retention_pct','baseline_break_rate_pct','kept_break_rate_pct','break_rate_reduction_pp','baseline_win_5d_pct','kept_win_5d_pct','win_uplift_5d_pp','positive_year_share_win_5d_pct','baseline_win_10d_pct','kept_win_10d_pct','win_uplift_10d_pp','baseline_win_20d_pct','kept_win_20d_pct','win_uplift_20d_pp','positive_year_share_win_20d_pct']
+          r60=x.loc[x.target_retention_pct.eq(60)].sort_values(['direction','break_rate_reduction_pp'],ascending=[True,False])
+          Path('final/report.md').write_text('# Stage B redo comparison - retention 60%\n\n'+r60[cols].to_markdown(index=False)+'\n',encoding='utf-8')
+          status={'models':sorted(x.model.unique().tolist()),'variants':sorted(x.variant.unique().tolist()),'rows':int(len(x)),'expected_rows':112,'overall_pass':bool(len(x)==112)}
+          Path('final/status.json').write_text(json.dumps(status,indent=2)+'\n',encoding='utf-8')
+          print(status)
+          print(r60[cols].to_string(index=False))
+          if not status['overall_pass']:
+              raise SystemExit(3)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-redo-final
+          path: final
+          retention-days: 7
