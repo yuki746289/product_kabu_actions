@@ -1,0 +1,106 @@
+name: P2 Stage B B10 model fix
+
+on:
+  push:
+    branches: [research/p2-stage-b-b10-model-fix-20260912]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [completed_only,completed_plus_partial]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn lightgbm tabulate
+      - name: Download B10 aggregate feature matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b10-aggregate
+          path: core/data/diagnostics/p2_stage_b/b10/aggregate
+          repository: yuki746289/product_kabu_actions
+          run-id: 34679559636
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run canonical float32 purged Long comparison
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_b10_partial_week.py \
+            --features data/diagnostics/p2_stage_b/b10/aggregate/features.csv \
+            --output-dir data/diagnostics/p2_stage_b/b10/${{ matrix.variant }} \
+            --variant ${{ matrix.variant }} \
+            --direction long \
+            --embargo-days 35
+      - name: Verify model
+        working-directory: core
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/b10')/os.environ['VARIANT']
+          s=json.loads((p/'status.json').read_text())
+          assert s['overall_pass'] is True and s['causal_violations']==0 and s['embargo_days']==35, s
+          assert s['numeric_precision'].startswith('float32'), s
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b10-fix-${{ matrix.variant }}
+          path: core/data/diagnostics/p2_stage_b/b10/${{ matrix.variant }}
+          retention-days: 7
+
+  compare:
+    needs: models
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-stage-b-b10-fix-*
+          path: results
+          merge-multiple: false
+      - name: Build B10 corrected comparison
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, pandas as pd
+          frames=[pd.read_csv(p) for p in Path('results').glob('**/summary.csv')]
+          x=pd.concat(frames,ignore_index=True)
+          Path('final').mkdir(exist_ok=True)
+          x.to_csv('final/model_comparison.csv',index=False)
+          r=x.sort_values(['target_retention_pct','pooled_win_uplift_20d_pp'],ascending=[False,False])
+          r.to_csv('final/rank.csv',index=False)
+          cols=['variant','target_retention_pct','mean_auc','baseline_entries','kept_entries','pooled_retention_pct','baseline_win_5d_pct','kept_win_5d_pct','pooled_win_uplift_5d_pp','baseline_win_10d_pct','kept_win_10d_pct','pooled_win_uplift_10d_pp','baseline_win_20d_pct','kept_win_20d_pct','pooled_win_uplift_20d_pp','positive_win_year_share_20d_pct']
+          Path('final/report.md').write_text('# B10 corrected partial-week comparison\n\n'+r[cols].to_markdown(index=False)+'\n',encoding='utf-8')
+          Path('final/status.json').write_text(json.dumps({'variants':sorted(x.variant.unique().tolist()),'rows':len(x),'numeric_precision':'float32','overall_pass':len(x)==8},indent=2)+'\n')
+          print(r[cols].to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b10-fix-final
+          path: final
+          retention-days: 7
