@@ -1,0 +1,177 @@
+name: P2 Stage B B2 enriched weekly shape
+
+on:
+  push:
+    branches:
+      - research/p2-stage-b-b2-20260912
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  feature-shards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+    steps:
+      - name: Checkout actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private core research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install pandas numpy
+
+      - name: Download formal Stage A result
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-oracle-stage-a-formal
+          path: core/data/diagnostics/p2_stage_b/stage_a
+          repository: yuki746289/product_kabu_actions
+          run-id: 34652868585
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download audited Stage A historical replay
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-oracle-stage-a-historical
+          path: core/data/diagnostics/p2_stage_b/history
+          repository: yuki746289/product_kabu_actions
+          run-id: 34652868585
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract enriched causal weekly features
+        working-directory: core
+        run: |
+          python scripts/extract_p2_stage_b_weekly_features_shard.py \
+            --stage-a-dir data/diagnostics/p2_stage_b/stage_a \
+            --historical-root data/diagnostics/p2_stage_b/history \
+            --output-dir data/diagnostics/p2_stage_b/b2/shard_${{ matrix.shard }} \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 24
+
+      - name: Verify feature shard
+        working-directory: core
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          shard = os.environ['SHARD']
+          root = Path(f'data/diagnostics/p2_stage_b/b2/shard_{shard}')
+          s = json.loads((root/'status.json').read_text(encoding='utf-8'))
+          assert s['overall_pass'] is True, s
+          assert s['causal_violations'] == 0, s
+          assert s['failures'] == 0, s
+          assert s['output_rows'] == s['input_setups'], s
+          assert (root/'features.csv').exists()
+          print(s)
+          PY
+
+      - name: Upload feature shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b2-features-${{ matrix.shard }}
+          path: core/data/diagnostics/p2_stage_b/b2/shard_${{ matrix.shard }}
+          retention-days: 7
+          compression-level: 6
+
+  aggregate-and-model:
+    needs: feature-shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout actions repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private core research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install pandas numpy scikit-learn
+
+      - name: Download all enriched feature shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-stage-b-b2-features-*
+          path: core/data/diagnostics/p2_stage_b/b2/downloaded-shards
+          merge-multiple: false
+
+      - name: Aggregate enriched features
+        working-directory: core
+        run: |
+          python scripts/aggregate_p2_stage_b_feature_shards.py \
+            --shards-root data/diagnostics/p2_stage_b/b2/downloaded-shards \
+            --output-dir data/diagnostics/p2_stage_b/b2/aggregate \
+            --expected-shards 24
+
+      - name: Run baseline vs enriched walk-forward
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_enriched_walkforward.py \
+            --features data/diagnostics/p2_stage_b/b2/aggregate/features.csv \
+            --output-dir data/diagnostics/p2_stage_b/b2/model \
+            --stage-a-run-id 34652868585
+
+      - name: Verify B2 final result
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          agg = Path('data/diagnostics/p2_stage_b/b2/aggregate')
+          model = Path('data/diagnostics/p2_stage_b/b2/model')
+          a = json.loads((agg/'status.json').read_text(encoding='utf-8'))
+          m = json.loads((model/'status.json').read_text(encoding='utf-8'))
+          assert a['overall_pass'] is True, a
+          assert m['overall_pass'] is True, m
+          assert m['causal_violations'] == 0, m
+          for name in ['summary.csv','summary_model_comparison.csv','fold_model_comparison.csv','feature_coefficients_summary.csv','report.md','status.json']:
+              assert (model/name).exists(), name
+          print(a)
+          print(m)
+          print((model/'report.md').read_text(encoding='utf-8'))
+          print((model/'summary_model_comparison.csv').read_text(encoding='utf-8'))
+          PY
+
+      - name: Upload final B2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b2-enriched
+          path: |
+            core/data/diagnostics/p2_stage_b/b2/aggregate/status.json
+            core/data/diagnostics/p2_stage_b/b2/aggregate/shard_statuses.csv
+            core/data/diagnostics/p2_stage_b/b2/model
+          retention-days: 7
+          compression-level: 6
