@@ -1,0 +1,135 @@
+name: P2 Stage B logic validation
+
+on:
+  push:
+    branches: [research/p2-stage-b-logic-20260912]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        direction: [long, short]
+        profile: [balanced, persistence, recent_change, curvature, price_adjustment, rci_turn]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn tabulate
+      - name: Download causal weekly-state aggregate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b9w-aggregate
+          path: core/data/diagnostics/p2_stage_b/logic/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34681101657
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run fixed logic search
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_logic_validation.py \
+            --mode search \
+            --features data/diagnostics/p2_stage_b/logic/input/features.csv \
+            --output-dir data/diagnostics/p2_stage_b/logic/${{ matrix.direction }}_${{ matrix.profile }} \
+            --direction ${{ matrix.direction }} \
+            --profile ${{ matrix.profile }}
+      - name: Verify search shard
+        working-directory: core
+        env:
+          DIRECTION: ${{ matrix.direction }}
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/logic')/(os.environ['DIRECTION']+'_'+os.environ['PROFILE'])/'status.json'
+          s=json.loads(p.read_text())
+          assert s['overall_pass'] is True, s
+          assert s['causal_violations']==0, s
+          assert s['machine_learning_used'] is False, s
+          assert s['candidate_rows'] > 0 and s['shortlist_rows'] > 0, s
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-logic-${{ matrix.direction }}-${{ matrix.profile }}
+          path: core/data/diagnostics/p2_stage_b/logic/${{ matrix.direction }}_${{ matrix.profile }}
+          retention-days: 7
+
+  aggregate:
+    needs: search
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn tabulate
+      - name: Download search shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-stage-b-logic-*
+          path: core/data/diagnostics/p2_stage_b/logic/search_downloaded
+          merge-multiple: false
+      - name: Download causal weekly-state aggregate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b9w-aggregate
+          path: core/data/diagnostics/p2_stage_b/logic/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34681101657
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Aggregate fixed logic validation
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_logic_validation.py \
+            --mode finalize \
+            --features data/diagnostics/p2_stage_b/logic/input/features.csv \
+            --candidate-root data/diagnostics/p2_stage_b/logic/search_downloaded \
+            --output-dir data/diagnostics/p2_stage_b/logic/final \
+            --top-per-band 5
+      - name: Verify final
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/logic/final/status.json')
+          s=json.loads(p.read_text())
+          assert s['overall_pass'] is True, s
+          assert s['machine_learning_used'] is False, s
+          assert s['selection_uses_trading_outcomes'] is False, s
+          assert s['causal_feature_violations']==0, s
+          assert s['search_shards']==12, s
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-logic-validation-final
+          path: core/data/diagnostics/p2_stage_b/logic/final
+          retention-days: 7
