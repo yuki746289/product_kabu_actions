@@ -1,0 +1,115 @@
+name: P2 Stage B boosted model comparison
+
+on:
+  push:
+    branches: [research/p2-stage-b-boosted-20260912]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        model: [xgboost, lightgbm, catboost]
+        variant: [b1, b1_price, b1_compact, b1_all_path]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn tabulate
+      - if: matrix.model == 'xgboost'
+        run: python -m pip install xgboost
+      - if: matrix.model == 'lightgbm'
+        run: python -m pip install lightgbm
+      - if: matrix.model == 'catboost'
+        run: python -m pip install catboost
+      - name: Download B3 aggregate feature matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b3-aggregate
+          path: core/data/diagnostics/p2_stage_b/boosted/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34671952644
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run annual walk-forward
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_boosted_walkforward.py \
+            --features data/diagnostics/p2_stage_b/boosted/input/features.csv \
+            --output-dir data/diagnostics/p2_stage_b/boosted/${{ matrix.model }}_${{ matrix.variant }} \
+            --model ${{ matrix.model }} \
+            --variant ${{ matrix.variant }}
+      - name: Verify result
+        working-directory: core
+        env:
+          MODEL: ${{ matrix.model }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/boosted')/(os.environ['MODEL']+'_'+os.environ['VARIANT'])
+          s=json.loads((p/'status.json').read_text())
+          assert s['overall_pass'] is True and s['causal_violations']==0, s
+          assert (p/'summary.csv').exists()
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-boosted-${{ matrix.model }}-${{ matrix.variant }}
+          path: core/data/diagnostics/p2_stage_b/boosted/${{ matrix.model }}_${{ matrix.variant }}
+          retention-days: 7
+
+  compare:
+    needs: models
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-stage-b-boosted-*
+          path: results
+          merge-multiple: false
+      - name: Build comparison
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, pandas as pd
+          frames=[pd.read_csv(p) for p in Path('results').glob('**/summary.csv')]
+          x=pd.concat(frames,ignore_index=True)
+          Path('final').mkdir(exist_ok=True)
+          x.to_csv('final/model_comparison.csv',index=False)
+          r=x.loc[x.target_retention_pct.eq(60)].copy()
+          r=r.sort_values(['direction','pooled_win_uplift_20d_pp','mean_auc'],ascending=[True,False,False])
+          r.to_csv('final/rank_retention60.csv',index=False)
+          cols=['model','variant','direction','mean_auc','baseline_entries','kept_entries','pooled_retention_pct','baseline_win_5d_pct','kept_win_5d_pct','pooled_win_uplift_5d_pp','baseline_win_10d_pct','kept_win_10d_pct','pooled_win_uplift_10d_pp','baseline_win_20d_pct','kept_win_20d_pct','pooled_win_uplift_20d_pp','positive_win_year_share_20d_pct']
+          Path('final/report.md').write_text('# Stage B boosted model comparison\n\n'+r[cols].to_markdown(index=False)+'\n',encoding='utf-8')
+          Path('final/status.json').write_text(json.dumps({'models':sorted(x.model.unique().tolist()),'variants':sorted(x.variant.unique().tolist()),'rows':len(x),'overall_pass':len(x)==96},indent=2)+'\n')
+          print(r[cols].to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-boosted-final
+          path: final
+          retention-days: 7
