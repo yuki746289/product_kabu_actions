@@ -1,0 +1,71 @@
+name: P2 Stage B B7 rank ensemble
+
+on:
+  push:
+    branches: [research/p2-stage-b-b7-20260912]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  ensemble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn lightgbm tabulate
+      - name: Download B3 aggregate feature matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b3-aggregate
+          path: core/data/diagnostics/p2_stage_b/b7/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34671952644
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download B5 HOG features
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b5-hog-features
+          path: core/data/diagnostics/p2_stage_b/b7/hog
+          repository: yuki746289/product_kabu_actions
+          run-id: 34676270003
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run strict rank ensemble walk-forward
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_b7_rank_ensemble.py \
+            --features data/diagnostics/p2_stage_b/b7/input/features.csv \
+            --hog-dir data/diagnostics/p2_stage_b/b7/hog \
+            --output-dir data/diagnostics/p2_stage_b/b7/ensemble \
+            --embargo-days 35
+      - name: Verify
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/b7/ensemble')
+          s=json.loads((p/'status.json').read_text())
+          assert s['overall_pass'] is True and s['causal_violations']==0 and s['embargo_days']==35, s
+          assert (p/'summary.csv').exists() and (p/'oos_predictions.csv').exists()
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b7-rank-ensemble
+          path: core/data/diagnostics/p2_stage_b/b7/ensemble
+          retention-days: 7
