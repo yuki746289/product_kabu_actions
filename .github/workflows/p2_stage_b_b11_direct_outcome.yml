@@ -1,0 +1,117 @@
+name: P2 Stage B B11 direct outcome
+
+on:
+  push:
+    branches: [research/p2-stage-b-b11-20260912]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        model: [logistic_b1, logistic_compact, lightgbm_compact, xgboost_compact, catboost_compact]
+        horizon: [5, 10, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn tabulate
+      - if: matrix.model == 'lightgbm_compact'
+        run: python -m pip install lightgbm
+      - if: matrix.model == 'xgboost_compact'
+        run: python -m pip install xgboost
+      - if: matrix.model == 'catboost_compact'
+        run: python -m pip install catboost
+      - name: Download B3 aggregate feature matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b3-aggregate
+          path: core/data/diagnostics/p2_stage_b/b11/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34671952644
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run purged annual walk-forward
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_direct_outcome_walkforward.py \
+            --features data/diagnostics/p2_stage_b/b11/input/features.csv \
+            --output-dir data/diagnostics/p2_stage_b/b11/${{ matrix.model }}_${{ matrix.horizon }}d \
+            --model ${{ matrix.model }} \
+            --target-horizon ${{ matrix.horizon }}
+      - name: Verify result
+        working-directory: core
+        env:
+          MODEL: ${{ matrix.model }}
+          HORIZON: ${{ matrix.horizon }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/b11')/(os.environ['MODEL']+'_'+os.environ['HORIZON']+'d')
+          s=json.loads((p/'status.json').read_text())
+          assert s['overall_pass'] is True and s['causal_violations']==0, s
+          assert (p/'summary.csv').exists()
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b11-${{ matrix.model }}-${{ matrix.horizon }}d
+          path: core/data/diagnostics/p2_stage_b/b11/${{ matrix.model }}_${{ matrix.horizon }}d
+          retention-days: 7
+
+  compare:
+    needs: models
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-stage-b-b11-*
+          path: results
+          merge-multiple: false
+      - name: Build comparison
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,pandas as pd
+          frames=[pd.read_csv(p) for p in Path('results').glob('**/summary.csv')]
+          x=pd.concat(frames,ignore_index=True)
+          Path('final').mkdir(exist_ok=True)
+          x.to_csv('final/model_comparison.csv',index=False)
+          r=x.loc[x.target_retention_pct.eq(60)].copy()
+          r['target_win_uplift_pp']=r.apply(lambda z:z[f'pooled_win_uplift_{int(z.target_horizon)}d_pp'],axis=1)
+          r['target_kept_win_pct']=r.apply(lambda z:z[f'kept_win_{int(z.target_horizon)}d_pct'],axis=1)
+          r=r.sort_values(['direction','target_horizon','target_win_uplift_pp','mean_auc'],ascending=[True,True,False,False])
+          r.to_csv('final/rank_retention60.csv',index=False)
+          cols=['model','target_horizon','direction','mean_auc','baseline_entries','kept_entries','pooled_retention_pct','target_kept_win_pct','target_win_uplift_pp','positive_win_year_share_5d_pct','positive_win_year_share_10d_pct','positive_win_year_share_20d_pct']
+          Path('final/report.md').write_text('# B11 direct outcome comparison\n\n'+r[cols].to_markdown(index=False)+'\n',encoding='utf-8')
+          Path('final/status.json').write_text(json.dumps({'models':sorted(x.model.unique().tolist()),'horizons':sorted(x.target_horizon.unique().tolist()),'rows':len(x),'overall_pass':len(x)==120},indent=2)+'\n')
+          print(r[cols].to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b11-final
+          path: final
+          retention-days: 7
