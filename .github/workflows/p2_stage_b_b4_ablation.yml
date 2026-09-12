@@ -1,0 +1,105 @@
+name: P2 Stage B B4 feature-group ablation
+
+on:
+  push:
+    branches: [research/p2-stage-b-b4-20260912]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  ablation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        variant: [b1,b1_price,b1_candle,b1_ema_geometry,b1_rci,b1_compact,b1_price_ema,b1_all_path]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas numpy scikit-learn tabulate
+      - name: Download B3 aggregate feature matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b3-aggregate
+          path: core/data/diagnostics/p2_stage_b/b4/input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34671952644
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run feature-group ablation
+        working-directory: core
+        run: |
+          python scripts/run_p2_stage_b_b4_group_ablation.py \
+            --features data/diagnostics/p2_stage_b/b4/input/features.csv \
+            --output-dir data/diagnostics/p2_stage_b/b4/${{ matrix.variant }} \
+            --variant ${{ matrix.variant }}
+      - name: Verify result
+        working-directory: core
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/b4')/os.environ['VARIANT']
+          s=json.loads((p/'status.json').read_text())
+          assert s['overall_pass'] is True, s
+          assert s['causal_violations'] == 0, s
+          assert (p/'summary.csv').exists()
+          print(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b4-${{ matrix.variant }}
+          path: core/data/diagnostics/p2_stage_b/b4/${{ matrix.variant }}
+          retention-days: 7
+
+  compare:
+    needs: ablation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-stage-b-b4-*
+          path: results
+          merge-multiple: false
+      - name: Build B4 comparison
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, pandas as pd
+          frames=[pd.read_csv(p) for p in Path('results').glob('**/summary.csv')]
+          x=pd.concat(frames,ignore_index=True)
+          Path('final').mkdir(exist_ok=True)
+          x.to_csv('final/ablation_comparison.csv',index=False)
+          r=x.loc[x.target_retention_pct.eq(60)].sort_values(['direction','mean_auc'],ascending=[True,False])
+          r.to_csv('final/rank_retention60.csv',index=False)
+          Path('final/report.md').write_text('# B4 feature-group ablation\n\n'+r.to_markdown(index=False)+'\n',encoding='utf-8')
+          Path('final/status.json').write_text(json.dumps({'variants':sorted(x.variant.unique().tolist()),'rows':len(x),'overall_pass':len(x)==64},indent=2)+'\n')
+          print(r.to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-stage-b-b4-final
+          path: final
+          retention-days: 7
