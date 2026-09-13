@@ -1,0 +1,65 @@
+name: P2 Nikkei regime 20260913
+
+on:
+  push:
+    branches:
+      - research/p2-nikkei-regime-20260913
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout actions repo
+        uses: actions/checkout@v4
+
+      - name: Checkout private core repo
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          path: core
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install pandas numpy tabulate yfinance
+
+      - name: Run Nikkei analysis
+        working-directory: core
+        run: |
+          python scripts/analyze_p2_stage_b_nikkei_monthly_regime.py \
+            --fetch-start 2005-01-01 \
+            --analysis-start 2008-01-01
+
+      - name: Verify result
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('data/diagnostics/p2_stage_b/nikkei_regime_20260913/status.json')
+          s = json.loads(p.read_text(encoding='utf-8'))
+          assert s['test'] == 'p2_stage_b_nikkei_monthly_regime', s
+          assert s['overall_pass'] is True, s
+          assert s['causal_violations'] == 0, s
+          assert s['candidate_signals'] > 0, s
+          print(json.dumps(s, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-nikkei-regime-20260913
+          path: core/data/diagnostics/p2_stage_b/nikkei_regime_20260913
+          retention-days: 7
