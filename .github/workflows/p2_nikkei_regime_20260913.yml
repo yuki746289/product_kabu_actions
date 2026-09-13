@@ -15,6 +15,7 @@ env:
 jobs:
   analyze:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - name: Checkout actions repo
         uses: actions/checkout@v4
@@ -24,7 +25,7 @@ jobs:
         with:
           repository: yuki746289/product_kabu
           ref: research/p2-hypotheses-20260911
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
 
       - name: Setup Python
@@ -58,6 +59,7 @@ jobs:
           PY
 
       - name: Upload result
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: p2-nikkei-regime-20260913
