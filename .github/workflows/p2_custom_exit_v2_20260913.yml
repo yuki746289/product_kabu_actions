@@ -39,21 +39,27 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Syntax check
         working-directory: core
-        run: python -m py_compile scripts/analyze_p2_custom_exit_v2.py
+        run: |
+          python -m py_compile scripts/analyze_p2_custom_exit_v2.py
+          python -m py_compile scripts/analyze_p2_custom_exit_v2_cap.py
       - name: Run analysis
         working-directory: core
-        run: python scripts/analyze_p2_custom_exit_v2.py --features data/diagnostics/p2_stage_b/custom_v2_input/features.csv
+        run: python scripts/analyze_p2_custom_exit_v2_cap.py --features data/diagnostics/p2_stage_b/custom_v2_input/features.csv
       - name: Verify result
         working-directory: core
         run: |
           python - <<'PY'
           import json
+          import pandas as pd
           from pathlib import Path
           p=Path('data/diagnostics/p2_stage_b/custom_exit_v2_20260913/status.json')
           s=json.loads(p.read_text(encoding='utf-8'))
           assert s['test']=='p2_custom_exit_v2', s
           assert s['overall_pass'] is True, s
           assert s['bad_hold_rows']==0, s
+          q=pd.read_csv('data/diagnostics/p2_stage_b/custom_exit_v2_20260913/signal_custom_v2.csv')
+          assert pd.to_numeric(q['V2_5PT_next_open_hold_days'], errors='coerce').max() <= 20, 'V2_5PT next-open >20D'
+          assert pd.to_numeric(q['V2_2DAY_next_open_hold_days'], errors='coerce').max() <= 20, 'V2_2DAY next-open >20D'
           print(json.dumps(s, ensure_ascii=False, indent=2))
           PY
       - uses: actions/upload-artifact@v4
