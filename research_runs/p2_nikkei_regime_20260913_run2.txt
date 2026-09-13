@@ -1,0 +1,2 @@
+trigger=2026-09-13T12:46:00+09:00
+workflow=p2_nikkei_regime_20260913.yml
