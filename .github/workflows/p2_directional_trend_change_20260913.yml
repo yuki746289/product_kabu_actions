@@ -1,0 +1,64 @@
+name: P2 directional trend change 20260913
+
+on:
+  push:
+    branches:
+      - research/p2-directional-trend-change-20260913
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-hypotheses-20260911
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pandas numpy tabulate yfinance
+      - name: Download canonical P2 features
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-stage-b-b9w-aggregate
+          path: core/data/diagnostics/p2_stage_b/directional_trend_input
+          repository: yuki746289/product_kabu_actions
+          run-id: 34681101657
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Syntax check
+        working-directory: core
+        run: python -m py_compile scripts/analyze_p2_directional_trend_change.py
+      - name: Run analysis
+        working-directory: core
+        run: python scripts/analyze_p2_directional_trend_change.py --features data/diagnostics/p2_stage_b/directional_trend_input/features.csv
+      - name: Verify result
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/directional_trend_change_20260913/status.json')
+          s=json.loads(p.read_text(encoding='utf-8'))
+          assert s['test']=='p2_directional_trend_change', s
+          assert s['overall_pass'] is True, s
+          assert s['future_context_violations']==0, s
+          print(json.dumps(s, ensure_ascii=False, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-directional-trend-change-20260913
+          path: core/data/diagnostics/p2_stage_b/directional_trend_change_20260913
+          retention-days: 7
