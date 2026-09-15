@@ -35,12 +35,16 @@ jobs:
         run: |
           python -m py_compile scripts/analyze_p2_nikkei_complete_baseline.py
           python -m py_compile scripts/augment_p2_nikkei_complete_daily_rci_groups.py
+          python -m py_compile scripts/finalize_p2_nikkei_complete_baseline.py
       - name: Run complete baseline analysis
         working-directory: core
         run: python scripts/analyze_p2_nikkei_complete_baseline.py
       - name: Enforce daily RCI position direction completeness
         working-directory: core
         run: python scripts/augment_p2_nikkei_complete_daily_rci_groups.py
+      - name: Finalize combination candidates and stability
+        working-directory: core
+        run: python scripts/finalize_p2_nikkei_complete_baseline.py
       - name: Verify complete baseline outputs
         working-directory: core
         run: |
@@ -50,13 +54,12 @@ jobs:
           from pathlib import Path
           out = Path('data/diagnostics/p2_stage_b/nikkei_complete_baseline_20260915')
           s = json.loads((out / 'status.json').read_text(encoding='utf-8'))
+          c = json.loads((out / 'completeness_status.json').read_text(encoding='utf-8'))
           assert s['test'] == 'p2_nikkei_complete_baseline', s
           assert s['baseline_signals'] == 890, s
           assert s['causal_violations'] == 0, s
           assert s['failures'] == 0, s
-          assert s['missing_artifacts'] == [], s
           assert s['daily_rci_group_completeness_pass'] is True, s
-          assert s['missing_daily_rci_group_features'] == [], s
           required = {
               f'daily_rci{span}_{group}'
               for span in (9, 14, 26)
@@ -67,8 +70,19 @@ jobs:
           assert required <= actual, sorted(required - actual)
           r26 = rep[(rep['feature'] == 'daily_rci26_direction') & (rep['category'] == 'RISING')]
           assert len(r26) == 1 and int(r26.iloc[0]['count']) == 100, r26.to_dict('records')
-          assert s['overall_pass'] is True, s
-          print(json.dumps(s, ensure_ascii=False, indent=2))
+          for f in (
+              'advantage_single_candidates.csv',
+              'advantage_pairwise_candidates.csv',
+              'advantage_triple_candidates.csv',
+              'combination_stability_summary.csv',
+              'combination_walkforward_results.csv',
+              'FINAL_REVIEW.md',
+          ):
+              assert (out / f).exists(), f
+          assert c['COMPLETENESS_STATUS'] == 'PASS', c
+          assert c['checks']['combination_stability_nonempty'] is True, c
+          assert c['checks']['combination_walkforward_nonempty'] is True, c
+          print(json.dumps(c, ensure_ascii=False, indent=2))
           print(r26.to_string(index=False))
           PY
       - uses: actions/upload-artifact@v4
