@@ -36,6 +36,7 @@ jobs:
           python -m py_compile scripts/analyze_p2_nikkei_complete_baseline.py
           python -m py_compile scripts/augment_p2_nikkei_complete_daily_rci_groups.py
           python -m py_compile scripts/finalize_p2_nikkei_complete_baseline.py
+          python -m py_compile scripts/append_p2_nikkei_monthly_report.py
       - name: Run complete baseline analysis
         working-directory: core
         run: python scripts/analyze_p2_nikkei_complete_baseline.py
@@ -45,6 +46,9 @@ jobs:
       - name: Finalize combination candidates and stability
         working-directory: core
         run: python scripts/finalize_p2_nikkei_complete_baseline.py
+      - name: Append monthly performance and stability report
+        working-directory: core
+        run: python scripts/append_p2_nikkei_monthly_report.py
       - name: Verify complete baseline outputs
         working-directory: core
         run: |
@@ -76,14 +80,26 @@ jobs:
               'advantage_triple_candidates.csv',
               'combination_stability_summary.csv',
               'combination_walkforward_results.csv',
+              'monthly_baseline_performance.csv',
+              'monthly_baseline_stability_summary.csv',
+              'month_of_year_baseline_summary.csv',
+              'monthly_candidate_stability_summary.csv',
               'FINAL_REVIEW.md',
+              'report.md',
           ):
               assert (out / f).exists(), f
+          monthly = pd.read_csv(out / 'monthly_baseline_performance.csv')
+          assert len(monthly) >= 100, len(monthly)
+          assert {'month','entries','win_5d_pct','win_10d_pct','win_20d_pct'} <= set(monthly.columns)
+          report = (out / 'report.md').read_text(encoding='utf-8')
+          assert '月別成績・安定性' in report
+          assert '月別（YYYY-MM）エントリー数・正解率・平均リターン' in report
           assert c['COMPLETENESS_STATUS'] == 'PASS', c
           assert c['checks']['combination_stability_nonempty'] is True, c
           assert c['checks']['combination_walkforward_nonempty'] is True, c
           print(json.dumps(c, ensure_ascii=False, indent=2))
           print(r26.to_string(index=False))
+          print(monthly.tail(12).to_string(index=False))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
