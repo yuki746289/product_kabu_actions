@@ -1,0 +1,58 @@
+name: P2 Nikkei RCI state 20260915
+
+on:
+  push:
+    branches:
+      - research/p2-nikkei-rci-20260915
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-nikkei-rci-20260915
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pandas numpy tabulate yfinance
+      - name: Syntax check
+        working-directory: core
+        run: python -m py_compile scripts/analyze_p2_nikkei_rci_state.py
+      - name: Run analysis
+        working-directory: core
+        run: python scripts/analyze_p2_nikkei_rci_state.py
+      - name: Verify result
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_stage_b/nikkei_rci_20260915/status.json')
+          s=json.loads(p.read_text(encoding='utf-8'))
+          assert s['test']=='p2_nikkei_rci_state', s
+          assert s['overall_pass'] is True, s
+          assert s['baseline_signals']==890, s
+          assert s['missing_rci_rows']==0, s
+          assert s['causal_violations']==0, s
+          print(json.dumps(s, ensure_ascii=False, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-nikkei-rci-20260915
+          path: core/data/diagnostics/p2_stage_b/nikkei_rci_20260915
+          retention-days: 7
