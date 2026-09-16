@@ -38,6 +38,7 @@ jobs:
           python -m py_compile scripts/finalize_p2_nikkei_complete_baseline.py
           python -m py_compile scripts/append_p2_nikkei_monthly_report.py
           python -m py_compile scripts/generate_p2_nikkei_html_report.py
+          python -m py_compile scripts/generate_p2_condition_drilldown.py
       - name: Run complete baseline analysis
         working-directory: core
         run: python scripts/analyze_p2_nikkei_complete_baseline.py
@@ -53,6 +54,9 @@ jobs:
       - name: Generate Japanese HTML report and detail tables
         working-directory: core
         run: python scripts/generate_p2_nikkei_html_report.py
+      - name: Generate clickable condition drilldown pages
+        working-directory: core
+        run: python scripts/generate_p2_condition_drilldown.py
       - name: Verify complete baseline outputs
         working-directory: core
         run: |
@@ -63,6 +67,7 @@ jobs:
           out = Path('data/diagnostics/p2_stage_b/nikkei_complete_baseline_20260915')
           s = json.loads((out / 'status.json').read_text(encoding='utf-8'))
           c = json.loads((out / 'completeness_status.json').read_text(encoding='utf-8'))
+          ri = json.loads((out / 'report_interaction_validation.json').read_text(encoding='utf-8'))
           assert s['test'] == 'p2_nikkei_complete_baseline', s
           assert s['baseline_signals'] == 890, s
           assert s['causal_violations'] == 0, s
@@ -89,6 +94,8 @@ jobs:
               'monthly_baseline_stability_summary.csv',
               'month_of_year_baseline_summary.csv',
               'monthly_candidate_stability_summary.csv',
+              'condition_detail_manifest.csv',
+              'report_interaction_validation.json',
               'FINAL_REVIEW.md',
               'report.html',
               'details/index.html',
@@ -96,11 +103,17 @@ jobs:
               'details/month_of_year_baseline_summary.html',
               'details/monthly_candidate_stability_summary.html',
               'details/monthly_stability.html',
+              'details/yearly_stability.html',
+              'details/rolling_3y_stability.html',
+              'details/rolling_5y_stability.html',
+              'details/regime_stability.html',
+              'details/walkforward_results.html',
+              'details/parameter_plateau.html',
+              'conditions/index.html',
           ):
               assert (out / f).exists(), f
           assert not (out / 'report.md').exists(), 'legacy report.md must not be canonical artifact output'
 
-          # The count columns must remain numeric in source CSVs; HTML is presentation-only.
           numeric_checks = {
               'all_single_categories.csv': ['count'],
               'all_pairwise_combinations.csv': ['count'],
@@ -109,6 +122,7 @@ jobs:
               'monthly_stability.csv': ['count'],
               'monthly_candidate_stability_summary.csv': ['total_count','active_months'],
               'monthly_baseline_performance.csv': ['entries'],
+              'condition_detail_manifest.csv': ['count'],
           }
           for filename, cols in numeric_checks.items():
               df = pd.read_csv(out / filename)
@@ -118,13 +132,35 @@ jobs:
           monthly = pd.read_csv(out / 'monthly_baseline_performance.csv')
           assert len(monthly) >= 100, len(monthly)
           assert {'month','entries','win_5d_pct','win_10d_pct','win_20d_pct'} <= set(monthly.columns)
+
           report = (out / 'report.html').read_text(encoding='utf-8')
           for token in (
               '概要', '結論', '月次安定性の要約', 'エントリー数', '正解率',
+              '条件別結果', 'conditions/index.html',
               'details/monthly_baseline_performance.html',
               'details/monthly_candidate_stability_summary.html',
           ):
               assert token in report, token
+
+          cond_index = (out / 'conditions/index.html').read_text(encoding='utf-8')
+          for token in ('条件別結果一覧','条件','種別','件数','正解率'):
+              assert token in cond_index, token
+
+          manifest = pd.read_csv(out / 'condition_detail_manifest.csv')
+          assert len(manifest) > 0, 'no condition detail pages'
+          for slug in manifest['slug'].astype(str):
+              p = out / 'conditions' / f'{slug}.html'
+              assert p.exists(), p
+              text = p.read_text(encoding='utf-8')
+              for token in ('詳細結果を選択','概要','月別','年別','Rolling 3年','Rolling 5年','相場状態別'):
+                  assert token in text, (slug, token)
+
+          assert ri['REPORT_COMPLETENESS_STATUS'] == 'PASS', ri
+          assert ri['clickable_conditions'] == ri['condition_detail_pages'] > 0, ri
+          assert ri['broken_condition_links'] == 0, ri
+          assert ri['missing_detail_ui'] == [], ri
+          assert ri['japanese_header_failures'] == [], ri
+
           detail = (out / 'details/monthly_candidate_stability_summary.html').read_text(encoding='utf-8')
           for token in ('稼働月数','月次安定度','基準超過月率'):
               assert token in detail, token
@@ -132,6 +168,7 @@ jobs:
           assert c['checks']['combination_stability_nonempty'] is True, c
           assert c['checks']['combination_walkforward_nonempty'] is True, c
           print(json.dumps(c, ensure_ascii=False, indent=2))
+          print(json.dumps(ri, ensure_ascii=False, indent=2))
           print(r26.to_string(index=False))
           print(monthly.tail(12).to_string(index=False))
           PY
