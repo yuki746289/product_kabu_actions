@@ -39,6 +39,8 @@ jobs:
           python -m py_compile scripts/append_p2_nikkei_monthly_report.py
           python -m py_compile scripts/generate_p2_nikkei_html_report.py
           python -m py_compile scripts/generate_p2_condition_drilldown.py
+          python -m py_compile scripts/refine_p2_report_information_architecture.py
+          python -m py_compile scripts/run_p2_report_information_architecture.py
       - name: Run complete baseline analysis
         working-directory: core
         run: python scripts/analyze_p2_nikkei_complete_baseline.py
@@ -57,6 +59,9 @@ jobs:
       - name: Generate clickable condition drilldown pages
         working-directory: core
         run: python scripts/generate_p2_condition_drilldown.py
+      - name: Refine overview-to-detail information architecture
+        working-directory: core
+        run: python scripts/run_p2_report_information_architecture.py
       - name: Verify complete baseline outputs
         working-directory: core
         run: |
@@ -73,61 +78,38 @@ jobs:
           assert s['causal_violations'] == 0, s
           assert s['failures'] == 0, s
           assert s['daily_rci_group_completeness_pass'] is True, s
-          required = {
-              f'daily_rci{span}_{group}'
-              for span in (9, 14, 26)
-              for group in ('position', 'direction', 'state')
-          }
+          required = {f'daily_rci{span}_{group}' for span in (9,14,26) for group in ('position','direction','state')}
           rep = pd.read_csv(out / 'representative_single_categories.csv')
           actual = set(rep['feature'].astype(str))
-          assert required <= actual, sorted(required - actual)
-          r26 = rep[(rep['feature'] == 'daily_rci26_direction') & (rep['category'] == 'RISING')]
-          assert len(r26) == 1 and int(r26.iloc[0]['count']) == 100, r26.to_dict('records')
+          assert required <= actual, sorted(required-actual)
+          r26 = rep[(rep['feature']=='daily_rci26_direction') & (rep['category']=='RISING')]
+          assert len(r26)==1 and int(r26.iloc[0]['count'])==100, r26.to_dict('records')
 
           for f in (
-              'advantage_single_candidates.csv',
-              'advantage_pairwise_candidates.csv',
-              'advantage_triple_candidates.csv',
-              'combination_stability_summary.csv',
-              'combination_walkforward_results.csv',
-              'monthly_baseline_performance.csv',
-              'monthly_baseline_stability_summary.csv',
-              'month_of_year_baseline_summary.csv',
-              'monthly_candidate_stability_summary.csv',
-              'condition_detail_manifest.csv',
-              'report_interaction_validation.json',
-              'FINAL_REVIEW.md',
-              'report.html',
-              'details/index.html',
-              'details/monthly_baseline_performance.html',
-              'details/month_of_year_baseline_summary.html',
-              'details/monthly_candidate_stability_summary.html',
-              'details/monthly_stability.html',
-              'details/yearly_stability.html',
-              'details/rolling_3y_stability.html',
-              'details/rolling_5y_stability.html',
-              'details/regime_stability.html',
-              'details/walkforward_results.html',
-              'details/parameter_plateau.html',
-              'conditions/index.html',
+              'advantage_single_candidates.csv','advantage_pairwise_candidates.csv','advantage_triple_candidates.csv',
+              'combination_stability_summary.csv','combination_walkforward_results.csv',
+              'monthly_baseline_performance.csv','monthly_baseline_stability_summary.csv','month_of_year_baseline_summary.csv',
+              'monthly_candidate_stability_summary.csv','condition_detail_manifest.csv','report_interaction_validation.json',
+              'FINAL_REVIEW.md','report.html','details/index.html','details/monthly_baseline_performance.html',
+              'details/month_of_year_baseline_summary.html','details/monthly_candidate_stability_summary.html',
+              'details/monthly_stability.html','details/yearly_stability.html','details/rolling_3y_stability.html',
+              'details/rolling_5y_stability.html','details/regime_stability.html','details/walkforward_results.html',
+              'details/parameter_plateau.html','conditions/index.html',
+              'summaries/single_features.html','summaries/pair_features.html','summaries/triple_features.html',
           ):
               assert (out / f).exists(), f
           assert not (out / 'report.md').exists(), 'legacy report.md must not be canonical artifact output'
 
           numeric_checks = {
-              'all_single_categories.csv': ['count'],
-              'all_pairwise_combinations.csv': ['count'],
-              'tested_triple_combinations.csv': ['count'],
-              'candidate_registry.csv': ['count'],
-              'monthly_stability.csv': ['count'],
-              'monthly_candidate_stability_summary.csv': ['total_count','active_months'],
-              'monthly_baseline_performance.csv': ['entries'],
-              'condition_detail_manifest.csv': ['count'],
+              'all_single_categories.csv':['count'],'all_pairwise_combinations.csv':['count'],'tested_triple_combinations.csv':['count'],
+              'candidate_registry.csv':['count'],'monthly_stability.csv':['count'],
+              'monthly_candidate_stability_summary.csv':['total_count','active_months'],
+              'monthly_baseline_performance.csv':['entries'],'condition_detail_manifest.csv':['count'],
           }
           for filename, cols in numeric_checks.items():
               df = pd.read_csv(out / filename)
               for col in cols:
-                  assert pd.to_numeric(df[col], errors='coerce').notna().all(), (filename, col)
+                  assert pd.to_numeric(df[col],errors='coerce').notna().all(), (filename,col)
 
           monthly = pd.read_csv(out / 'monthly_baseline_performance.csv')
           assert len(monthly) >= 100, len(monthly)
@@ -135,42 +117,47 @@ jobs:
 
           report = (out / 'report.html').read_text(encoding='utf-8')
           for token in (
-              '概要', '結論', '月次安定性の要約', 'エントリー数', '正解率',
-              '条件別結果', 'conditions/index.html',
-              'details/monthly_baseline_performance.html',
-              'details/monthly_candidate_stability_summary.html',
+              '概要','結論','主要な単独優位性候補','全体に対する割合','全月平均エントリー数','全月エントリー数中央値',
+              '条件別結果','conditions/index.html','summaries/pair_features.html',
+              'details/monthly_baseline_performance.html','details/monthly_candidate_stability_summary.html',
           ):
               assert token in report, token
+          assert 'weekly_rci26' not in report, 'user-facing indicator labels must be Japanese'
+          assert 'daily_rci26_direction' not in report, 'user-facing indicator labels must be Japanese'
 
           cond_index = (out / 'conditions/index.html').read_text(encoding='utf-8')
-          for token in ('条件別結果一覧','条件','種別','件数','正解率'):
+          for token in ('条件別結果一覧','条件','種別','件数','正解率','全体に対する割合','月稼働率','全月平均エントリー数'):
               assert token in cond_index, token
 
           manifest = pd.read_csv(out / 'condition_detail_manifest.csv')
-          assert len(manifest) > 0, 'no condition detail pages'
+          assert len(manifest)>0, 'no condition detail pages'
           for slug in manifest['slug'].astype(str):
               p = out / 'conditions' / f'{slug}.html'
               assert p.exists(), p
               text = p.read_text(encoding='utf-8')
-              for token in ('詳細結果を選択','概要','月別','年別','Rolling 3年','Rolling 5年','相場状態別'):
-                  assert token in text, (slug, token)
+              for token in ('詳細結果を選択','概要','月別','年別','Rolling 3年','Rolling 5年','相場状態別','全期間月数','全月平均エントリー数'):
+                  assert token in text, (slug,token)
 
-          assert ri['REPORT_COMPLETENESS_STATUS'] == 'PASS', ri
-          assert ri['clickable_conditions'] == ri['condition_detail_pages'] > 0, ri
-          assert ri['broken_condition_links'] == 0, ri
-          assert ri['missing_detail_ui'] == [], ri
-          assert ri['japanese_header_failures'] == [], ri
+          assert ri['REPORT_COMPLETENESS_STATUS']=='PASS', ri
+          assert ri['clickable_conditions']==ri['condition_detail_pages']>0, ri
+          assert ri['broken_condition_links']==0, ri
+          assert ri['missing_detail_ui']==[], ri
+          assert ri['japanese_header_failures']==[], ri
+          assert ri['information_architecture']=='overview_to_feature_group_to_condition_to_detail', ri
+          assert ri['all_month_zero_included_metrics'] is True, ri
+          assert ri['feature_labels_japanese'] is True, ri
+          assert ri['large_table_hierarchy'] is True, ri
+          assert ri['feature_group_counts']['pair'] > 0, ri
+          assert ri['feature_group_counts']['triple'] > 0, ri
 
           detail = (out / 'details/monthly_candidate_stability_summary.html').read_text(encoding='utf-8')
           for token in ('稼働月数','月次安定度','基準超過月率'):
               assert token in detail, token
-          assert c['COMPLETENESS_STATUS'] == 'PASS', c
+          assert c['COMPLETENESS_STATUS']=='PASS', c
           assert c['checks']['combination_stability_nonempty'] is True, c
           assert c['checks']['combination_walkforward_nonempty'] is True, c
-          print(json.dumps(c, ensure_ascii=False, indent=2))
-          print(json.dumps(ri, ensure_ascii=False, indent=2))
-          print(r26.to_string(index=False))
-          print(monthly.tail(12).to_string(index=False))
+          print(json.dumps(c,ensure_ascii=False,indent=2))
+          print(json.dumps(ri,ensure_ascii=False,indent=2))
           PY
 
       - name: Publish pre-generated static HTML to product_kabu
@@ -181,26 +168,21 @@ jobs:
           PREVIEW="preview/kabu"
           rm -rf "$PREVIEW"
           mkdir -p "$PREVIEW"
-
           while IFS= read -r -d '' file; do
             rel="${file#$OUT/}"
             mkdir -p "$PREVIEW/$(dirname "$rel")"
             cp "$file" "$PREVIEW/$rel"
           done < <(find "$OUT" -type f -name '*.html' -print0)
-
           cp "$OUT/report.html" "$PREVIEW/index.html"
-          printf 'Generated by P2 complete-baseline workflow\nRun: %s\nSource revision: %s\n' \
-            "${{ github.run_id }}" "$(git rev-parse HEAD)" > "$PREVIEW/GENERATED.txt"
-
+          printf 'Generated by P2 complete-baseline workflow\nRun: %s\nSource revision: %s\n' "${{ github.run_id }}" "$(git rev-parse HEAD)" > "$PREVIEW/GENERATED.txt"
           test -f "$PREVIEW/report.html"
           test -f "$PREVIEW/index.html"
           test -f "$PREVIEW/conditions/index.html"
           test -f "$PREVIEW/details/index.html"
-
+          test -f "$PREVIEW/summaries/pair_features.html"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A preview/kabu
-
           if git diff --cached --quiet; then
             echo "Static preview is already up to date."
           else
