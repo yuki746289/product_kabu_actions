@@ -37,6 +37,7 @@ jobs:
           python -m py_compile scripts/augment_p2_nikkei_complete_daily_rci_groups.py
           python -m py_compile scripts/finalize_p2_nikkei_complete_baseline.py
           python -m py_compile scripts/append_p2_nikkei_monthly_report.py
+          python -m py_compile scripts/fix_p2_nikkei_report_markdown_pipes.py
       - name: Run complete baseline analysis
         working-directory: core
         run: python scripts/analyze_p2_nikkei_complete_baseline.py
@@ -49,6 +50,9 @@ jobs:
       - name: Append monthly performance and stability report
         working-directory: core
         run: python scripts/append_p2_nikkei_monthly_report.py
+      - name: Fix Markdown category pipes and validate count columns
+        working-directory: core
+        run: python scripts/fix_p2_nikkei_report_markdown_pipes.py
       - name: Verify complete baseline outputs
         working-directory: core
         run: |
@@ -59,6 +63,7 @@ jobs:
           out = Path('data/diagnostics/p2_stage_b/nikkei_complete_baseline_20260915')
           s = json.loads((out / 'status.json').read_text(encoding='utf-8'))
           c = json.loads((out / 'completeness_status.json').read_text(encoding='utf-8'))
+          fmt = json.loads((out / 'report_format_validation.json').read_text(encoding='utf-8'))
           assert s['test'] == 'p2_nikkei_complete_baseline', s
           assert s['baseline_signals'] == 890, s
           assert s['causal_violations'] == 0, s
@@ -84,6 +89,7 @@ jobs:
               'monthly_baseline_stability_summary.csv',
               'month_of_year_baseline_summary.csv',
               'monthly_candidate_stability_summary.csv',
+              'report_format_validation.json',
               'FINAL_REVIEW.md',
               'report.md',
           ):
@@ -94,10 +100,15 @@ jobs:
           report = (out / 'report.md').read_text(encoding='utf-8')
           assert '月別成績・安定性' in report
           assert '月別（YYYY-MM）エントリー数・正解率・平均リターン' in report
+          assert 'HIGH\\|UP' in report or 'LOW\\|RISING' in report, 'escaped category pipe not found in report'
+          assert fmt['overall_pass'] is True, fmt
+          assert fmt['numeric_count_validation_failures'] == [], fmt
+          assert fmt['unescaped_category_pipe_lines'] == {}, fmt
           assert c['COMPLETENESS_STATUS'] == 'PASS', c
           assert c['checks']['combination_stability_nonempty'] is True, c
           assert c['checks']['combination_walkforward_nonempty'] is True, c
           print(json.dumps(c, ensure_ascii=False, indent=2))
+          print(json.dumps(fmt, ensure_ascii=False, indent=2))
           print(r26.to_string(index=False))
           print(monthly.tail(12).to_string(index=False))
           PY
