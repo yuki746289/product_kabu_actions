@@ -37,7 +37,7 @@ jobs:
           python -m py_compile scripts/augment_p2_nikkei_complete_daily_rci_groups.py
           python -m py_compile scripts/finalize_p2_nikkei_complete_baseline.py
           python -m py_compile scripts/append_p2_nikkei_monthly_report.py
-          python -m py_compile scripts/fix_p2_nikkei_report_markdown_pipes.py
+          python -m py_compile scripts/generate_p2_nikkei_html_report.py
       - name: Run complete baseline analysis
         working-directory: core
         run: python scripts/analyze_p2_nikkei_complete_baseline.py
@@ -47,12 +47,12 @@ jobs:
       - name: Finalize combination candidates and stability
         working-directory: core
         run: python scripts/finalize_p2_nikkei_complete_baseline.py
-      - name: Append monthly performance and stability report
+      - name: Build monthly performance and stability data
         working-directory: core
         run: python scripts/append_p2_nikkei_monthly_report.py
-      - name: Fix Markdown category pipes and validate count columns
+      - name: Generate Japanese HTML report and detail tables
         working-directory: core
-        run: python scripts/fix_p2_nikkei_report_markdown_pipes.py
+        run: python scripts/generate_p2_nikkei_html_report.py
       - name: Verify complete baseline outputs
         working-directory: core
         run: |
@@ -63,7 +63,6 @@ jobs:
           out = Path('data/diagnostics/p2_stage_b/nikkei_complete_baseline_20260915')
           s = json.loads((out / 'status.json').read_text(encoding='utf-8'))
           c = json.loads((out / 'completeness_status.json').read_text(encoding='utf-8'))
-          fmt = json.loads((out / 'report_format_validation.json').read_text(encoding='utf-8'))
           assert s['test'] == 'p2_nikkei_complete_baseline', s
           assert s['baseline_signals'] == 890, s
           assert s['causal_violations'] == 0, s
@@ -79,6 +78,7 @@ jobs:
           assert required <= actual, sorted(required - actual)
           r26 = rep[(rep['feature'] == 'daily_rci26_direction') & (rep['category'] == 'RISING')]
           assert len(r26) == 1 and int(r26.iloc[0]['count']) == 100, r26.to_dict('records')
+
           for f in (
               'advantage_single_candidates.csv',
               'advantage_pairwise_candidates.csv',
@@ -89,26 +89,49 @@ jobs:
               'monthly_baseline_stability_summary.csv',
               'month_of_year_baseline_summary.csv',
               'monthly_candidate_stability_summary.csv',
-              'report_format_validation.json',
               'FINAL_REVIEW.md',
-              'report.md',
+              'report.html',
+              'details/index.html',
+              'details/monthly_baseline_performance.html',
+              'details/month_of_year_baseline_summary.html',
+              'details/monthly_candidate_stability_summary.html',
+              'details/monthly_stability.html',
           ):
               assert (out / f).exists(), f
+          assert not (out / 'report.md').exists(), 'legacy report.md must not be canonical artifact output'
+
+          # The count columns must remain numeric in source CSVs; HTML is presentation-only.
+          numeric_checks = {
+              'all_single_categories.csv': ['count'],
+              'all_pairwise_combinations.csv': ['count'],
+              'tested_triple_combinations.csv': ['count'],
+              'candidate_registry.csv': ['count'],
+              'monthly_stability.csv': ['count'],
+              'monthly_candidate_stability_summary.csv': ['total_count','active_months'],
+              'monthly_baseline_performance.csv': ['entries'],
+          }
+          for filename, cols in numeric_checks.items():
+              df = pd.read_csv(out / filename)
+              for col in cols:
+                  assert pd.to_numeric(df[col], errors='coerce').notna().all(), (filename, col)
+
           monthly = pd.read_csv(out / 'monthly_baseline_performance.csv')
           assert len(monthly) >= 100, len(monthly)
           assert {'month','entries','win_5d_pct','win_10d_pct','win_20d_pct'} <= set(monthly.columns)
-          report = (out / 'report.md').read_text(encoding='utf-8')
-          assert '月別成績・安定性' in report
-          assert '月別（YYYY-MM）エントリー数・正解率・平均リターン' in report
-          assert 'HIGH\\|UP' in report or 'LOW\\|RISING' in report, 'escaped category pipe not found in report'
-          assert fmt['overall_pass'] is True, fmt
-          assert fmt['numeric_count_validation_failures'] == [], fmt
-          assert fmt['unescaped_category_pipe_lines'] == {}, fmt
+          report = (out / 'report.html').read_text(encoding='utf-8')
+          for token in (
+              '概要', '結論', '月次安定性の要約', 'エントリー数', '正解率',
+              'details/monthly_baseline_performance.html',
+              'details/monthly_candidate_stability_summary.html',
+          ):
+              assert token in report, token
+          detail = (out / 'details/monthly_candidate_stability_summary.html').read_text(encoding='utf-8')
+          for token in ('稼働月数','月次安定度','基準超過月率'):
+              assert token in detail, token
           assert c['COMPLETENESS_STATUS'] == 'PASS', c
           assert c['checks']['combination_stability_nonempty'] is True, c
           assert c['checks']['combination_walkforward_nonempty'] is True, c
           print(json.dumps(c, ensure_ascii=False, indent=2))
-          print(json.dumps(fmt, ensure_ascii=False, indent=2))
           print(r26.to_string(index=False))
           print(monthly.tail(12).to_string(index=False))
           PY
