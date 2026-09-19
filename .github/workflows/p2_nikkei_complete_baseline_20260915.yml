@@ -41,6 +41,7 @@ jobs:
           python -m py_compile scripts/generate_p2_condition_drilldown.py
           python -m py_compile scripts/refine_p2_report_information_architecture.py
           python -m py_compile scripts/run_p2_report_information_architecture.py
+          python -m py_compile scripts/analyze_p2_or_combinations.py
       - name: Run complete baseline analysis
         working-directory: core
         run: python scripts/analyze_p2_nikkei_complete_baseline.py
@@ -96,6 +97,9 @@ jobs:
               'details/rolling_5y_stability.html','details/regime_stability.html','details/walkforward_results.html',
               'details/parameter_plateau.html','conditions/index.html',
               'summaries/single_features.html','summaries/pair_features.html','summaries/triple_features.html',
+              'or_pairwise_all.csv','or_triple_all.csv','or_pairwise_unique.csv','or_triple_unique.csv',
+              'or_candidate_summary.csv','or_analysis_status.json',
+              'analysis/or_combinations.html','analysis/or_pairwise_all.html','analysis/or_triple_all.html',
           ):
               assert (out / f).exists(), f
           assert not (out / 'report.md').exists(), 'legacy report.md must not be canonical artifact output'
@@ -105,6 +109,9 @@ jobs:
               'candidate_registry.csv':['count'],'monthly_stability.csv':['count'],
               'monthly_candidate_stability_summary.csv':['total_count','active_months'],
               'monthly_baseline_performance.csv':['entries'],'condition_detail_manifest.csv':['count'],
+              'or_pairwise_all.csv':['count','max_component_count','incremental_entries_vs_largest'],
+              'or_triple_all.csv':['count','max_component_count','incremental_entries_vs_largest'],
+              'or_candidate_summary.csv':['count','active_months','total_months'],
           }
           for filename, cols in numeric_checks.items():
               df = pd.read_csv(out / filename)
@@ -120,10 +127,28 @@ jobs:
               '概要','結論','主要な単独優位性候補','全体に対する割合','全月平均エントリー数','全月エントリー数中央値',
               '条件別結果','conditions/index.html','summaries/pair_features.html',
               'details/monthly_baseline_performance.html','details/monthly_candidate_stability_summary.html',
+              'analysis/or_combinations.html',
           ):
               assert token in report, token
           assert 'weekly_rci26' not in report, 'user-facing indicator labels must be Japanese'
           assert 'daily_rci26_direction' not in report, 'user-facing indicator labels must be Japanese'
+          assert 'analysis/or_combinations.html' in report, 'OR analysis link missing from report'
+
+          or_status = json.loads((out / 'or_analysis_status.json').read_text(encoding='utf-8'))
+          assert or_status['component_min_count'] == 20, or_status
+          assert or_status['component_pool'] > 0, or_status
+          assert or_status['or2_unique'] > 0 and or_status['or3_unique'] > 0, or_status
+          assert or_status['candidate_summary_rows'] > 0, or_status
+          assert or_status['detail_pages'] > 0, or_status
+          assert or_status['production_changed'] is False, or_status
+          or_html = (out / 'analysis/or_combinations.html').read_text(encoding='utf-8')
+          for token in ('OR組み合わせ検証','件数 × 正解率のバランス候補','件数拡大型','高正解率型','OR2 全結果','OR3 全結果'):
+              assert token in or_html, token
+          detail_files = sorted((out / 'analysis/or_details').glob('*.html'))
+          assert len(detail_files) == or_status['detail_pages'], (len(detail_files), or_status)
+          sample_or_detail = detail_files[0].read_text(encoding='utf-8')
+          for token in ('詳細結果を選択','月別','年別','シグナル明細','best単独差'):
+              assert token in sample_or_detail, token
 
           signals = pd.read_csv(out / 'signal_level_features.csv')
           signal_dates = pd.to_datetime(signals['as_of'], errors='raise')
@@ -188,6 +213,9 @@ jobs:
           test -f "$PREVIEW/conditions/index.html"
           test -f "$PREVIEW/details/index.html"
           test -f "$PREVIEW/summaries/pair_features.html"
+          test -f "$PREVIEW/analysis/or_combinations.html"
+          test -f "$PREVIEW/analysis/or_pairwise_all.html"
+          test -f "$PREVIEW/analysis/or_triple_all.html"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A preview/kabu
