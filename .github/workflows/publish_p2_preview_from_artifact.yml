@@ -40,7 +40,7 @@ jobs:
       - name: Install lightweight report dependencies
         run: python -m pip install --disable-pip-version-check pandas numpy tabulate yfinance
 
-      - name: Regenerate OR HTML only from completed artifact
+      - name: Regenerate all P2 HTML from completed artifact
         working-directory: core
         run: |
           set -euo pipefail
@@ -48,13 +48,29 @@ jobs:
           rm -rf "$OUT"
           mkdir -p "$OUT"
           cp -a ../generated/. "$OUT/"
+
+          python -m py_compile \
+            scripts/generate_p2_nikkei_html_report.py \
+            scripts/generate_p2_condition_drilldown.py \
+            scripts/refine_p2_report_information_architecture.py \
+            scripts/analyze_p2_or_combinations.py
+
+          python scripts/generate_p2_nikkei_html_report.py
+          python scripts/generate_p2_condition_drilldown.py
+          python scripts/refine_p2_report_information_architecture.py
           python scripts/analyze_p2_or_combinations.py
 
-          grep -q 'or-head-scroll' "$OUT/analysis/or_pairwise_all.html"
-          grep -q 'or-body-scroll' "$OUT/analysis/or_pairwise_all.html"
-          grep -q 'hlBottom' "$OUT/analysis/or_pairwise_all.html"
-          grep -q 'or-head-scroll' "$OUT/analysis/or_triple_all.html"
-          grep -q 'or-body-scroll' "$OUT/analysis/or_triple_all.html"
+          grep -q 'table-group-row' "$OUT/report.html"
+          grep -q 'group-start' "$OUT/report.html"
+          grep -q 'table-group-row' "$OUT/details/monthly_baseline_performance.html"
+          grep -q 'group-start' "$OUT/details/monthly_baseline_performance.html"
+          grep -q 'table-group-row' "$OUT/conditions/index.html"
+          grep -q 'group-start' "$OUT/conditions/index.html"
+          grep -q 'table-group-row' "$OUT/summaries/single_features.html"
+          grep -q 'group-start' "$OUT/summaries/single_features.html"
+          grep -q 'or-group-row' "$OUT/analysis/or_pairwise_all.html"
+          grep -q 'group-start' "$OUT/analysis/or_pairwise_all.html"
+          grep -q 'or-group-row' "$OUT/analysis/or_triple_all.html"
 
       - name: Publish static HTML preview
         working-directory: core
@@ -75,7 +91,7 @@ jobs:
           done < <(find "$OUT" -type f -name '*.html' -print0)
 
           cp "$OUT/report.html" "$PREVIEW/index.html"
-          printf 'Generated from completed artifact with latest OR UI\nSource run: 35813159518\n' > "$PREVIEW/GENERATED.txt"
+          printf 'Generated from completed artifact with grouped P2 table UI\nSource run: 35813159518\n' > "$PREVIEW/GENERATED.txt"
 
           test -f "$PREVIEW/report.html"
           test -f "$PREVIEW/analysis/or_combinations.html"
@@ -92,6 +108,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Static preview is already up to date."
           else
-            git commit -m "report: publish split-scroll P2 OR preview"
+            git commit -m "report: publish grouped P2 table preview"
             git push origin HEAD:research/p2-nikkei-complete-baseline-20260915
           fi
