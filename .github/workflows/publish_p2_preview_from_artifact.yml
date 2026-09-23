@@ -53,11 +53,13 @@ jobs:
             scripts/generate_p2_nikkei_html_report.py \
             scripts/generate_p2_condition_drilldown.py \
             scripts/refine_p2_report_information_architecture.py \
+            scripts/generate_p2_high_entry_accuracy_report.py \
             scripts/analyze_p2_or_combinations.py
 
           python scripts/generate_p2_nikkei_html_report.py
           python scripts/generate_p2_condition_drilldown.py
           python scripts/refine_p2_report_information_architecture.py
+          python scripts/generate_p2_high_entry_accuracy_report.py
           python scripts/analyze_p2_or_combinations.py
 
           grep -q 'table-group-row' "$OUT/report.html"
@@ -68,6 +70,8 @@ jobs:
           grep -q 'group-start' "$OUT/conditions/index.html"
           grep -q 'table-group-row' "$OUT/summaries/single_features.html"
           grep -q 'group-start' "$OUT/summaries/single_features.html"
+          grep -q 'table-group-row' "$OUT/analysis/high_entry_accuracy.html"
+          grep -q 'group-start' "$OUT/analysis/high_entry_accuracy.html"
           grep -q 'or-group-row' "$OUT/analysis/or_pairwise_all.html"
           grep -q 'group-start' "$OUT/analysis/or_pairwise_all.html"
           grep -q 'or-group-row' "$OUT/analysis/or_triple_all.html"
