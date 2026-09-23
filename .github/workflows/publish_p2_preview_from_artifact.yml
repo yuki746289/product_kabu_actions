@@ -50,6 +50,7 @@ jobs:
           cp -a ../generated/. "$OUT/"
 
           python -m py_compile \
+            scripts/p2_monthly_chart.py \
             scripts/generate_p2_nikkei_html_report.py \
             scripts/generate_p2_condition_drilldown.py \
             scripts/refine_p2_report_information_architecture.py \
@@ -75,6 +76,19 @@ jobs:
           grep -q 'or-group-row' "$OUT/analysis/or_pairwise_all.html"
           grep -q 'group-start' "$OUT/analysis/or_pairwise_all.html"
           grep -q 'or-group-row' "$OUT/analysis/or_triple_all.html"
+
+          COND_CHART="$(find "$OUT/conditions/charts" -type f -name '*.html' -print -quit)"
+          test -n "$COND_CHART"
+          grep -q '基準月からの累積勝率' "$COND_CHART"
+          grep -q '棒グラフ' "$COND_CHART"
+          grep -q '折れ線グラフ' "$COND_CHART"
+          grep -q '直近24か月' "$COND_CHART"
+          grep -q 'target="_blank"' "$OUT/conditions/index.html"
+
+          OR_CHART="$(find "$OUT/analysis/or_charts" -type f -name '*.html' -print -quit)"
+          test -n "$OR_CHART"
+          grep -q '基準月からの累積勝率' "$OR_CHART"
+          grep -q '単月勝率' "$OR_CHART"
 
       - name: Publish static HTML preview
         working-directory: core
@@ -112,6 +126,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Static preview is already up to date."
           else
-            git commit -m "report: publish grouped P2 table preview"
+            git commit -m "report: publish P2 monthly chart preview"
             git push origin HEAD:research/p2-nikkei-complete-baseline-20260915
           fi
