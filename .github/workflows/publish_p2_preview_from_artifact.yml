@@ -65,8 +65,13 @@ jobs:
 
           grep -q 'table-group-row' "$OUT/report.html"
           grep -q 'group-start' "$OUT/report.html"
+          test -f "$OUT/index.html"
+          grep -q '分析対象を選択してください' "$OUT/index.html"
+          grep -q 'reportSwitch' "$OUT/index.html"
           grep -q '基準分析結果・完全版 Stage B' "$OUT/report.html"
+          grep -q 'reportSwitch' "$OUT/report.html"
           test -f "$OUT/report_all_period.html"
+          grep -q 'reportSwitch' "$OUT/report_all_period.html"
           grep -q 'P2 日経平均 基準分析結果 2008 - 2026' "$OUT/report_all_period.html"
           grep -q '相場状態で母集団を分割せず' "$OUT/report_all_period.html"
           grep -q 'table-group-row' "$OUT/details/monthly_baseline_performance.html"
@@ -112,9 +117,12 @@ jobs:
             cp "$file" "$PREVIEW/$rel"
           done < <(find "$OUT" -type f -name '*.html' -print0)
 
-          cp "$OUT/report.html" "$PREVIEW/index.html"
           printf 'Generated from completed artifact with grouped P2 table UI\nSource run: 35813159518\n' > "$PREVIEW/GENERATED.txt"
 
+          test -f "$PREVIEW/index.html"
+          grep -q '分析対象を選択してください' "$PREVIEW/index.html"
+          grep -q 'report_all_period.html' "$PREVIEW/index.html"
+          grep -q 'report.html' "$PREVIEW/index.html"
           test -f "$PREVIEW/report.html"
           test -f "$PREVIEW/report_all_period.html"
           grep -q '基準分析結果・完全版 Stage B' "$PREVIEW/report.html"
