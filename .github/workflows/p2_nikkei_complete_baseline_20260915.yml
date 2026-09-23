@@ -146,7 +146,7 @@ jobs:
               assert token in or_html, token
           for page_name in ('or_pairwise_all.html','or_triple_all.html'):
               page = (out / 'analysis' / page_name).read_text(encoding='utf-8')
-              for token in ('並び順','総合指数','pvTop','nxTop','or-scroll','3期間平均正解率'):
+              for token in ('並び順','総合指数','pvTop','nxTop','or-head-scroll','or-body-scroll','hlBottom','横へ →','3期間平均正解率'):
                   assert token in page, (page_name, token)
           detail_files = sorted((out / 'analysis/or_details').glob('*.html'))
           assert len(detail_files) == or_status['detail_pages'], (len(detail_files), or_status)
