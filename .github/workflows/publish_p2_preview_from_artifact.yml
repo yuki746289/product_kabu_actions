@@ -1,0 +1,72 @@
+name: Publish P2 preview from completed artifact
+
+on:
+  push:
+    branches:
+      - research/p2-nikkei-complete-baseline-20260915
+    paths:
+      - .github/workflows/publish_p2_preview_from_artifact.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download completed P2 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-nikkei-complete-baseline-20260915
+          path: generated
+          github-token: ${{ github.token }}
+          repository: yuki746289/product_kabu_actions
+          run-id: 35813159518
+
+      - name: Checkout product_kabu latest research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-nikkei-complete-baseline-20260915
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+
+      - name: Publish static HTML preview
+        working-directory: core
+        run: |
+          set -euo pipefail
+          PREVIEW="preview/kabu"
+          GENERATED="../generated"
+
+          git fetch origin research/p2-nikkei-complete-baseline-20260915
+          git reset --hard origin/research/p2-nikkei-complete-baseline-20260915
+
+          rm -rf "$PREVIEW"
+          mkdir -p "$PREVIEW"
+          while IFS= read -r -d '' file; do
+            rel="${file#$GENERATED/}"
+            mkdir -p "$PREVIEW/$(dirname "$rel")"
+            cp "$file" "$PREVIEW/$rel"
+          done < <(find "$GENERATED" -type f -name '*.html' -print0)
+
+          cp "$GENERATED/report.html" "$PREVIEW/index.html"
+          printf 'Generated from completed artifact\nSource run: 35813159518\n' > "$PREVIEW/GENERATED.txt"
+
+          test -f "$PREVIEW/report.html"
+          test -f "$PREVIEW/analysis/or_combinations.html"
+          test -f "$PREVIEW/analysis/or_pairwise_all.html"
+          test -f "$PREVIEW/analysis/or_triple_all.html"
+          grep -q '総合指数' "$PREVIEW/analysis/or_pairwise_all.html"
+          grep -q 'pvTop' "$PREVIEW/analysis/or_pairwise_all.html"
+          grep -q 'or-scroll' "$PREVIEW/analysis/or_triple_all.html"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A preview/kabu
+          if git diff --cached --quiet; then
+            echo "Static preview is already up to date."
+          else
+            git commit -m "report: publish P2 OR sortable preview"
+            git push origin HEAD:research/p2-nikkei-complete-baseline-20260915
+          fi
