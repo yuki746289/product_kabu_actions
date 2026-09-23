@@ -203,6 +203,11 @@ jobs:
           set -euo pipefail
           OUT="data/diagnostics/p2_stage_b/nikkei_complete_baseline_20260915"
           PREVIEW="preview/kabu"
+          # The report generation can take several minutes. Other commits may land
+          # on the research branch while this job is running, so update the tracked
+          # checkout immediately before publishing the generated static files.
+          git fetch origin research/p2-nikkei-complete-baseline-20260915
+          git reset --hard origin/research/p2-nikkei-complete-baseline-20260915
           rm -rf "$PREVIEW"
           mkdir -p "$PREVIEW"
           while IFS= read -r -d '' file; do
