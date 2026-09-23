@@ -142,8 +142,12 @@ jobs:
           assert or_status['detail_pages'] > 0, or_status
           assert or_status['production_changed'] is False, or_status
           or_html = (out / 'analysis/or_combinations.html').read_text(encoding='utf-8')
-          for token in ('OR組み合わせ検証','件数 × 正解率のバランス候補','件数拡大型','高正解率型','OR2 全結果','OR3 全結果'):
+          for token in ('OR組み合わせ検証','件数 × 正解率のバランス候補','件数拡大型','高正解率型','OR2 全結果','OR3 全結果','総合指数'):
               assert token in or_html, token
+          for page_name in ('or_pairwise_all.html','or_triple_all.html'):
+              page = (out / 'analysis' / page_name).read_text(encoding='utf-8')
+              for token in ('並び順','総合指数','pvTop','nxTop','or-scroll','3期間平均正解率'):
+                  assert token in page, (page_name, token)
           detail_files = sorted((out / 'analysis/or_details').glob('*.html'))
           assert len(detail_files) == or_status['detail_pages'], (len(detail_files), or_status)
           sample_or_detail = detail_files[0].read_text(encoding='utf-8')
