@@ -1,0 +1,220 @@
+name: P2 225 stocks all-period fast report 20260923
+
+on:
+  push:
+    branches:
+      - research/p2-nikkei-complete-baseline-20260915
+    paths:
+      - .github/workflows/p2_225_all_period_fast_20260923.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  CANONICAL_CORE_REF: research/p2-hypotheses-20260911
+  REPORT_CORE_REF: research/p2-nikkei-complete-baseline-20260915
+  HISTORY_RUN_ID: "35864292423"
+
+jobs:
+  validate-shards:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout canonical core research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.CANONICAL_CORE_REF }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --disable-pip-version-check pandas numpy scipy
+      - name: Download audited historical replay
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-stage-a-historical-20260923
+          path: core/data/diagnostics/p2_225_all_period/historical
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.HISTORY_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run causal P2 Stage A shard
+        working-directory: core
+        run: |
+          python scripts/validate_p2_oracle_stage_a_shard.py \
+            --historical-root data/diagnostics/p2_225_all_period/historical \
+            --output-dir data/diagnostics/p2_225_all_period_fast/shards/shard_${{ matrix.shard }} \
+            --start 2008-01-04 \
+            --end 2026-07-03 \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 12 \
+            --workers 4
+      - name: Verify shard
+        working-directory: core
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_225_all_period_fast/shards')/('shard_'+os.environ['SHARD'])/'status.json'
+          s=json.loads(p.read_text(encoding='utf-8'))
+          assert s['overall_pass'] is True and s['causal_violations']==0, s
+          print(json.dumps(s,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-fast-stage-a-shard-${{ matrix.shard }}
+          path: core/data/diagnostics/p2_225_all_period_fast/shards/shard_${{ matrix.shard }}
+          retention-days: 30
+          compression-level: 6
+
+  aggregate:
+    needs: validate-shards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout canonical core research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.CANONICAL_CORE_REF }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --disable-pip-version-check pandas numpy
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-fast-stage-a-shard-*
+          path: core/data/diagnostics/p2_225_all_period_fast/downloaded-shards
+          merge-multiple: false
+      - name: Aggregate Stage A
+        working-directory: core
+        run: |
+          python scripts/aggregate_p2_oracle_stage_a.py \
+            --shards-root data/diagnostics/p2_225_all_period_fast/downloaded-shards \
+            --output-dir data/diagnostics/p2_225_all_period_fast/stage_a \
+            --expected-shards 12
+      - name: Verify canonical Long population
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          root=Path('data/diagnostics/p2_225_all_period_fast/stage_a')
+          s=json.loads((root/'status.json').read_text(encoding='utf-8'))
+          assert s['overall_pass'] is True and s['causal_violations']==0, s
+          x=pd.read_csv(root/'setups.csv')
+          aligned=x['current_aligned'].astype(str).str.lower().isin({'true','1','yes','y'})
+          known=x['oracle_4w_label'].isin(['ACTUALLY_CONTINUED','BROKE_OR_REVERSED','WEAKENED'])
+          base=x.loc[x['direction'].eq('long') & aligned & known]
+          print({'canonical_long_rows':len(base),'unique_tickers':base['ticker'].nunique()})
+          assert len(base)==52938, len(base)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-fast-stage-a-formal-20260923
+          path: core/data/diagnostics/p2_225_all_period_fast/stage_a
+          retention-days: 30
+          compression-level: 6
+
+  report:
+    needs: aggregate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current core report branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.REPORT_CORE_REF }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --disable-pip-version-check pandas numpy tabulate
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-fast-stage-a-formal-20260923
+          path: core/data/diagnostics/p2_stage_b/nikkei225_all_period_20260923/stage_a
+      - name: Generate 225-stock report
+        working-directory: core
+        run: |
+          python -m py_compile scripts/p2_monthly_chart.py scripts/generate_p2_nikkei_html_report.py scripts/generate_p2_225_all_period_report.py
+          python scripts/generate_p2_225_all_period_report.py \
+            --stage-a-dir data/diagnostics/p2_stage_b/nikkei225_all_period_20260923/stage_a \
+            --output-dir data/diagnostics/p2_stage_b/nikkei225_all_period_20260923/generated \
+            --expected-count 52938
+      - name: Verify report
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('data/diagnostics/p2_stage_b/nikkei225_all_period_20260923/generated')
+          s=json.loads((root/'p2_225_status.json').read_text(encoding='utf-8'))
+          assert s['overall_pass'] is True and s['baseline_rows']==52938, s
+          assert (root/'report_225_all_period.html').exists()
+          assert (root/'analysis/225_all_monthly_chart.html').exists()
+          print(json.dumps(s,ensure_ascii=False,indent=2))
+          PY
+      - name: Publish preview
+        working-directory: core
+        run: |
+          set -euo pipefail
+          SRC="data/diagnostics/p2_stage_b/nikkei225_all_period_20260923/generated"
+          PREVIEW="preview/kabu"
+          mkdir -p "$PREVIEW/analysis"
+          cp "$SRC/report_225_all_period.html" "$PREVIEW/report_225_all_period.html"
+          cp "$SRC/analysis/225_all_monthly_chart.html" "$PREVIEW/analysis/225_all_monthly_chart.html"
+
+          python - <<'PY'
+          from pathlib import Path
+          root=Path('preview/kabu')
+          option='<option value="report_225_all_period.html">主要225株（全期間）</option>'
+          for name in ('index.html','report.html','report_all_period.html'):
+              p=root/name
+              if not p.exists(): continue
+              s=p.read_text(encoding='utf-8')
+              if 'report_225_all_period.html' not in s:
+                  if '</select>' not in s: raise RuntimeError(name)
+                  s=s.replace('</select>',option+'</select>',1)
+              p.write_text(s,encoding='utf-8')
+          p=root/'index.html'; s=p.read_text(encoding='utf-8')
+          if '主要225株版を開く' not in s:
+              marker='</div><div class="note">'
+              card='<div class="card"><h2>主要225株・全期間</h2><p>全225銘柄の全P2 Longシグナルを1つの母集団として集計します。</p><a class="btn" href="report_225_all_period.html">主要225株版を開く →</a></div>'
+              if marker not in s: raise RuntimeError('landing marker')
+              s=s.replace(marker,card+marker,1); p.write_text(s,encoding='utf-8')
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add preview/kabu
+          if git diff --cached --quiet; then
+            echo "Preview already up to date."
+          else
+            git commit -m "report: publish 225-stock all-period baseline"
+            git push origin HEAD:${{ env.REPORT_CORE_REF }}
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-all-period-fast-report-20260923
+          path: core/data/diagnostics/p2_stage_b/nikkei225_all_period_20260923/generated
+          retention-days: 30
+          compression-level: 6
