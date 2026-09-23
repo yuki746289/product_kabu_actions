@@ -124,8 +124,8 @@ jobs:
 
           report = (out / 'report.html').read_text(encoding='utf-8')
           for token in (
-              '概要','結論','主要な単独優位性候補','全体に対する割合','全月平均エントリー数','全月エントリー数中央値',
-              '条件別結果','conditions/index.html','summaries/pair_features.html',
+              '概要','結論','主要な単独優位性候補','全体比','月平均','月中央値',
+              '正解率','5D','10D','20D','条件別結果','conditions/index.html','summaries/pair_features.html',
               'details/monthly_baseline_performance.html','details/monthly_candidate_stability_summary.html',
               'analysis/or_combinations.html',
           ):
@@ -133,6 +133,9 @@ jobs:
           assert 'weekly_rci26' not in report, 'user-facing indicator labels must be Japanese'
           assert 'daily_rci26_direction' not in report, 'user-facing indicator labels must be Japanese'
           assert 'analysis/or_combinations.html' in report, 'OR analysis link missing from report'
+          assert '<th colspan="3" class="group-start">正解率</th>' in report, 'accuracy group must be on the upper header row'
+          assert '>5D</th>' in report and '>10D</th>' in report and '>20D</th>' in report, 'accuracy horizons must be on the lower header row'
+          assert '<th rowspan="2">条件</th>' in report, 'standalone columns must merge the two header rows'
 
           or_status = json.loads((out / 'or_analysis_status.json').read_text(encoding='utf-8'))
           assert or_status['component_min_count'] == 20, or_status
@@ -162,7 +165,7 @@ jobs:
           assert month_label in report, (month_label, report[:1000])
 
           cond_index = (out / 'conditions/index.html').read_text(encoding='utf-8')
-          for token in ('条件別結果一覧','条件','種別','件数','正解率','全体に対する割合','月稼働率','全月平均エントリー数'):
+          for token in ('条件別結果一覧','条件','種別','件数','正解率','全体比','稼働率','月平均','5D','10D','20D'):
               assert token in cond_index, token
 
           manifest = pd.read_csv(out / 'condition_detail_manifest.csv')
@@ -171,7 +174,7 @@ jobs:
               p = out / 'conditions' / f'{slug}.html'
               assert p.exists(), p
               text = p.read_text(encoding='utf-8')
-              for token in ('詳細結果を選択','概要','月別','年別','Rolling 3年','Rolling 5年','相場状態別','全期間月数','全月平均エントリー数'):
+              for token in ('詳細結果を選択','概要','月別','年別','Rolling 3年','Rolling 5年','相場状態別','全月数','月平均','正解率','5D','10D','20D'):
                   assert token in text, (slug,token)
 
           assert ri['REPORT_COMPLETENESS_STATUS']=='PASS', ri
@@ -187,7 +190,7 @@ jobs:
           assert ri['feature_group_counts']['triple'] > 0, ri
 
           detail = (out / 'details/monthly_candidate_stability_summary.html').read_text(encoding='utf-8')
-          for token in ('稼働月数','月次安定度','基準超過月率'):
+          for token in ('稼働月','月次安定性','基準超過月率'):
               assert token in detail, token
           assert c['COMPLETENESS_STATUS']=='PASS', c
           assert c['checks']['combination_stability_nonempty'] is True, c
