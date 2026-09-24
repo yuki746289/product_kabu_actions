@@ -1,0 +1,226 @@
+name: P2 225 indicator performance 20260924
+
+on:
+  push:
+    branches:
+      - research/p2-nikkei-complete-baseline-20260915
+    paths:
+      - .github/workflows/p2_225_indicator_performance_20260924.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  CORE_REF: research/p2-nikkei-complete-baseline-20260915
+  SOURCE_RUN_ID: "35864292423"
+
+jobs:
+  indicator-shards:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.CORE_REF }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --disable-pip-version-check pandas numpy
+      - name: Download formal Stage A
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-stage-a-formal-20260923
+          path: core/data/diagnostics/p2_225_indicator/stage_a
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download sanitized historical replay
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-stage-a-historical-20260923
+          path: core/data/diagnostics/p2_225_indicator/historical
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract causal indicator features
+        working-directory: core
+        run: |
+          python scripts/extract_p2_225_indicator_features_shard.py \
+            --stage-a-dir data/diagnostics/p2_225_indicator/stage_a \
+            --historical-root data/diagnostics/p2_225_indicator/historical \
+            --output-dir data/diagnostics/p2_225_indicator/shard_${{ matrix.shard }} \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 12
+      - name: Verify shard
+        working-directory: core
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path('data/diagnostics/p2_225_indicator')/('shard_'+os.environ['SHARD'])/'status.json'
+          s=json.loads(p.read_text(encoding='utf-8'))
+          assert s['overall_pass'] is True, s
+          assert s['causal_violations']==0, s
+          assert s['failures']==0, s
+          print(json.dumps(s,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-indicator-shard-${{ matrix.shard }}
+          path: core/data/diagnostics/p2_225_indicator/shard_${{ matrix.shard }}
+          retention-days: 30
+          compression-level: 6
+
+  aggregate-report:
+    needs: indicator-shards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.CORE_REF }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --disable-pip-version-check pandas numpy tabulate
+      - name: Download indicator shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-indicator-shard-*
+          path: core/data/diagnostics/p2_225_indicator/downloaded
+          merge-multiple: false
+      - name: Download formal Stage A
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-stage-a-formal-20260923
+          path: core/data/diagnostics/p2_225_indicator/stage_a
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Aggregate 52,938 indicator rows
+        working-directory: core
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import pandas as pd
+          root=Path('data/diagnostics/p2_225_indicator/downloaded')
+          statuses=[]
+          frames=[]
+          for p in sorted(root.glob('**/status.json')):
+              s=json.loads(p.read_text(encoding='utf-8'))
+              if s.get('test')!='p2_225_indicator_features':
+                  continue
+              assert s['overall_pass'] is True, (p,s)
+              assert s['causal_violations']==0 and s['failures']==0, (p,s)
+              statuses.append(s)
+              frames.append(pd.read_csv(p.parent/'features.csv'))
+          assert len(statuses)==12, len(statuses)
+          assert sorted(int(s['shard_index']) for s in statuses)==list(range(12))
+          x=pd.concat(frames,ignore_index=True)
+          x['as_of']=pd.to_datetime(x['as_of'],errors='raise')
+          assert len(x)==52938, len(x)
+          assert x['ticker'].nunique()==225, x['ticker'].nunique()
+          assert not x.duplicated(['ticker','as_of','setup_seq']).any()
+          for col in ('indicator_daily_max_date','indicator_weekly_max_date'):
+              d=pd.to_datetime(x[col],errors='raise')
+              assert not (d>x['as_of']).any(), col
+          out=Path('data/diagnostics/p2_225_indicator/aggregate')
+          out.mkdir(parents=True,exist_ok=True)
+          x.sort_values(['ticker','as_of']).to_csv(out/'features.csv',index=False,encoding='utf-8')
+          status={'test':'p2_225_indicator_aggregate','rows':len(x),'unique_tickers':int(x.ticker.nunique()),'causal_violations':0,'overall_pass':True}
+          (out/'status.json').write_text(json.dumps(status,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(status,ensure_ascii=False,indent=2))
+          PY
+      - name: Generate indicator performance HTML
+        working-directory: core
+        run: |
+          OUT="data/diagnostics/p2_225_indicator/generated"
+          mkdir -p "$OUT"
+          python -m py_compile \
+            scripts/p2_monthly_chart.py \
+            scripts/generate_p2_nikkei_html_report.py \
+            scripts/generate_p2_225_all_period_report.py \
+            scripts/analyze_p2_225_indicator_performance.py
+          python scripts/generate_p2_225_all_period_report.py \
+            --stage-a-dir data/diagnostics/p2_225_indicator/stage_a \
+            --output-dir "$OUT" \
+            --expected-count 52938
+          python scripts/analyze_p2_225_indicator_performance.py \
+            --features data/diagnostics/p2_225_indicator/aggregate/features.csv \
+            --output-dir "$OUT/analysis"
+      - name: Verify report
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          root=Path('data/diagnostics/p2_225_indicator/generated')
+          s=json.loads((root/'analysis/p2_225_indicator_status.json').read_text(encoding='utf-8'))
+          assert s['overall_pass'] is True, s
+          assert s['baseline_rows']==52938 and s['unique_tickers']==225, s
+          assert s['category_rows']>=100, s
+          assert s['chart_pages']==s['category_rows'], s
+          x=pd.read_csv(root/'analysis/p2_225_indicator_categories.csv')
+          for fam in ['fan','ema','price','weekly_rci9','weekly_rci14','weekly_rci26','daily_rci9','daily_rci14','daily_rci26']:
+              assert fam in set(x.family), fam
+          assert (root/'analysis/225_indicator_performance.html').exists()
+          assert '指標別成績' in (root/'report_225_all_period.html').read_text(encoding='utf-8')
+          print(json.dumps(s,ensure_ascii=False,indent=2))
+          PY
+      - name: Publish preview
+        working-directory: core
+        run: |
+          set -euo pipefail
+          SRC="data/diagnostics/p2_225_indicator/generated"
+          PREVIEW="preview/kabu"
+          mkdir -p "$PREVIEW/analysis"
+          cp "$SRC/report_225_all_period.html" "$PREVIEW/report_225_all_period.html"
+          cp "$SRC/analysis/225_all_monthly_chart.html" "$PREVIEW/analysis/225_all_monthly_chart.html"
+          cp "$SRC/analysis/225_indicator_performance.html" "$PREVIEW/analysis/225_indicator_performance.html"
+          rm -rf "$PREVIEW/analysis/225_indicators"
+          cp -a "$SRC/analysis/225_indicators" "$PREVIEW/analysis/225_indicators"
+
+          grep -q '指標別成績' "$PREVIEW/report_225_all_period.html"
+          grep -q 'EMAファン' "$PREVIEW/analysis/225_indicator_performance.html"
+          grep -q '週足 RCI26' "$PREVIEW/analysis/225_indicator_performance.html"
+          grep -q '日足 RCI26' "$PREVIEW/analysis/225_indicator_performance.html"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add preview/kabu
+          if git diff --cached --quiet; then
+            echo "Preview already up to date."
+          else
+            git commit -m "report: publish 225-stock indicator performance"
+            git push origin HEAD:${{ env.CORE_REF }}
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-indicator-performance-20260924
+          path: |
+            core/data/diagnostics/p2_225_indicator/aggregate
+            core/data/diagnostics/p2_225_indicator/generated
+          retention-days: 30
+          compression-level: 6
