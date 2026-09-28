@@ -1,0 +1,97 @@
+name: P2 225 mirror from verified artifact 20260928
+on:
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: product_kabu branch/tag/SHA
+        required: false
+        default: research/p2-nikkei-complete-baseline-20260915
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: "1"
+  SOURCE_RUN_ID: "35946017970"
+jobs:
+  rebuild:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve core ref
+        id: ref
+        shell: bash
+        run: |
+          REF="${{ inputs.core_ref }}"
+          if [ -z "$REF" ]; then REF="research/p2-nikkei-complete-baseline-20260915"; fi
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+      - name: Checkout private core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.ref.outputs.ref }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Download verified 225 indicator aggregate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-indicator-performance-20260924
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Locate and verify features
+        id: features
+        shell: bash
+        run: |
+          set -euo pipefail
+          F="$(find source -type f -path '*/aggregate/features.csv' -print -quit)"
+          test -n "$F"
+          python - "$F" <<'PY'
+          import sys, pandas as pd
+          p=sys.argv[1]; x=pd.read_csv(p)
+          assert len(x)==52938, len(x)
+          assert x['ticker'].astype(str).nunique()==225, x['ticker'].nunique()
+          assert not x.duplicated(['ticker','as_of','setup_seq']).any()
+          for c in ('indicator_daily_max_date','indicator_weekly_max_date'):
+              d=pd.to_datetime(x[c],errors='raise')
+              a=pd.to_datetime(x['as_of'],errors='raise')
+              assert not (d>a).any(), c
+          print(f"verified {p}: rows={len(x)} tickers={x['ticker'].nunique()}")
+          PY
+          echo "path=$F" >> "$GITHUB_OUTPUT"
+      - name: Compile current mirror implementation
+        working-directory: core
+        run: |
+          python -m py_compile scripts/generate_p2_225_nikkei_mirror.py scripts/qa_p2_225_nikkei_mirror.py
+      - name: Rebuild 225 canonical mirror
+        working-directory: core
+        run: |
+          python scripts/generate_p2_225_nikkei_mirror.py \
+            --features "../${{ steps.features.outputs.path }}" \
+            --summary preview/kabu/analysis/225_indicator_stageb/p2_225_indicator_stageb_summary.csv \
+            --output-dir preview/kabu/analysis/225_indicator_stageb \
+            --canonical-dir preview/kabu
+      - name: Final QA
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_nikkei_mirror.py \
+            --canonical-dir preview/kabu \
+            --mirror-dir preview/kabu/analysis/225_indicator_stageb
+          cat preview/kabu/analysis/225_indicator_stageb/final_qa_status.json
+      - name: Upload rebuilt mirror
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-225-canonical-mirror-20260928
+          path: core/preview/kabu/analysis/225_indicator_stageb
+          if-no-files-found: error
+          retention-days: 30
