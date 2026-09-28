@@ -68,10 +68,27 @@ jobs:
           print(f"verified {p}: rows={len(x)} tickers={x['ticker'].nunique()}")
           PY
           echo "path=$F" >> "$GITHUB_OUTPUT"
-      - name: Compile current mirror implementation
+      - name: Preflight current mirror implementation
         working-directory: core
         run: |
           python -m py_compile scripts/generate_p2_225_nikkei_mirror.py scripts/qa_p2_225_nikkei_mirror.py
+          python - <<'PY'
+          import json,re
+          from pathlib import Path
+          p=Path("preview/kabu/details/condition_detail_manifest.html")
+          raw=p.read_text(encoding="utf-8")
+          m=re.search(r'const DATA=(\\[.*?\\]);',raw,re.S)
+          assert m, "canonical manifest DATA not parseable"
+          rows=json.loads(m.group(1))
+          assert len(rows)==447, len(rows)
+          assert len({r[0] for r in rows})==447
+          assert {r[2] for r in rows} <= {"single","pair","triple"}
+          for d in ("summaries","conditions","details","analysis/or_charts","analysis/or_details"):
+              q=Path("preview/kabu")/d
+              assert q.is_dir(), q
+              assert any(q.glob("*.html")), q
+          print("preflight canonical manifest/inventory: PASS")
+          PY
       - name: Rebuild 225 canonical mirror
         working-directory: core
         run: |
