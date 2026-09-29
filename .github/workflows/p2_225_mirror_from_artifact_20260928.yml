@@ -1,5 +1,10 @@
 name: P2 225 mirror from verified artifact 20260928
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2_225_mirror_from_artifact_20260928.yml'
+      - '.github/p2_225_mirror_trigger'
   workflow_dispatch:
     inputs:
       core_ref:
