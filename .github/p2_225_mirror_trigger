@@ -1,4 +1,4 @@
-trigger: 2026-09-29T10:42:00+09:00
+trigger: 2026-09-29T10:58:00+09:00
 core_ref: research/p2-nikkei-complete-baseline-20260915
-core_expected_commit: 5e573760489624b6be1eb5112c45aef712f3811c
-reason: normalize verified 225 data to canonical Nikkei renderer schema before build
+core_expected_commit: fc03e6d14a6f32b1eb45a3bb0ace8689ce6a7b38
+reason: canonical finalizer masks include all referenced zero-count categories
