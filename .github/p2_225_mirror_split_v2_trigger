@@ -1,0 +1,4 @@
+trigger: 2026-09-30T08:48:00+09:00
+core_expected_commit: c7dbb71c8203eaa0bf8bac8201f3bc9801b178d0
+source_run_id: 35946017970
+reason: finer split base -> pair shards -> triple shards -> semantic aggregate -> OR2 shards -> OR3 shards -> OR aggregate -> render -> QA
