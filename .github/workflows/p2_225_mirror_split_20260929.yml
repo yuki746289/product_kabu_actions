@@ -67,7 +67,8 @@ jobs:
         run: |
           python scripts/build_p2_225_semantic_bundle.py             --features "../${{ steps.features.outputs.path }}"             --output-dir /tmp/p2_225_semantic
       - name: Verify semantic status
-        run: python - <<'PY'
+        run: |
+          python - <<'PY'
           import json
           p="/tmp/p2_225_semantic/semantic_status.json"
           x=json.load(open(p,encoding="utf-8"))
@@ -137,7 +138,8 @@ jobs:
         run: |
           python scripts/build_p2_225_or_bundle.py             --features "../${{ steps.features.outputs.path }}"             --semantic-dir /tmp/p2_225_semantic             --output-dir /tmp/p2_225_or
       - name: Verify OR status
-        run: python - <<'PY'
+        run: |
+          python - <<'PY'
           import json
           p="/tmp/p2_225_or/or_status.json"
           x=json.load(open(p,encoding="utf-8"))
@@ -210,7 +212,7 @@ jobs:
       - name: Final QA
         working-directory: core
         run: |
-          python scripts/qa_p2_225_nikkei_mirror.py             --canonical-dir preview/kabu             --mirror-dir /tmp/p2_225_mirror
+          python scripts/qa_p2_225_nikkei_mirror.py --canonical-dir preview/kabu --mirror-dir /tmp/p2_225_mirror
           python - <<'PY'
           import json
           p="/tmp/p2_225_mirror/final_qa_status.json"
