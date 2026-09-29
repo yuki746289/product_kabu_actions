@@ -1,3 +1,3 @@
-trigger: 2026-09-29T15:10:00+09:00
-core_expected_commit: 53f9222b1bcefa183e9f5efecf593389d6c2e4a2
-reason: test-only after expanded pre-run checklist and OR link/status contract fix
+trigger: 2026-09-29T15:20:00+09:00
+core_expected_commit: fbbe20e1c2c990c9ce590eadf82d85c5b5a1ade5
+reason: rerun test-only after fixing Python regex syntax caught by py_compile
