@@ -1,4 +1,4 @@
-trigger: 2026-09-29T09:55:00+09:00
+trigger: 2026-09-29T10:42:00+09:00
 core_ref: research/p2-nikkei-complete-baseline-20260915
-core_expected_commit: 67c8f0ae15357832b5b40bf6460683d41050c454
-reason: preserve unavailable causal_regime conditions as NOT_COMPUTABLE
+core_expected_commit: 5e573760489624b6be1eb5112c45aef712f3811c
+reason: normalize verified 225 data to canonical Nikkei renderer schema before build
