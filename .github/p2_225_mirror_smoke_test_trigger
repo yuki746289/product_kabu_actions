@@ -1,3 +1,3 @@
-trigger: 2026-09-29T14:27:00+09:00
-core_expected_commit: 5d96423a270be31c3ca2857c8bb5c5d3c43647bb
-reason: rerun full pre-run smoke with canonical broken-target parity QA
+trigger: 2026-09-29T15:10:00+09:00
+core_expected_commit: 53f9222b1bcefa183e9f5efecf593389d6c2e4a2
+reason: test-only after expanded pre-run checklist and OR link/status contract fix
