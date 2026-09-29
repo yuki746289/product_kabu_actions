@@ -73,13 +73,17 @@ jobs:
         run: |
           python -m py_compile scripts/generate_p2_225_nikkei_mirror.py scripts/qa_p2_225_nikkei_mirror.py
           python - <<'PY'
-          import json,re
+          import json
           from pathlib import Path
           p=Path("preview/kabu/details/condition_detail_manifest.html")
           raw=p.read_text(encoding="utf-8")
-          m=re.search(r'const DATA=(\\[.*?\\]);',raw,re.S)
-          assert m, "canonical manifest DATA not parseable"
-          rows=json.loads(m.group(1))
+          marker="const DATA="
+          start=raw.find(marker)
+          assert start>=0, "canonical manifest DATA marker missing"
+          start+=len(marker)
+          end=raw.find("];",start)
+          assert end>=0, "canonical manifest DATA terminator missing"
+          rows=json.loads(raw[start:end+1])
           assert len(rows)==447, len(rows)
           assert len({r[0] for r in rows})==447
           assert {r[2] for r in rows} <= {"single","pair","triple"}
