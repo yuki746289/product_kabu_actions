@@ -1,4 +1,4 @@
-trigger: 2026-09-29T11:52:00+09:00
+trigger: 2026-09-29T21:36:00+09:00
 core_ref: research/p2-nikkei-complete-baseline-20260915
-core_expected_commit: 13367c9dd2d9eadef4ebc1351fc9a4bd524a1bcb
-reason: generate canonical 225 OR registry metrics before OR audit tables
+core_expected_commit: 748590f92030f3dc49d9f79fc8d71d3568338cb4
+reason: full canonical 225 mirror rebuild after semantic smoke PASS run 36551350024
