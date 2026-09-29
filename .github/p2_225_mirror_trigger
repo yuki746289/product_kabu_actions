@@ -1,4 +1,4 @@
-trigger: 2026-09-29T10:58:00+09:00
+trigger: 2026-09-29T11:52:00+09:00
 core_ref: research/p2-nikkei-complete-baseline-20260915
-core_expected_commit: fc03e6d14a6f32b1eb45a3bb0ace8689ce6a7b38
-reason: canonical finalizer masks include all referenced zero-count categories
+core_expected_commit: 13367c9dd2d9eadef4ebc1351fc9a4bd524a1bcb
+reason: generate canonical 225 OR registry metrics before OR audit tables
