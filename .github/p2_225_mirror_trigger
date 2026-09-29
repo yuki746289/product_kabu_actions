@@ -1,0 +1,4 @@
+trigger: 2026-09-29T09:48:00+09:00
+core_ref: research/p2-nikkei-complete-baseline-20260915
+core_expected_commit: 4f00eb76430b2119950ff0d4f78fcae85a51295a
+reason: canonical mask coverage and renderer runtime fixes
