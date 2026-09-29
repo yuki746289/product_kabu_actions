@@ -1,0 +1,3 @@
+trigger: 2026-09-29T13:25:00+09:00
+core_expected_commit: beeeb4c13c607e58b397d561baae78a879fed62c
+reason: verify canonical-inherited vs 225-new broken links and full generator Final QA
