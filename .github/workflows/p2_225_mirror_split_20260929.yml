@@ -1,0 +1,225 @@
+name: P2 225 split canonical mirror 20260929
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2_225_mirror_split_20260929.yml'
+      - '.github/p2_225_mirror_split_trigger'
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: "1"
+  SOURCE_RUN_ID: "35946017970"
+
+jobs:
+  semantic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve pinned core SHA
+        id: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="core_expected_commit"{print $2}' .github/p2_225_mirror_split_trigger)"
+          test -n "$SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - name: Checkout private core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.core.outputs.sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Download verified 225 features
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-indicator-performance-20260924
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Locate features
+        id: features
+        shell: bash
+        run: |
+          set -euo pipefail
+          F="$(find source -type f -path '*/aggregate/features.csv' -print -quit)"
+          test -n "$F"
+          echo "path=$F" >> "$GITHUB_OUTPUT"
+      - name: Static preflight
+        working-directory: core
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ steps.core.outputs.sha }}"
+          python -m py_compile             scripts/build_p2_225_canonical_semantic_data.py             scripts/build_p2_225_semantic_bundle.py             scripts/build_p2_225_or_bundle.py             scripts/generate_p2_225_nikkei_mirror.py             scripts/qa_p2_225_nikkei_mirror.py
+      - name: Build semantic bundle
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_semantic_bundle.py             --features "../${{ steps.features.outputs.path }}"             --output-dir /tmp/p2_225_semantic
+      - name: Verify semantic status
+        run: python - <<'PY'
+          import json
+          p="/tmp/p2_225_semantic/semantic_status.json"
+          x=json.load(open(p,encoding="utf-8"))
+          assert x["overall_pass"] is True, x
+          assert x["all_single_rows"]==2460
+          assert x["representative_single_rows"]==151
+          assert x["pair_rows"]==10476
+          print(json.dumps(x,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-semantic-bundle-20260929
+          path: /tmp/p2_225_semantic
+          retention-days: 30
+
+  or_analysis:
+    needs: semantic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve pinned core SHA
+        id: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="core_expected_commit"{print $2}' .github/p2_225_mirror_split_trigger)"
+          test -n "$SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - name: Checkout private core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.core.outputs.sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Download verified 225 features
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-indicator-performance-20260924
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-semantic-bundle-20260929
+          path: /tmp/p2_225_semantic
+      - name: Locate features
+        id: features
+        shell: bash
+        run: |
+          set -euo pipefail
+          F="$(find source -type f -path '*/aggregate/features.csv' -print -quit)"
+          test -n "$F"
+          echo "path=$F" >> "$GITHUB_OUTPUT"
+      - name: Build OR bundle
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_or_bundle.py             --features "../${{ steps.features.outputs.path }}"             --semantic-dir /tmp/p2_225_semantic             --output-dir /tmp/p2_225_or
+      - name: Verify OR status
+        run: python - <<'PY'
+          import json
+          p="/tmp/p2_225_or/or_status.json"
+          x=json.load(open(p,encoding="utf-8"))
+          assert x["overall_pass"] is True, x
+          print(json.dumps(x,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-or-bundle-20260929
+          path: /tmp/p2_225_or
+          retention-days: 30
+
+  render_qa:
+    needs: [semantic, or_analysis]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve pinned core SHA
+        id: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="core_expected_commit"{print $2}' .github/p2_225_mirror_split_trigger)"
+          test -n "$SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - name: Checkout private core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.core.outputs.sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Download verified 225 features
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-indicator-performance-20260924
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-semantic-bundle-20260929
+          path: /tmp/p2_225_semantic
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-or-bundle-20260929
+          path: /tmp/p2_225_or
+      - name: Locate features
+        id: features
+        shell: bash
+        run: |
+          set -euo pipefail
+          F="$(find source -type f -path '*/aggregate/features.csv' -print -quit)"
+          test -n "$F"
+          echo "path=$F" >> "$GITHUB_OUTPUT"
+      - name: Render canonical mirror from checkpoints
+        working-directory: core
+        run: |
+          python scripts/generate_p2_225_nikkei_mirror.py             --features "../${{ steps.features.outputs.path }}"             --output-dir /tmp/p2_225_mirror             --canonical-dir preview/kabu             --semantic-dir /tmp/p2_225_semantic             --or-dir /tmp/p2_225_or
+      - name: Final QA
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_nikkei_mirror.py             --canonical-dir preview/kabu             --mirror-dir /tmp/p2_225_mirror
+          python - <<'PY'
+          import json
+          p="/tmp/p2_225_mirror/final_qa_status.json"
+          x=json.load(open(p,encoding="utf-8"))
+          assert x["overall_pass"] is True, x
+          print(json.dumps(x,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-canonical-mirror-split-20260929
+          path: /tmp/p2_225_mirror
+          retention-days: 30
