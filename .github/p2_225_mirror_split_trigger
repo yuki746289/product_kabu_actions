@@ -1,0 +1,4 @@
+trigger: 2026-09-29T23:25:00+09:00
+core_expected_commit: e81ca43e5bd4c0e72a79d0f468617b2680095d2a
+source_run_id: 35946017970
+reason: replace monolithic 85-minute generator with semantic -> OR -> render/QA checkpointed stages
