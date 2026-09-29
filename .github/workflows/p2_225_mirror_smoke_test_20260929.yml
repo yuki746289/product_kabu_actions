@@ -1,0 +1,99 @@
+name: P2 225 mirror pre-run smoke test 20260929
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2_225_mirror_smoke_test_20260929.yml'
+      - '.github/p2_225_mirror_smoke_test_trigger'
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: "1"
+  SOURCE_RUN_ID: "35946017970"
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout private core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: research/p2-nikkei-complete-baseline-20260915
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Download verified 225 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-indicator-performance-20260924
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Input and static contract tests
+        id: features
+        shell: bash
+        run: |
+          set -euo pipefail
+          F="$(find source -type f -path '*/aggregate/features.csv' -print -quit)"
+          test -n "$F"
+          python -m py_compile core/scripts/generate_p2_225_nikkei_mirror.py core/scripts/qa_p2_225_nikkei_mirror.py
+          python - "$F" <<'PY'
+          import sys,pandas as pd
+          x=pd.read_csv(sys.argv[1])
+          assert len(x)==52938
+          assert x['ticker'].astype(str).nunique()==225
+          assert not x.duplicated(['ticker','as_of','setup_seq']).any()
+          a=pd.to_datetime(x['as_of'],errors='raise')
+          for c in ('indicator_daily_max_date','indicator_weekly_max_date'):
+              assert not (pd.to_datetime(x[c],errors='raise')>a).any(),c
+          print("INPUT_CONTRACT=PASS rows=52938 tickers=225 duplicate=0 date_leak=0")
+          PY
+          echo "path=$F" >> "$GITHUB_OUTPUT"
+      - name: Canonical manifest and inventory contract tests
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("preview/kabu/details/condition_detail_manifest.html")
+          raw=p.read_text(encoding="utf-8"); marker="const DATA="; start=raw.find(marker)
+          assert start>=0; start+=len(marker); end=raw.find("];",start); assert end>=0
+          rows=json.loads(raw[start:end+1]); assert len(rows)==447; assert len({r[0] for r in rows})==447
+          for d in ("summaries","conditions","details","analysis/or_charts","analysis/or_details"):
+              q=Path("preview/kabu")/d; assert q.is_dir() and any(q.glob("*.html")),q
+          print("CANONICAL_CONTRACT=PASS conditions=447")
+          PY
+      - name: Full generator smoke test with verified 225 data
+        working-directory: core
+        run: |
+          rm -rf /tmp/p2_225_smoke
+          python scripts/generate_p2_225_nikkei_mirror.py             --features "../${{ steps.features.outputs.path }}"             --output-dir /tmp/p2_225_smoke             --canonical-dir preview/kabu
+          test -f /tmp/p2_225_smoke/report.html
+          test -f /tmp/p2_225_smoke/mirror_status.json
+          echo "GENERATOR_SMOKE=PASS"
+      - name: Final QA equivalent
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_nikkei_mirror.py             --canonical-dir preview/kabu             --mirror-dir /tmp/p2_225_smoke
+          cat /tmp/p2_225_smoke/final_qa_status.json
+      - name: Upload test evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-225-pre-run-smoke-test-20260929
+          path: |
+            /tmp/p2_225_smoke/mirror_status.json
+            /tmp/p2_225_smoke/final_qa_status.json
+          if-no-files-found: warn
+          retention-days: 30
