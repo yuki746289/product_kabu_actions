@@ -76,7 +76,11 @@ jobs:
       - name: Audit final population
         working-directory: core
         run: |
-          python scripts/audit_p2_225_signal_counts.py             --features "../${{ steps.src.outputs.features }}"             --output-dir /tmp/p2_225_signal_count_audit
+          python scripts/audit_p2_225_signal_counts.py \
+            --features "../${{ steps.src.outputs.features }}" \
+            --signals "../${{ steps.src.outputs.signals }}" \
+            --setups "../${{ steps.src.outputs.setups }}" \
+            --output-dir /tmp/p2_225_signal_count_audit
       - uses: actions/upload-artifact@v4
         with:
           name: p2-225-signal-count-audit
