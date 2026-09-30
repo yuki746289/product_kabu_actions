@@ -1,5 +1,5 @@
-trigger: 2026-09-30T11:45:00+09:00
-core_expected_commit: 9d96a31a72828bb624e60a36a2a51ba38631adca
+trigger: 2026-09-30T11:52:00+09:00
+core_expected_commit: aadc6f971fd9d5e2ea55dae2a6a2b2872548d9a4
 source_run_id: 35946017970
 reuse_run_id: 36646949226
-reason: reuse passed base/pair/triple artifacts; split semantic aggregate into structural/stability/combo-stability/combo-walkforward/assemble
+reason: reuse passed base/pair/triple artifacts; split semantic aggregate into structural, condition-stability x8, combo-stability shards, combo-walkforward shards, assemble
