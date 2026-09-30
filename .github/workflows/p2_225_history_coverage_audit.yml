@@ -1,0 +1,68 @@
+name: P2 225 history coverage audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2_225_history_coverage_audit.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 47349428593de1d8c3c4847fbdbce334bef6ce7f
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-indicator-performance-20260924
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: 35946017970
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-stage-a-formal-20260923
+          path: stage_a
+          repository: yuki746289/product_kabu_actions
+          run-id: 35864292423
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-stage-a-historical-20260923
+          path: historical
+          repository: yuki746289/product_kabu_actions
+          run-id: 35864292423
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run count and history audit
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          F="$(find ../source -type f -path '*/aggregate/features.csv' -print -quit)"
+          S="$(find ../stage_a -type f -name signals.csv -print -quit)"
+          U="$(find ../stage_a -type f -name setups.csv -print -quit)"
+          H="$(find ../historical -type d -path '*/historical_derived' -printf '%h\n' -quit)"
+          test -n "$F"; test -n "$S"; test -n "$U"; test -n "$H"
+          python scripts/audit_p2_225_signal_counts.py \
+            --features "$F" --signals "$S" --setups "$U" \
+            --historical-root "$H" \
+            --output-dir /tmp/audit
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-history-coverage-audit
+          path: /tmp/audit
+          retention-days: 30
