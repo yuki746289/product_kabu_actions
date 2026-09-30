@@ -1,0 +1,4 @@
+core_expected_commit: 6a4cd14eb66df197a6c502ccc8665f35bbace616
+source_run_id: 36703088996
+source_artifact: p2-225-raw-features-20260930
+reason: rebuild semantic foundation from 181318 raw P2 Long features
