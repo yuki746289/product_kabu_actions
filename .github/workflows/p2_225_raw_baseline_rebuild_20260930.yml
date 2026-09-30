@@ -1,10 +1,7 @@
 name: P2 225 raw baseline rebuild 20260930
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/p2_225_raw_baseline_rebuild_trigger'
+  workflow_dispatch:
 
 permissions:
   contents: read
