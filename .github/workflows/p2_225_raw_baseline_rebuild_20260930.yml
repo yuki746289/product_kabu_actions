@@ -1,0 +1,286 @@
+name: P2 225 raw baseline rebuild 20260930
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2_225_raw_baseline_rebuild_20260930.yml'
+      - '.github/p2_225_raw_baseline_rebuild_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  HIST_ROOT: work/historical
+  STAGE_ROOT: work/stage_a
+  FEATURE_ROOT: work/features
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      core_sha: ${{ steps.cfg.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve pinned private core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="core_expected_commit"{print $2}' .github/p2_225_raw_baseline_rebuild_trigger)"
+          test -n "$SHA"
+          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile required scripts
+        working-directory: core
+        run: |
+          python -m py_compile             scripts/fetch_historical_validation_data.py             scripts/sanitize_historical_replay_prices.py             scripts/validate_p2_oracle_stage_a_shard.py             scripts/aggregate_p2_oracle_stage_a.py             scripts/extract_p2_225_indicator_features_shard.py             scripts/aggregate_p2_stage_b_feature_shards.py
+      - name: Verify aligned period config
+        working-directory: core
+        run: |
+          cat config/p2_225_full_analysis_period.csv
+          grep -q '2008-01-01,2026-08-31' config/p2_225_full_analysis_period.csv
+
+  historical:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Fetch aligned historical replay
+        working-directory: core
+        shell: bash
+        run: |
+          set +e
+          python scripts/fetch_historical_validation_data.py             --periods config/p2_225_full_analysis_period.csv             --output-dir "../$HIST_ROOT"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then exit "$rc"; fi
+      - name: Sanitize historical replay
+        working-directory: core
+        run: python scripts/sanitize_historical_replay_prices.py --root "../$HIST_ROOT"
+      - name: Verify historical status
+        run: |
+          test -f "$HIST_ROOT/historical_status.json"
+          cat "$HIST_ROOT/historical_status.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-historical-20260930
+          path: ${{ env.HIST_ROOT }}
+          retention-days: 30
+          compression-level: 6
+
+  stage_a:
+    needs: [preflight, historical]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-historical-20260930
+          path: ${{ env.HIST_ROOT }}
+      - name: Formal raw Stage A shard
+        working-directory: core
+        run: |
+          python scripts/validate_p2_oracle_stage_a_shard.py             --historical-root "../$HIST_ROOT"             --output-dir "../$STAGE_ROOT/shard_${{ matrix.shard }}"             --start 2008-01-01             --end 2026-08-31             --shard-index ${{ matrix.shard }}             --shard-count 12             --workers 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-stage-a-shard-${{ matrix.shard }}
+          path: ${{ env.STAGE_ROOT }}/shard_${{ matrix.shard }}
+          retention-days: 30
+
+  stage_a_aggregate:
+    needs: [preflight, stage_a]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-raw-stage-a-shard-*
+          path: ${{ env.STAGE_ROOT }}/shards
+          merge-multiple: false
+      - name: Aggregate Stage A
+        working-directory: core
+        run: |
+          python scripts/aggregate_p2_oracle_stage_a.py             --shards-root "../$STAGE_ROOT/shards"             --output-dir "../$STAGE_ROOT/aggregate"             --expected-shards 12
+      - name: Report raw Long population
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          p="work/stage_a/aggregate/signals.csv"
+          f=pd.read_csv(p)
+          f["as_of"]=pd.to_datetime(f["as_of"])
+          g=f.loc[f["direction"].astype(str).eq("long")]
+          print({
+              "signals_all": len(f),
+              "raw_long": len(g),
+              "tickers": g["ticker"].astype(str).nunique(),
+              "start": str(g["as_of"].min().date()),
+              "end": str(g["as_of"].max().date()),
+          })
+          assert len(g) > 0
+          assert g["ticker"].astype(str).nunique() == 225
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-stage-a-aggregate-20260930
+          path: ${{ env.STAGE_ROOT }}/aggregate
+          retention-days: 30
+
+  feature_shard:
+    needs: [preflight, historical, stage_a_aggregate]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-historical-20260930
+          path: ${{ env.HIST_ROOT }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-stage-a-aggregate-20260930
+          path: ${{ env.STAGE_ROOT }}/aggregate
+      - name: Extract raw-signal indicator features
+        working-directory: core
+        run: |
+          python scripts/extract_p2_225_indicator_features_shard.py             --stage-a-dir "../$STAGE_ROOT/aggregate"             --historical-root "../$HIST_ROOT"             --output-dir "../$FEATURE_ROOT/shard_${{ matrix.shard }}"             --shard-index ${{ matrix.shard }}             --shard-count 8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-feature-shard-${{ matrix.shard }}
+          path: ${{ env.FEATURE_ROOT }}/shard_${{ matrix.shard }}
+          retention-days: 30
+
+  feature_aggregate:
+    needs: [preflight, feature_shard]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-raw-feature-shard-*
+          path: ${{ env.FEATURE_ROOT }}/shards
+          merge-multiple: false
+      - name: Aggregate feature shards
+        working-directory: core
+        run: |
+          python scripts/aggregate_p2_stage_b_feature_shards.py             --shards-root "../$FEATURE_ROOT/shards"             --output-dir "../$FEATURE_ROOT/aggregate"             --expected-shards 8
+      - name: Verify final raw feature population
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          p="work/features/aggregate/features.csv"
+          f=pd.read_csv(p)
+          f["as_of"]=pd.to_datetime(f["as_of"])
+          print({
+              "rows": len(f),
+              "tickers": f["ticker"].astype(str).nunique(),
+              "start": str(f["as_of"].min().date()),
+              "end": str(f["as_of"].max().date()),
+          })
+          assert len(f) > 0
+          assert f["ticker"].astype(str).nunique() == 225
+          assert str(f["as_of"].min().date()) >= "2008-01-01"
+          assert str(f["as_of"].max().date()) <= "2026-08-31"
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          path: ${{ env.FEATURE_ROOT }}/aggregate
+          retention-days: 30
