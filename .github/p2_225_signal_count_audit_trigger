@@ -1,7 +1,7 @@
-trigger: 2026-09-30T14:35:00+09:00
-core_expected_commit: 0b47f5104da7311b2335ff1c80cbf8ba289da363
+trigger: 2026-09-30T15:18:00+09:00
+core_expected_commit: 68bb29b1dd0333bc1fffd910a3654d7eaf433e5a
 source_run_id: 35946017970
 source_artifact: p2-225-indicator-performance-20260924
 stage_a_run_id: 35864292423
 stage_a_artifact: p2-225-stage-a-formal-20260923
-reason: quantify signal->setup->long->aligned->oracle-known waterfall and final ticker/year distributions without recomputation
+reason: measure signal-to-setup, current_aligned, and 4W-oracle retention using existing Stage A artifact
