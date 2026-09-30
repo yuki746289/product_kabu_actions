@@ -1,0 +1,5 @@
+trigger: 2026-09-30T11:45:00+09:00
+core_expected_commit: 9d96a31a72828bb624e60a36a2a51ba38631adca
+source_run_id: 35946017970
+reuse_run_id: 36646949226
+reason: reuse passed base/pair/triple artifacts; split semantic aggregate into structural/stability/combo-stability/combo-walkforward/assemble
