@@ -1,0 +1,5 @@
+trigger: 2026-09-30T14:25:00+09:00
+core_expected_commit: 0b47f5104da7311b2335ff1c80cbf8ba289da363
+source_run_id: 35946017970
+source_artifact: p2-225-indicator-performance-20260924
+reason: audit per-ticker and per-year distribution of final 52938-row population without recomputing Stage A
