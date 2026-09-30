@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/p2_225_raw_baseline_rebuild_20260930.yml'
       - '.github/p2_225_raw_baseline_rebuild_trigger'
 
 permissions:
@@ -44,6 +43,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Verify Actions architecture
+        run: |
+          python scripts/check_actions_architecture.py \
+            --core-dir core \
+            --expected-core-sha "${{ steps.cfg.outputs.core_sha }}"
       - name: Compile required scripts
         working-directory: core
         run: |
