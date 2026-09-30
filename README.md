@@ -18,3 +18,9 @@ private 側の GitHub Actions は使用しません。
 現在は移行準備中です。`product_kabu` の private 化は、public runner 上で日次スクリーニングと主要バックテストまで検証し、private 側 workflow を停止した後に行います。
 
 詳細は `docs/MIGRATION.md` を参照してください。
+
+## Actions architecture guard
+
+Actions実行先の取り違えを防ぐため、private core checkout後に `scripts/check_actions_architecture.py` を実行する。
+
+このguardは、public runnerであること、private core SHA、private側workflow 0件、`docs/ACTIONS_MIGRATION.md` の正本ルールを検証する。FAIL時は本処理を開始しない。
