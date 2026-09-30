@@ -1,0 +1,8 @@
+trigger: 2026-09-30T12:35:00+09:00
+target_branch: research/p2-nikkei-complete-baseline-20260915
+expected_core_head: 3c22f41a8b2bd19ac7bcd55fe171139e9e13fc84
+source_run_id: 36661902250
+source_artifact: p2-225-canonical-mirror-v4-final
+source_artifact_id: 11075178471
+source_artifact_sha256: 77fbb46c5781fc4e8ec8572b1831f8aa5a5eca99bb29d351f69ce22e768c37c7
+target_path: preview/kabu/analysis/225_indicator_stageb
