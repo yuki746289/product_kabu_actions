@@ -49,3 +49,22 @@ private source/token を使う workflow は `workflow_dispatch` / `schedule` を
 8. private 化後にもう一度 public Actions から checkout、日次パイプライン、主要検証が成功することを確認する。
 
 条件6まで完了した時点で private 化を案内し、条件8を最終スモークテストとする。
+
+## 実行前 architecture guard（2026-09-30）
+
+private coreをcheckoutするworkflowは、分析処理より前にActions実行基盤を検証する。
+
+共通検査:
+
+`scripts/check_actions_architecture.py`
+
+検証内容:
+
+- 実行repoが `yuki746289/product_kabu_actions`
+- private coreのSHAがworkflowで固定した期待SHAと一致
+- private coreに `docs/ACTIONS_MIGRATION.md` が存在し、正本ルールを保持
+- private coreの `.github/workflows/*.yml|*.yaml` が0件
+
+いずれかがFAILした場合、分析・データ取得・再分析を開始しない。
+
+新規の検証workflowではこのguardをpreflightへ組み込む。既存workflowは改修時に順次同じguardへ統一する。
