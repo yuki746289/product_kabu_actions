@@ -1,0 +1,6 @@
+trigger: 2026-09-30T15:25:00+09:00
+core_expected_commit: 95affe21608ac93f1425a4d97fb59506828f2a94
+target_branch: research/p2-nikkei-complete-baseline-20260915
+analysis_start: 2008-01-04
+analysis_end: 2026-07-03
+reason: compare Nikkei and 225 using the same signal-to-setup unit
