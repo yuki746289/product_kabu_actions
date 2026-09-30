@@ -1,0 +1,4 @@
+trigger: 2026-09-30T13:20:00+09:00
+core_expected_commit: 399640bf7ab9ade204c959da7001c1674077fbe5
+target_branch: research/p2-nikkei-complete-baseline-20260915
+reason: verify OR header/body widths and canonical table layout parity without recomputing analysis
