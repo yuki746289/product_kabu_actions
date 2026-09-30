@@ -31,6 +31,11 @@ jobs:
           path: _core
           persist-credentials: false
 
+      - name: Verify Actions architecture
+        run: |
+          python scripts/check_actions_architecture.py \
+            --core-dir _core
+
       - name: Verify core layout
         shell: bash
         run: |
