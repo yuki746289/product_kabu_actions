@@ -25,9 +25,13 @@ jobs:
           SHA="$(awk -F': ' '$1=="core_expected_commit"{print $2}' .github/p2_225_signal_count_audit_trigger)"
           RUN_ID="$(awk -F': ' '$1=="source_run_id"{print $2}' .github/p2_225_signal_count_audit_trigger)"
           ART="$(awk -F': ' '$1=="source_artifact"{print $2}' .github/p2_225_signal_count_audit_trigger)"
+          STAGE_RUN="$(awk -F': ' '$1=="stage_a_run_id"{print $2}' .github/p2_225_signal_count_audit_trigger)"
+          STAGE_ART="$(awk -F': ' '$1=="stage_a_artifact"{print $2}' .github/p2_225_signal_count_audit_trigger)"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "artifact=$ART" >> "$GITHUB_OUTPUT"
+          echo "stage_run_id=$STAGE_RUN" >> "$GITHUB_OUTPUT"
+          echo "stage_artifact=$STAGE_ART" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
@@ -48,14 +52,27 @@ jobs:
           repository: yuki746289/product_kabu_actions
           run-id: ${{ steps.cfg.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.cfg.outputs.stage_artifact }}
+          path: stage_a
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ steps.cfg.outputs.stage_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Locate verified features
         id: src
         shell: bash
         run: |
           set -euo pipefail
           F="$(find source -type f -path '*/aggregate/features.csv' -print -quit)"
+          S="$(find stage_a -type f -name 'signals.csv' -print -quit)"
+          U="$(find stage_a -type f -name 'setups.csv' -print -quit)"
           test -n "$F"
+          test -n "$S"
+          test -n "$U"
           echo "features=$F" >> "$GITHUB_OUTPUT"
+          echo "signals=$S" >> "$GITHUB_OUTPUT"
+          echo "setups=$U" >> "$GITHUB_OUTPUT"
       - name: Audit final population
         working-directory: core
         run: |
