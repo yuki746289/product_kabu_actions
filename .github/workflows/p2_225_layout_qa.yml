@@ -1,0 +1,45 @@
+name: P2 225 layout parity QA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2_225_layout_qa.yml'
+      - '.github/p2_225_layout_qa_trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="core_expected_commit"{print $2}' .github/p2_225_layout_qa_trigger)"
+          test -n "$SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Compile QA
+        working-directory: core
+        run: python -m py_compile scripts/generate_p2_225_nikkei_mirror.py scripts/qa_p2_225_nikkei_mirror.py scripts/generate_p2_225_all_period_report.py scripts/sync_p2_225_top_level_report.py
+      - name: Run current-tree layout QA
+        working-directory: core
+        run: python scripts/qa_p2_225_nikkei_mirror.py --canonical-dir preview/kabu --mirror-dir preview/kabu/analysis/225_indicator_stageb
