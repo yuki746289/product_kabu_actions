@@ -1,0 +1,117 @@
+name: Publish P2 225 canonical mirror artifact
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2_225_mirror_publish.yml'
+      - '.github/p2_225_mirror_publish_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve publish contract
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=.github/p2_225_mirror_publish_trigger
+          awk -F': ' '
+            $1=="target_branch"{print "target_branch="$2}
+            $1=="expected_core_head"{print "expected_core_head="$2}
+            $1=="source_run_id"{print "source_run_id="$2}
+            $1=="source_artifact"{print "source_artifact="$2}
+            $1=="target_path"{print "target_path="$2}
+          ' "$FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout product_kabu research branch
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.target_branch }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify target branch head
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          EXPECTED="${{ steps.cfg.outputs.expected_core_head }}"
+          echo "expected=$EXPECTED"
+          echo "actual=$ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Download final validated artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.cfg.outputs.source_artifact }}
+          path: generated
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ steps.cfg.outputs.source_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify final QA before publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("generated")
+          q=json.loads((root/"final_qa_status.json").read_text(encoding="utf-8"))
+          m=json.loads((root/"mirror_status.json").read_text(encoding="utf-8"))
+          assert q.get("overall_pass") is True, q
+          assert m.get("data_substitution_pass") is True, m
+          assert q.get("new_broken_link_count")==0, q.get("new_broken_link_count")
+          print("final QA verified")
+          PY
+
+      - name: Replace only 225 mirror target
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="core/${{ steps.cfg.outputs.target_path }}"
+          rm -rf "$TARGET"
+          mkdir -p "$TARGET"
+          cp -a generated/. "$TARGET"/
+          test -f "$TARGET/index.html"
+          test -f "$TARGET/mirror_status.json"
+          test -f "$TARGET/final_qa_status.json"
+
+      - name: Commit validated mirror to research branch
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${{ steps.cfg.outputs.target_path }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A "$TARGET"
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+            exit 0
+          fi
+          git commit -m "data: publish validated 225 canonical mirror v4"
+          git push origin "HEAD:refs/heads/${{ steps.cfg.outputs.target_branch }}"
+
+      - name: Verify published head
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOCAL="$(git rev-parse HEAD)"
+          REMOTE="$(git ls-remote origin "refs/heads/${{ steps.cfg.outputs.target_branch }}" | cut -f1)"
+          test "$LOCAL" = "$REMOTE"
+          echo "published_head=$LOCAL"
