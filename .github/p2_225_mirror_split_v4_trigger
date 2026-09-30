@@ -1,0 +1,6 @@
+trigger: 2026-09-30T11:58:00+09:00
+core_expected_commit: 90c8155872894257b07363423b2d564d2585cc2b
+source_run_id: 35946017970
+reuse_v2_run_id: 36646949226
+reuse_v3_run_id: 36661503630
+reason: reuse structural and condition artifacts; rerun combo stability at finer granularity and fixed walk-forward, then continue OR/render/QA
