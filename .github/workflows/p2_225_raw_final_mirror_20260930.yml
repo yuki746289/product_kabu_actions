@@ -1,0 +1,597 @@
+name: P2 225 raw final canonical mirror 20260930
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_raw_final_mirror_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  SOURCE_RUN_ID: "36703088996"
+  SOURCE_ARTIFACT: "p2-225-raw-features-20260930"
+  FOUNDATION_RUN_ID: "36711913770"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      core_sha: ${{ steps.cfg.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="core_expected_commit"{print $2}' .github/p2_225_raw_final_mirror_trigger)"
+          test -n "$SHA"
+          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify Actions architecture
+        run: |
+          python scripts/check_actions_architecture.py \
+            --core-dir core \
+            --expected-core-sha "${{ steps.cfg.outputs.core_sha }}"
+      - name: Compile final pipeline
+        working-directory: core
+        run: |
+          python -m py_compile \
+            scripts/build_p2_225_combo_stability_shard.py \
+            scripts/build_p2_225_combo_walkforward_shard.py \
+            scripts/assemble_p2_225_semantic_bundle.py \
+            scripts/build_p2_225_or_shard.py \
+            scripts/aggregate_p2_225_or_shards.py \
+            scripts/generate_p2_225_nikkei_mirror.py \
+            scripts/qa_p2_225_nikkei_mirror.py
+
+  combo_stability:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: pair
+            shard: 0
+            count: 16
+          - kind: pair
+            shard: 1
+            count: 16
+          - kind: pair
+            shard: 2
+            count: 16
+          - kind: pair
+            shard: 3
+            count: 16
+          - kind: pair
+            shard: 4
+            count: 16
+          - kind: pair
+            shard: 5
+            count: 16
+          - kind: pair
+            shard: 6
+            count: 16
+          - kind: pair
+            shard: 7
+            count: 16
+          - kind: pair
+            shard: 8
+            count: 16
+          - kind: pair
+            shard: 9
+            count: 16
+          - kind: pair
+            shard: 10
+            count: 16
+          - kind: pair
+            shard: 11
+            count: 16
+          - kind: pair
+            shard: 12
+            count: 16
+          - kind: pair
+            shard: 13
+            count: 16
+          - kind: pair
+            shard: 14
+            count: 16
+          - kind: pair
+            shard: 15
+            count: 16
+          - kind: triple
+            shard: 0
+            count: 32
+          - kind: triple
+            shard: 1
+            count: 32
+          - kind: triple
+            shard: 2
+            count: 32
+          - kind: triple
+            shard: 3
+            count: 32
+          - kind: triple
+            shard: 4
+            count: 32
+          - kind: triple
+            shard: 5
+            count: 32
+          - kind: triple
+            shard: 6
+            count: 32
+          - kind: triple
+            shard: 7
+            count: 32
+          - kind: triple
+            shard: 8
+            count: 32
+          - kind: triple
+            shard: 9
+            count: 32
+          - kind: triple
+            shard: 10
+            count: 32
+          - kind: triple
+            shard: 11
+            count: 32
+          - kind: triple
+            shard: 12
+            count: 32
+          - kind: triple
+            shard: 13
+            count: 32
+          - kind: triple
+            shard: 14
+            count: 32
+          - kind: triple
+            shard: 15
+            count: 32
+          - kind: triple
+            shard: 16
+            count: 32
+          - kind: triple
+            shard: 17
+            count: 32
+          - kind: triple
+            shard: 18
+            count: 32
+          - kind: triple
+            shard: 19
+            count: 32
+          - kind: triple
+            shard: 20
+            count: 32
+          - kind: triple
+            shard: 21
+            count: 32
+          - kind: triple
+            shard: 22
+            count: 32
+          - kind: triple
+            shard: 23
+            count: 32
+          - kind: triple
+            shard: 24
+            count: 32
+          - kind: triple
+            shard: 25
+            count: 32
+          - kind: triple
+            shard: 26
+            count: 32
+          - kind: triple
+            shard: 27
+            count: 32
+          - kind: triple
+            shard: 28
+            count: 32
+          - kind: triple
+            shard: 29
+            count: 32
+          - kind: triple
+            shard: 30
+            count: 32
+          - kind: triple
+            shard: 31
+            count: 32
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-structural
+          path: /tmp/structural
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FOUNDATION_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Combination stability shard
+        working-directory: core
+        run: |
+          F="$(find ../source -type f -name 'features.csv' -print -quit)"
+          test -n "$F"
+          python scripts/build_p2_225_combo_stability_shard.py \
+            --features "$F" \
+            --structural-dir /tmp/structural \
+            --kind ${{ matrix.kind }} \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count ${{ matrix.count }} \
+            --output-dir /tmp/combo_stability
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-combo-stability-${{ matrix.kind }}-${{ matrix.shard }}
+          path: /tmp/combo_stability
+          retention-days: 30
+
+  combo_walkforward:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-structural
+          path: /tmp/structural
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FOUNDATION_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Combination walk-forward shard
+        working-directory: core
+        run: |
+          F="$(find ../source -type f -name 'features.csv' -print -quit)"
+          python scripts/build_p2_225_combo_walkforward_shard.py \
+            --features "$F" \
+            --structural-dir /tmp/structural \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 14 \
+            --output-dir /tmp/combo_walkforward
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-combo-walkforward-${{ matrix.shard }}
+          path: /tmp/combo_walkforward
+          retention-days: 30
+
+  semantic_assemble:
+    needs: [preflight, combo_stability, combo_walkforward]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-semantic-base
+          path: /tmp/base
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FOUNDATION_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-structural
+          path: /tmp/structural
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FOUNDATION_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-condition
+          path: /tmp/condition
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FOUNDATION_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-raw-combo-stability-*
+          path: /tmp/combo_stability
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-raw-combo-walkforward-*
+          path: /tmp/combo_walkforward
+          merge-multiple: false
+      - name: Assemble semantic bundle
+        working-directory: core
+        run: |
+          python scripts/assemble_p2_225_semantic_bundle.py \
+            --base-dir /tmp/base \
+            --structural-dir /tmp/structural \
+            --condition-dir /tmp/condition \
+            --combo-stability-root /tmp/combo_stability \
+            --combo-walkforward-root /tmp/combo_walkforward \
+            --output-dir /tmp/semantic
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-semantic
+          path: /tmp/semantic
+          retention-days: 30
+
+  or2:
+    needs: [preflight, semantic_assemble]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-raw-semantic, path: /tmp/semantic}
+      - name: OR2 shard
+        working-directory: core
+        run: |
+          F="$(find ../source -type f -name 'features.csv' -print -quit)"
+          python scripts/build_p2_225_or_shard.py \
+            --features "$F" \
+            --semantic-dir /tmp/semantic \
+            --kind or2 \
+            --output-dir /tmp/or2 \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-or2-${{ matrix.shard }}
+          path: /tmp/or2
+          retention-days: 30
+
+  or3:
+    needs: [preflight, semantic_assemble]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-raw-semantic, path: /tmp/semantic}
+      - name: OR3 shard
+        working-directory: core
+        run: |
+          F="$(find ../source -type f -name 'features.csv' -print -quit)"
+          python scripts/build_p2_225_or_shard.py \
+            --features "$F" \
+            --semantic-dir /tmp/semantic \
+            --kind or3 \
+            --output-dir /tmp/or3 \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 32
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-or3-${{ matrix.shard }}
+          path: /tmp/or3
+          retention-days: 30
+
+  or_aggregate:
+    needs: [preflight, semantic_assemble, or2, or3]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-raw-semantic, path: /tmp/semantic}
+      - uses: actions/download-artifact@v4
+        with: {pattern: p2-225-raw-or2-*, path: /tmp/or2, merge-multiple: false}
+      - uses: actions/download-artifact@v4
+        with: {pattern: p2-225-raw-or3-*, path: /tmp/or3, merge-multiple: false}
+      - name: Aggregate OR
+        working-directory: core
+        run: |
+          F="$(find ../source -type f -name 'features.csv' -print -quit)"
+          python scripts/aggregate_p2_225_or_shards.py \
+            --features "$F" \
+            --semantic-dir /tmp/semantic \
+            --or2-root /tmp/or2 \
+            --or3-root /tmp/or3 \
+            --output-dir /tmp/or
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-or
+          path: /tmp/or
+          retention-days: 30
+
+  render:
+    needs: [preflight, semantic_assemble, or_aggregate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-raw-semantic, path: /tmp/semantic}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-raw-or, path: /tmp/or}
+      - name: Render canonical mirror
+        working-directory: core
+        run: |
+          F="$(find ../source -type f -name 'features.csv' -print -quit)"
+          python scripts/generate_p2_225_nikkei_mirror.py \
+            --features "$F" \
+            --output-dir /tmp/mirror \
+            --canonical-dir preview/kabu \
+            --semantic-dir /tmp/semantic \
+            --or-dir /tmp/or
+      - name: Verify mirror population
+        shell: bash
+        run: |
+          grep -R "181,318" /tmp/mirror/report.html /tmp/mirror/index.html >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-render
+          path: /tmp/mirror
+          retention-days: 30
+
+  qa:
+    needs: [preflight, render]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-raw-render, path: /tmp/mirror}
+      - name: Final QA
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_nikkei_mirror.py --canonical-dir preview/kabu --mirror-dir /tmp/mirror
+          python - <<'PY'
+          import json
+          p="/tmp/mirror/final_qa_status.json"
+          x=json.load(open(p,encoding="utf-8"))
+          assert x["overall_pass"] is True, x
+          print(json.dumps(x,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          path: /tmp/mirror
+          retention-days: 30
