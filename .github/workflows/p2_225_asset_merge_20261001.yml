@@ -6,6 +6,10 @@ on:
     paths:
       - '.github/p2_225_asset_merge_trigger'
 
+concurrency:
+  group: p2-225-asset-merge-20261001
+  cancel-in-progress: true
+
 permissions:
   contents: read
   actions: read
