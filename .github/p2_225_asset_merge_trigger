@@ -1,4 +1,4 @@
-core_expected_commit: 533e49f0139d7f82e4b034f99dc2a64c37a68fc4
+core_expected_commit: 7a9bbf0d44ec6159f02e3d2204c5956ac67b7ef7
 base_shell_run_id: 36819471067
 new_shard_run_id: 36844054546
-reason: merge fixed high-entry links and 447 asset-chart condition pages without recomputing analysis
+reason: merge fixed high-entry links including non-canonical candidate charts and 447 asset-chart condition pages
