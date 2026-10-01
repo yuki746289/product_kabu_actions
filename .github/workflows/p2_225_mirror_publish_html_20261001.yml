@@ -1,0 +1,168 @@
+name: Publish P2 225 validated HTML mirror 20261001
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_mirror_publish_html_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve publish contract
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=.github/p2_225_mirror_publish_html_trigger
+          awk -F': ' '
+            $1=="target_branch"{print "target_branch="$2}
+            $1=="expected_core_head"{print "expected_core_head="$2}
+            $1=="source_run_id"{print "source_run_id="$2}
+            $1=="source_artifact"{print "source_artifact="$2}
+            $1=="target_path"{print "target_path="$2}
+          ' "$FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout private core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.target_branch }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify Actions architecture
+        run: |
+          python scripts/check_actions_architecture.py \
+            --core-dir core \
+            --expected-core-sha "${{ steps.cfg.outputs.expected_core_head }}"
+
+      - name: Verify target branch head
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          EXPECTED="${{ steps.cfg.outputs.expected_core_head }}"
+          echo "expected=$EXPECTED"
+          echo "actual=$ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Download final validated artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.cfg.outputs.source_artifact }}
+          path: generated
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ steps.cfg.outputs.source_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify final QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("generated")
+          q=json.loads((root/"final_qa_status.json").read_text(encoding="utf-8"))
+          m=json.loads((root/"mirror_status.json").read_text(encoding="utf-8"))
+          s=json.loads((root/"status.json").read_text(encoding="utf-8"))
+          assert q.get("overall_pass") is True, q
+          assert m.get("overall_pass") is True, m
+          assert m.get("data_substitution_pass") is True, m
+          assert s.get("overall_pass") is True, s
+          assert s.get("baseline_rows")==181318, s
+          assert s.get("unique_tickers")==225, s
+          assert q.get("new_broken_link_count")==0, q
+          print("validated rows=181318 tickers=225 QA=PASS")
+          PY
+
+      - name: Build HTML-only publish tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf publish
+          mkdir -p publish
+          cd generated
+          find . -type f -name '*.html' -print0 | while IFS= read -r -d '' f; do
+            mkdir -p "../publish/$(dirname "$f")"
+            cp "$f" "../publish/$f"
+          done
+          cd ..
+          for f in status.json mirror_status.json final_qa_status.json report_interaction_validation.json; do
+            if [ -f "generated/$f" ]; then cp "generated/$f" "publish/$f"; fi
+          done
+          test -f publish/index.html
+          test -f publish/report.html
+          test -f publish/report_all_period.html
+          test -f publish/status.json
+          test -f publish/mirror_status.json
+          test -f publish/final_qa_status.json
+          echo "HTML files: $(find publish -type f -name '*.html' | wc -l)"
+          du -sh publish
+
+      - name: Replace 225 HTML mirror target
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="core/${{ steps.cfg.outputs.target_path }}"
+          rm -rf "$TARGET"
+          mkdir -p "$TARGET"
+          cp -a publish/. "$TARGET"/
+
+      - name: Verify published HTML tree before commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="core/${{ steps.cfg.outputs.target_path }}"
+          grep -R "181,318" "$TARGET/index.html" "$TARGET/report.html" >/dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("core/preview/kabu/analysis/225_indicator_stageb")
+          assert json.loads((root/"status.json").read_text(encoding="utf-8"))["overall_pass"] is True
+          assert json.loads((root/"mirror_status.json").read_text(encoding="utf-8"))["overall_pass"] is True
+          assert json.loads((root/"final_qa_status.json").read_text(encoding="utf-8"))["overall_pass"] is True
+          print("publish tree verified")
+          PY
+
+      - name: Commit validated HTML mirror
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${{ steps.cfg.outputs.target_path }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A "$TARGET"
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+            exit 0
+          fi
+          git commit -m "data: publish raw 181318-row 225 HTML mirror"
+          git push origin "HEAD:refs/heads/${{ steps.cfg.outputs.target_branch }}"
+
+      - name: Verify remote head
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOCAL="$(git rev-parse HEAD)"
+          REMOTE="$(git ls-remote origin "refs/heads/${{ steps.cfg.outputs.target_branch }}" | cut -f1)"
+          test "$LOCAL" = "$REMOTE"
+          echo "published_head=$LOCAL"
