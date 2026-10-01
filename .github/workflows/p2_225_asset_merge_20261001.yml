@@ -12,7 +12,7 @@ permissions:
 
 env:
   PYTHONUNBUFFERED: "1"
-  BASE_SHELL_RUN_ID: "36819471067"
+  BASE_SHELL_RUN_ID: "36844054546"
   NEW_SHARD_RUN_ID: "36844054546"
 
 jobs:
@@ -80,7 +80,7 @@ jobs:
           set -euo pipefail
           test "$(find /tmp/shards -mindepth 1 -maxdepth 1 -type d -name 'p2-225-raw-condition-shard-*' | wc -l)" -eq 16
           mkdir -p /tmp/merged/conditions/charts
-          rm -f /tmp/merged/conditions/*.html
+          find /tmp/merged/conditions -maxdepth 1 -type f -name '*.html' ! -name 'index.html' -delete
           rm -f /tmp/merged/conditions/charts/*.html
           for d in /tmp/shards/p2-225-raw-condition-shard-*; do
             cp "$d"/conditions/*.html /tmp/merged/conditions/
