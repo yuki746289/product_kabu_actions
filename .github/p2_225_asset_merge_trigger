@@ -1,4 +1,4 @@
 core_expected_commit: a16f07305d2c5c26edd390739972a398d1444b70
-base_shell_run_id: 36819471067
+base_shell_run_id: 36844054546
 new_shard_run_id: 36844054546
-reason: merge 447 asset charts and generate only unambiguous non-canonical high-entry charts
+reason: retry asset-chart merge preserving conditions index
