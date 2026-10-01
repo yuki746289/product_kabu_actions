@@ -1,0 +1,288 @@
+name: P2 225 raw sharded render 20261001
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_raw_render_sharded_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  SOURCE_RUN_ID: "36703088996"
+  FINAL_RUN_ID: "36714890471"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      core_sha: ${{ steps.cfg.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="core_expected_commit"{print $2}' .github/p2_225_raw_render_sharded_trigger)"
+          test -n "$SHA"
+          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify Actions architecture
+        run: |
+          python scripts/check_actions_architecture.py \
+            --core-dir core \
+            --expected-core-sha "${{ steps.cfg.outputs.core_sha }}"
+      - name: Compile sharded render pipeline
+        working-directory: core
+        run: |
+          python -m py_compile \
+            scripts/generate_p2_225_nikkei_mirror.py \
+            scripts/qa_p2_225_nikkei_mirror.py
+
+  condition_shard:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Render condition shard
+        working-directory: core
+        run: |
+          F="$(find ../source -type f -name 'features.csv' -print -quit)"
+          test -n "$F"
+          python scripts/generate_p2_225_nikkei_mirror.py \
+            --features "$F" \
+            --output-dir "/tmp/shard_${{ matrix.shard }}" \
+            --canonical-dir preview/kabu \
+            --condition-shard-index ${{ matrix.shard }} \
+            --condition-shard-count 16 \
+            --condition-pages-only
+      - name: Stage only rebuilt condition pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "/tmp/shard_artifact/conditions/charts"
+          cp /tmp/shard_${{ matrix.shard }}/conditions/*.html /tmp/shard_artifact/conditions/
+          cp /tmp/shard_${{ matrix.shard }}/conditions/charts/*.html /tmp/shard_artifact/conditions/charts/
+          test -f /tmp/shard_${{ matrix.shard }}/condition_shard_status.json
+          cp /tmp/shard_${{ matrix.shard }}/condition_shard_status.json /tmp/shard_artifact/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-condition-shard-${{ matrix.shard }}
+          path: /tmp/shard_artifact
+          retention-days: 30
+
+  shell:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-semantic
+          path: /tmp/semantic
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FINAL_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-or
+          path: /tmp/or
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FINAL_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Render shell without 225 condition detail pages
+        working-directory: core
+        run: |
+          F="$(find ../source -type f -name 'features.csv' -print -quit)"
+          test -n "$F"
+          python scripts/generate_p2_225_nikkei_mirror.py \
+            --features "$F" \
+            --output-dir /tmp/shell \
+            --canonical-dir preview/kabu \
+            --semantic-dir /tmp/semantic \
+            --or-dir /tmp/or \
+            --skip-condition-pages
+      - name: Remove temporary canonical condition detail copies
+        shell: bash
+        run: |
+          set -euo pipefail
+          find /tmp/shell/conditions -maxdepth 1 -type f -name '*.html' ! -name 'index.html' -delete
+          find /tmp/shell/conditions/charts -maxdepth 1 -type f -name '*.html' -delete
+          test -f /tmp/shell/conditions/index.html
+          test -f /tmp/shell/mirror_status.json
+          grep -R "181,318" /tmp/shell/report.html /tmp/shell/index.html >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-render-shell
+          path: /tmp/shell
+          retention-days: 30
+
+  merge:
+    needs: [preflight, condition_shard, shell]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-render-shell
+          path: /tmp/merged
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-raw-condition-shard-*
+          path: /tmp/shards
+          merge-multiple: false
+      - name: Merge condition page shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/merged/conditions/charts
+          for d in /tmp/shards/p2-225-raw-condition-shard-*; do
+            cp "$d"/conditions/*.html /tmp/merged/conditions/
+            cp "$d"/conditions/charts/*.html /tmp/merged/conditions/charts/
+          done
+      - name: Verify canonical filename inventory before QA
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sys
+          groups={
+              "conditions":"conditions",
+              "condition_charts":"conditions/charts",
+          }
+          canonical=Path("core/preview/kabu")
+          merged=Path("/tmp/merged")
+          ok=True
+          for name,rel in groups.items():
+              a=sorted(p.name for p in (canonical/rel).glob("*.html"))
+              b=sorted(p.name for p in (merged/rel).glob("*.html"))
+              print(name, "canonical=",len(a),"merged=",len(b))
+              missing=sorted(set(a)-set(b))
+              extra=sorted(set(b)-set(a))
+              if missing or extra:
+                  ok=False
+                  print("missing",missing[:20])
+                  print("extra",extra[:20])
+          if not ok:
+              raise SystemExit(2)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-render-merged
+          path: /tmp/merged
+          retention-days: 30
+
+  qa:
+    needs: [preflight, merge]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-render-merged
+          path: /tmp/mirror
+      - name: Final QA
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_nikkei_mirror.py \
+            --canonical-dir preview/kabu \
+            --mirror-dir /tmp/mirror
+          python - <<'PY'
+          import json
+          p="/tmp/mirror/final_qa_status.json"
+          x=json.load(open(p,encoding="utf-8"))
+          assert x["overall_pass"] is True, x
+          print(json.dumps(x,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          path: /tmp/mirror
+          retention-days: 30
