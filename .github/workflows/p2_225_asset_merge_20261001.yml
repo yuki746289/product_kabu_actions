@@ -87,63 +87,47 @@ jobs:
             cp "$d"/conditions/charts/*.html /tmp/merged/conditions/charts/
           done
 
-      - name: Patch high-entry condition links
+      - name: Regenerate high-entry page and non-canonical candidate charts
         run: |
-          python - <<'PY'
-          import html
-          import pandas as pd
+          PYTHONPATH=core/scripts python - <<'PY'
           from pathlib import Path
+          import generate_p2_high_entry_accuracy_report as high
 
           root=Path("/tmp/merged")
-          page=root/"analysis"/"high_entry_accuracy.html"
-          manifest=pd.read_csv(root/"condition_detail_manifest.csv")
-          text=page.read_text(encoding="utf-8")
-          replacements=0
-          for row in manifest.itertuples(index=False):
-              label=str(row.condition_label)
-              slug=str(row.slug)
-              esc_label=html.escape(label)
-              needle=f"<td>{esc_label}</td>"
-              if needle not in text:
-                  continue
-              link=(
-                  f'<td><a href="../conditions/charts/{html.escape(slug)}.html" '
-                  f'target="_blank" rel="noopener">{esc_label}</a> '
-                  f'<a class="muted" href="../conditions/{html.escape(slug)}.html">[詳細]</a></td>'
-              )
-              n=text.count(needle)
-              text=text.replace(needle,link)
-              replacements+=n
-          page.write_text(text,encoding="utf-8")
-          print("high_entry_link_replacements=",replacements)
-          if replacements < 1:
-              raise SystemExit("no high-entry links were patched")
+          high.OUT=root
+          high.ANALYSIS=root/"analysis"
+          high.r.OUT=root
+          high.main()
           PY
 
-      - name: Verify requested condition and asset chart
+      - name: Verify requested condition link and asset chart
         run: |
           python - <<'PY'
           import html
-          import pandas as pd
+          import re
           from pathlib import Path
 
           root=Path("/tmp/merged")
           label="EMAモーション：転換 × 週足RCI26：中位・上向き"
-          manifest=pd.read_csv(root/"condition_detail_manifest.csv")
-          hit=manifest[manifest["condition_label"].astype(str)==label]
-          assert len(hit)==1, hit
-          slug=str(hit.iloc[0]["slug"])
-
+          esc=html.escape(label)
           high=(root/"analysis"/"high_entry_accuracy.html").read_text(encoding="utf-8")
-          expected=f'../conditions/charts/{slug}.html'
-          assert expected in high, expected
-          assert html.escape(label) in high
+          pat=r'<a href="([^"]+)"[^>]*>'+re.escape(esc)+r'</a>'
+          m=re.search(pat,high)
+          assert m, "requested condition is still not clickable"
+          href=m.group(1)
+          assert href.startswith("high_entry_charts/") or href.startswith("../conditions/charts/"), href
 
-          chart=(root/"conditions"/"charts"/f"{slug}.html").read_text(encoding="utf-8")
+          if href.startswith("high_entry_charts/"):
+              chart=root/"analysis"/href
+          else:
+              chart=(root/"analysis"/href).resolve()
+          assert chart.exists(), chart
+          text=chart.read_text(encoding="utf-8")
           for marker in ("参考資産指数","assetChart","assetCurrent","assetDrawdown","monthlyReturn"):
-              assert marker in chart, marker
-          assert '"r5":' in chart and '"r10":' in chart and '"r20":' in chart
-          print("verified_slug=",slug)
+              assert marker in text, marker
+          assert '"r5":' in text and '"r10":' in text and '"r20":' in text
+          print("verified_href=",href)
+          print("verified_chart=",chart)
           PY
 
       - name: Verify canonical filename inventory
