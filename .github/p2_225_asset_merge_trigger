@@ -1,4 +1,4 @@
-core_expected_commit: c6f2ebb395e97c11610db3d34b68fad48530511f
+core_expected_commit: 08193e6e97d49eb6cd7c401932024e8ece7d121d
 base_shell_run_id: 36844054546
 new_shard_run_id: 36844054546
-reason: optimized robust focus ranking with stable IDs and monthly-frequency colors
+reason: retry optimized robust focus ranking after CSS f-string fix
