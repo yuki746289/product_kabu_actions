@@ -107,12 +107,114 @@ jobs:
           for f in status.json mirror_status.json final_qa_status.json report_interaction_validation.json; do
             if [ -f "generated/$f" ]; then cp "generated/$f" "publish/$f"; fi
           done
+
+          # signal_level_features.html is >100 MB for the 181,318-row population.
+          # GitHub rejects individual files over 100 MB, so replace only this audit
+          # view with a lightweight index plus chunked HTML pages generated from
+          # the already-validated CSV. Analytical values are unchanged.
+          rm -f publish/details/signal_level_features.html
+          rm -rf publish/details/signal_level_features_parts
+          mkdir -p publish/details/signal_level_features_parts
+          python - <<'PY'
+          import csv
+          import html
+          import math
+          from pathlib import Path
+
+          src=Path("generated/signal_level_features.csv")
+          out=Path("publish/details")
+          parts=out/"signal_level_features_parts"
+          chunk_size=5000
+
+          if not src.is_file():
+              raise SystemExit(f"missing {src}")
+
+          css="""
+          :root{--bg:#f4f6f8;--card:#fff;--text:#1f2937;--muted:#667085;--line:#d9dee7;--accent:#2457a6}
+          *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;line-height:1.5}
+          .wrap{max-width:1600px;margin:0 auto;padding:24px}.hero{background:#16243d;color:#fff;border-radius:14px;padding:22px 26px;margin-bottom:18px}
+          a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin:14px 0}
+          .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff}table{border-collapse:collapse;width:max-content;min-width:100%;font-size:12px}
+          th,td{border-bottom:1px solid #e5e7eb;padding:5px 7px;white-space:nowrap;text-align:right}th{position:sticky;top:0;background:#eef2f7;z-index:1}th:first-child,td:first-child{text-align:left}
+          .links{display:flex;gap:8px;flex-wrap:wrap}.btn{display:inline-block;padding:7px 11px;border:1px solid #b7c3d4;background:#fff;border-radius:7px}
+          .muted{color:var(--muted);font-size:13px}
+          """
+
+          def page(title, body, back):
+              return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title><style>{css}</style></head><body><div class="wrap"><div class="hero"><h1>{html.escape(title)}</h1><p>主要225株 P2 Long / 181,318件</p></div><div class="links"><a class="btn" href="{back}">← 戻る</a></div>{body}</div></body></html>"""
+
+          with src.open("r",encoding="utf-8-sig",newline="") as fh:
+              reader=csv.reader(fh)
+              header=next(reader)
+              chunk=[]
+              part_no=0
+              total=0
+              links=[]
+
+              def flush(rows, n, start_row):
+                  if not rows:
+                      return
+                  end_row=start_row+len(rows)-1
+                  name=f"part_{n:03d}.html"
+                  th="".join(f"<th>{html.escape(str(x))}</th>" for x in header)
+                  trs=[]
+                  for row in rows:
+                      cells="".join(f"<td>{html.escape(str(v))}</td>" for v in row)
+                      trs.append("<tr>"+cells+"</tr>")
+                  body=(
+                      f'<div class="card"><strong>{start_row:,}〜{end_row:,}件</strong>'
+                      f'<div class="muted">全181,318件の分割表示</div></div>'
+                      f'<div class="table-wrap"><table><thead><tr>{th}</tr></thead><tbody>'
+                      + "".join(trs)
+                      + "</tbody></table></div>"
+                  )
+                  (parts/name).write_text(page(f"シグナル明細 {start_row:,}〜{end_row:,}",body,"../signal_level_features.html"),encoding="utf-8")
+                  links.append((name,start_row,end_row))
+
+              for row in reader:
+                  if not chunk:
+                      start_row=total+1
+                  chunk.append(row)
+                  total+=1
+                  if len(chunk)>=chunk_size:
+                      part_no+=1
+                      flush(chunk,part_no,start_row)
+                      chunk=[]
+              if chunk:
+                  part_no+=1
+                  flush(chunk,part_no,start_row)
+
+          if total != 181318:
+              raise SystemExit(f"signal row mismatch: {total} != 181318")
+
+          cards=[]
+          for name,a,b in links:
+              cards.append(f'<a class="btn" href="signal_level_features_parts/{name}">{a:,}〜{b:,}件</a>')
+          body=(
+              '<div class="card"><h2>シグナル明細</h2>'
+              '<p>GitHubの1ファイル100MB制限に対応するため、181,318件を5,000件単位で分割表示しています。</p>'
+              '<p>分析母集団・計算結果はFinal QA済みartifactと同一です。</p></div>'
+              '<div class="links">'+"".join(cards)+'</div>'
+          )
+          (out/"signal_level_features.html").write_text(page("P2 主要225株 シグナル明細",body,"index.html"),encoding="utf-8")
+          print(f"signal chunks={part_no} rows={total}")
+          PY
+
           test -f publish/index.html
           test -f publish/report.html
           test -f publish/report_all_period.html
+          test -f publish/details/signal_level_features.html
           test -f publish/status.json
           test -f publish/mirror_status.json
           test -f publish/final_qa_status.json
+
+          LARGE="$(find publish -type f -size +95M -print)"
+          if [ -n "$LARGE" ]; then
+            echo "ERROR: files above 95 MB remain:"
+            echo "$LARGE"
+            exit 1
+          fi
+
           echo "HTML files: $(find publish -type f -name '*.html' | wc -l)"
           du -sh publish
 
