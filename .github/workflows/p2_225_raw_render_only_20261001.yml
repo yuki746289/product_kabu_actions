@@ -1,0 +1,160 @@
+name: P2 225 raw render only 20261001
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_raw_render_only_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  SOURCE_RUN_ID: "36703088996"
+  FINAL_RUN_ID: "36714890471"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      core_sha: ${{ steps.cfg.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="core_expected_commit"{print $2}' .github/p2_225_raw_render_only_trigger)"
+          test -n "$SHA"
+          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify Actions architecture
+        run: |
+          python scripts/check_actions_architecture.py \
+            --core-dir core \
+            --expected-core-sha "${{ steps.cfg.outputs.core_sha }}"
+      - name: Compile render and QA
+        working-directory: core
+        run: |
+          python -m py_compile \
+            scripts/generate_p2_225_nikkei_mirror.py \
+            scripts/qa_p2_225_nikkei_mirror.py
+
+  render:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-semantic
+          path: /tmp/semantic
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FINAL_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-or
+          path: /tmp/or
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FINAL_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Render canonical mirror
+        working-directory: core
+        run: |
+          F="$(find ../source -type f -name 'features.csv' -print -quit)"
+          test -n "$F"
+          python scripts/generate_p2_225_nikkei_mirror.py \
+            --features "$F" \
+            --output-dir /tmp/mirror \
+            --canonical-dir preview/kabu \
+            --semantic-dir /tmp/semantic \
+            --or-dir /tmp/or
+      - name: Verify mirror population
+        shell: bash
+        run: |
+          grep -R "181,318" /tmp/mirror/report.html /tmp/mirror/index.html >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-render-final
+          path: /tmp/mirror
+          retention-days: 30
+
+  qa:
+    needs: [preflight, render]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-render-final
+          path: /tmp/mirror
+      - name: Final QA
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_nikkei_mirror.py \
+            --canonical-dir preview/kabu \
+            --mirror-dir /tmp/mirror
+          python - <<'PY'
+          import json
+          p="/tmp/mirror/final_qa_status.json"
+          x=json.load(open(p,encoding="utf-8"))
+          assert x["overall_pass"] is True, x
+          print(json.dumps(x,ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          path: /tmp/mirror
+          retention-days: 30
