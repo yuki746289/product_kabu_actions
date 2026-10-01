@@ -3,4 +3,4 @@ expected_core_head: b166951eda18b60c80b3429da6bc5b907f0e681f
 source_run_id: 36819471067
 source_artifact: p2-225-raw-canonical-mirror-final
 target_path: preview/kabu/analysis/225_indicator_stageb
-reason: publish validated 181318-row 225 HTML mirror for local preview
+reason: publish validated 181318-row 225 HTML mirror with signal-detail chunking
