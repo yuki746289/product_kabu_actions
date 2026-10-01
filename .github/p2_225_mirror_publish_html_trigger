@@ -1,6 +1,6 @@
 target_branch: research/p2-nikkei-complete-baseline-20260915
-expected_core_head: 05b27a5b2509004259cc282c25d3db297651b596
-source_run_id: 36862990578
+expected_core_head: 4386d6c54b45e95ce690c609bdff724360d158af
+source_run_id: 36873093417
 source_artifact: p2-225-raw-canonical-mirror-asset-final
 target_path: preview/kabu/analysis/225_indicator_stageb
-reason: publish validated 225 high-entry links and reference asset curves
+reason: publish robust focus ranking stable IDs monthly-frequency colors and asset charts
