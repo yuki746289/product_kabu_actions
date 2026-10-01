@@ -227,6 +227,15 @@ jobs:
           mkdir -p "$TARGET"
           cp -a publish/. "$TARGET"/
 
+      - name: Apply accuracy-rate highlighting
+        shell: bash
+        run: |
+          set -euo pipefail
+          python core/scripts/postprocess_p2_accuracy_highlight.py \
+            --root core/${{ steps.cfg.outputs.target_path }}
+          grep -q 'p2-accuracy-highlight-style' "core/${{ steps.cfg.outputs.target_path }}/index.html"
+          grep -q 'p2-accuracy-highlight-script' "core/${{ steps.cfg.outputs.target_path }}/report.html"
+
       - name: Verify published HTML tree before commit
         shell: bash
         run: |
