@@ -1,6 +1,6 @@
 target_branch: research/p2-nikkei-complete-baseline-20260915
-expected_core_head: 277c2d47bac0d29a8ec161cfe724f4ebdf1660e6
-source_run_id: 36819471067
+expected_core_head: 533e49f0139d7f82e4b034f99dc2a64c37a68fc4
+source_run_id: 36844054546
 source_artifact: p2-225-raw-canonical-mirror-final
 target_path: preview/kabu/analysis/225_indicator_stageb
-reason: republish validated 181318-row 225 HTML with 60/70 accuracy highlighting
+reason: publish fixed high-entry links and reference asset curves for validated 181318-row 225 HTML
