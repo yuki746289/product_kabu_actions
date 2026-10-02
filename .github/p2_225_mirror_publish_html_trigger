@@ -1,6 +1,6 @@
 target_branch: research/p2-nikkei-complete-baseline-20260915
-expected_core_head: 4386d6c54b45e95ce690c609bdff724360d158af
-source_run_id: 36873093417
+expected_core_head: 4b469d3f4e141e32d1f9f98ed8a20c75d873deed
+source_run_id: 36978299907
 source_artifact: p2-225-raw-canonical-mirror-asset-final
 target_path: preview/kabu/analysis/225_indicator_stageb
-reason: publish robust focus ranking stable IDs monthly-frequency colors and asset charts
+reason: publish full and half-period 10D asset growth columns
