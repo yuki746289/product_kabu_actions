@@ -1,6 +1,6 @@
 target_branch: research/p2-nikkei-complete-baseline-20260915
-expected_core_head: 4b469d3f4e141e32d1f9f98ed8a20c75d873deed
-source_run_id: 36978299907
+expected_core_head: 7ffd7896ace3639858ea66f317959358859ef9b2
+source_run_id: 36979444713
 source_artifact: p2-225-raw-canonical-mirror-asset-final
 target_path: preview/kabu/analysis/225_indicator_stageb
-reason: publish full and half-period 10D asset growth columns
+reason: publish corrected asset growth labels and midpoint month
