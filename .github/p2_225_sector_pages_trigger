@@ -1,5 +1,5 @@
 target_branch: research/p2-nikkei-complete-baseline-20260915
-expected_core_head: d36b1b91228ed4ff5a5c2ab81486069a44a4ba60
+expected_core_head: bf63da6d71b93285b926a1241dda3c889883ec7b
 source_run_id: 36979444713
 source_artifact: p2-225-raw-canonical-mirror-asset-final
-reason: retry 225 industry pages with Aug10 universe-aligned industry snapshot
+reason: optimized 225 industry page generation using sector subsets
