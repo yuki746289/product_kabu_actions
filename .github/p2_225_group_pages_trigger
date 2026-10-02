@@ -1,0 +1,4 @@
+target_branch: research/p2-nikkei-complete-baseline-20260915
+expected_core_head: f9443c901403fe035302068d99514fdfe1197f00
+source_run_id: 36979444713
+source_artifact: p2-225-raw-canonical-mirror-asset-final
