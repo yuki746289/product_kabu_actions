@@ -104,8 +104,8 @@ jobs:
           rm -rf core/preview/kabu/analysis/225_sector_all_period
           PYTHONPATH=core/scripts python core/scripts/generate_p2_225_sector_all_period_reports.py \
             --features-csv "$GITHUB_WORKSPACE/generated/signal_level_features.csv" \
-            --output-dir core/preview/kabu/analysis/225_sector_all_period \
-            --canonical-report core/preview/kabu/analysis/225_indicator_stageb/report_all_period.html \
+            --output-dir "$GITHUB_WORKSPACE/core/preview/kabu/analysis/225_sector_all_period" \
+            --canonical-report "$GITHUB_WORKSPACE/core/preview/kabu/analysis/225_indicator_stageb/report_all_period.html" \
             --expected-rows 181318 \
             --expected-tickers 225
 
