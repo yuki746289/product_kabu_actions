@@ -1,0 +1,228 @@
+name: P2 225 six-group all-period pages 20261002
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_group_pages_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-225-group-pages-20261002
+  cancel-in-progress: true
+
+jobs:
+  build_publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve contract
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=.github/p2_225_group_pages_trigger
+          awk -F': ' '
+            $1=="target_branch"{print "target_branch="$2}
+            $1=="expected_core_head"{print "expected_core_head="$2}
+            $1=="source_run_id"{print "source_run_id="$2}
+            $1=="source_artifact"{print "source_artifact="$2}
+          ' "$FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout private core
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.target_branch }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify Actions architecture
+        run: |
+          python scripts/check_actions_architecture.py             --core-dir core             --expected-core-sha "${{ steps.cfg.outputs.expected_core_head }}"
+
+      - name: Verify target head
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          EXPECTED="${{ steps.cfg.outputs.expected_core_head }}"
+          echo "expected=$EXPECTED"
+          echo "actual=$ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Static compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile             core/scripts/generate_p2_225_group_all_period_reports.py             core/scripts/generate_p2_225_sector_all_period_reports.py
+
+      - name: Install dependencies
+        run: |
+          pip install -r core/requirements.txt
+          pip install beautifulsoup4 lxml requests
+
+      - name: Download validated 225 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.cfg.outputs.source_artifact }}
+          path: generated
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ steps.cfg.outputs.source_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify source artifact
+        run: |
+          set -euo pipefail
+          test -f generated/signal_level_features.csv
+          test -f generated/final_qa_status.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("generated")
+          q=json.loads((root/"final_qa_status.json").read_text(encoding="utf-8"))
+          s=json.loads((root/"status.json").read_text(encoding="utf-8"))
+          assert q.get("overall_pass") is True, q
+          assert s.get("overall_pass") is True, s
+          assert s.get("baseline_rows")==181318, s
+          assert s.get("unique_tickers")==225, s
+          print("source QA PASS rows=181318 tickers=225")
+          PY
+
+      - name: Generate six-group pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d core/preview/kabu/analysis/225_sector_all_period
+          git -C core diff --quiet -- preview/kabu/analysis/225_sector_all_period
+          rm -rf core/preview/kabu/analysis/225_group_all_period
+          PYTHONPATH=core/scripts python core/scripts/generate_p2_225_group_all_period_reports.py             --features-csv "$GITHUB_WORKSPACE/generated/signal_level_features.csv"             --output-dir "$GITHUB_WORKSPACE/core/preview/kabu/analysis/225_group_all_period"             --root-report-all "$GITHUB_WORKSPACE/core/preview/kabu/report_all_period.html"             --root-report-stage "$GITHUB_WORKSPACE/core/preview/kabu/report.html"             --p225-report-all "$GITHUB_WORKSPACE/core/preview/kabu/analysis/225_indicator_stageb/report_all_period.html"             --p225-report-stage "$GITHUB_WORKSPACE/core/preview/kabu/analysis/225_indicator_stageb/report.html"             --expected-rows 181318             --expected-tickers 225
+          git -C core diff --quiet -- preview/kabu/analysis/225_sector_all_period
+
+      - name: QA six-group pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          root=Path("core/preview/kabu")
+          out=root/"analysis"/"225_group_all_period"
+          st=json.loads((out/"status.json").read_text(encoding="utf-8"))
+          assert st["overall_pass"] is True, st
+          assert st["source_rows"] == 181318, st
+          assert st["source_tickers"] == 225, st
+          assert st["generated_group_pages"] == 6, st
+          assert st["generated_comparison_pages"] == 1, st
+          assert st["generated_chart_pages"] == 36, st
+          assert st["group_signal_sum"] == 181318, st
+          assert st["group_ticker_sum"] == 225, st
+          assert st["existing_34_industry_tree_modified"] is False, st
+          assert st["production_changed"] is False, st
+
+          expected = [
+              ("technology.html","技術"),
+              ("financials.html","金融"),
+              ("consumer_goods.html","消費"),
+              ("materials.html","素材"),
+              ("capital_goods_others.html","資本財・その他"),
+              ("transportation_utilities.html","運輸・公益"),
+          ]
+          for fn,label in expected:
+              p=out/fn
+              assert p.exists(), fn
+              t=p.read_text(encoding="utf-8")
+              assert f"主要225株・{label}" in t
+              assert "181,318件" in t
+              assert "主要な単独優位性候補" in t
+              assert "OR条件分析" in t
+              assert "月次・安定性" in t
+              assert "6分類比較" in t
+              assert "52,938" not in t
+
+          comp=(out/"comparison.html").read_text(encoding="utf-8")
+          for label in [x[1] for x in expected]:
+              assert label in comp
+          for label in ["増加率%","1/2増加率%","最大DD%"]:
+              assert label in comp
+
+          reports=[
+              root/"report_all_period.html",
+              root/"report.html",
+              root/"analysis"/"225_indicator_stageb"/"report_all_period.html",
+              root/"analysis"/"225_indicator_stageb"/"report.html",
+          ]
+          for p in reports:
+              t=p.read_text(encoding="utf-8")
+              m=re.search(r'<select id="reportSwitch"[^>]*>(.*?)</select>',t,re.S)
+              assert m, p
+              block=m.group(1)
+              assert block.count("<option ") == 11, (p,block.count("<option "))
+              for label in ["技術（全期間）","金融（全期間）","消費（全期間）","素材（全期間）",
+                            "資本財・その他（全期間）","運輸・公益（全期間）","6分類比較"]:
+                  assert label in block, (p,label)
+
+          missing=[]
+          for p in out.rglob("*.html"):
+              text=p.read_text(encoding="utf-8")
+              for href in re.findall(r'href="([^"]+)"',text):
+                  if href.startswith(("http://","https://","#","javascript:","mailto:")):
+                      continue
+                  target=(p.parent/href.split("#",1)[0]).resolve()
+                  if not target.exists():
+                      missing.append((str(p.relative_to(root)),href))
+          assert not missing, missing[:30]
+
+          summary=(out/"group_summary.csv").read_text(encoding="utf-8")
+          assert summary.count("\n") >= 7
+          print(json.dumps(st,ensure_ascii=False,indent=2))
+          print("broken_local_links=0")
+          PY
+
+      - name: Commit six-group pages
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A preview/kabu/analysis/225_group_all_period
+          git add preview/kabu/report_all_period.html
+          git add preview/kabu/report.html
+          git add preview/kabu/analysis/225_indicator_stageb/report_all_period.html
+          git add preview/kabu/analysis/225_indicator_stageb/report.html
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          if ! git diff --quiet -- preview/kabu/analysis/225_sector_all_period; then
+            echo "ERROR: existing 34-industry tree changed"
+            git diff -- preview/kabu/analysis/225_sector_all_period
+            exit 3
+          fi
+          git commit -m "data: add Nikkei 225 six-group all-period pages"
+          git push origin "HEAD:refs/heads/${{ steps.cfg.outputs.target_branch }}"
+
+      - name: Verify remote head
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOCAL="$(git rev-parse HEAD)"
+          REMOTE="$(git ls-remote origin "refs/heads/${{ steps.cfg.outputs.target_branch }}" | cut -f1)"
+          test "$LOCAL" = "$REMOTE"
+          echo "published_head=$LOCAL"
