@@ -1,5 +1,5 @@
 target_branch: research/p2-nikkei-complete-baseline-20260915
-expected_core_head: bf63da6d71b93285b926a1241dda3c889883ec7b
+expected_core_head: 3246fc1761dd71b0e5ad6f3858db7828c17b9fe9
 source_run_id: 36979444713
 source_artifact: p2-225-raw-canonical-mirror-asset-final
-reason: retry optimized 225 industry pages after output path fix
+reason: final 225 industry pages after QA wording alignment
