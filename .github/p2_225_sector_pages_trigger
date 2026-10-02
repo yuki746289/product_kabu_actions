@@ -1,0 +1,5 @@
+target_branch: research/p2-nikkei-complete-baseline-20260915
+expected_core_head: 29c95b937e30444494ece94100d95348b3581cf0
+source_run_id: 36979444713
+source_artifact: p2-225-raw-canonical-mirror-asset-final
+reason: generate 225 industry all-period pages with combobox switching
