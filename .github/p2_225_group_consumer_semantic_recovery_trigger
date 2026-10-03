@@ -1,0 +1,6 @@
+expected_core_head: 0a4e4a03ff3ca03c10528edc95384386ab67a42b
+source_run_id: 37104845130
+source_artifact: p2-225-group-consumer-features
+group: Consumer Goods
+expected_rows: 33330
+expected_tickers: 41
