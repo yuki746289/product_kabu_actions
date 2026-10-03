@@ -1,0 +1,6 @@
+expected_core_head: 2afe95a6ae0d375ea49b262f471279539d777f85
+source_run_id: 37085356657
+source_artifact: p2-225-group-technology-features
+group: Technology
+expected_rows: 48782
+expected_tickers: 61
