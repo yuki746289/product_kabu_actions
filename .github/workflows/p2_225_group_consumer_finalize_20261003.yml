@@ -321,7 +321,7 @@ jobs:
           python scripts/postprocess_p2_225_group_full_mirror.py \
             --mirror-dir /tmp/consumer \
             --site-root preview/kabu \
-            --site-relative-dir analysis/225_group_all_period/consumer_goodss \
+            --site-relative-dir analysis/225_group_all_period/consumer_goods \
             --group "Consumer Goods"
           python scripts/qa_p2_225_group_full_mirror.py \
             --mirror-dir /tmp/consumer \
@@ -334,7 +334,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TARGET=preview/kabu/analysis/225_group_all_period/consumer_goods_goodss
+          TARGET=preview/kabu/analysis/225_group_all_period/consumer_goods
           rm -rf "$TARGET"
           mkdir -p "$TARGET"
           cp -a /tmp/consumer/. "$TARGET"/
