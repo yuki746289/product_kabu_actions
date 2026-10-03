@@ -79,7 +79,7 @@ jobs:
           PY
           python scripts/filter_p2_225_group_features.py \
             --features ../source/signal_level_features.csv \
-            --group Consumer Goods \
+            --group "Consumer Goods" \
             --output /tmp/consumer/features.csv \
             --status /tmp/consumer/filter_status.json \
             --expected-group-rows 33330 \
