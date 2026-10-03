@@ -1,0 +1,403 @@
+name: P2 225 technology full mirror 20261003
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_group_technology_full_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  filter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      core_sha: ${{ steps.cfg.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve contract
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=.github/p2_225_group_technology_full_trigger
+          awk -F': ' '
+            $1=="expected_core_head"{print "core_sha="$2}
+            $1=="source_run_id"{print "source_run_id="$2}
+            $1=="source_artifact"{print "source_artifact="$2}
+          ' "$FILE" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Static compile
+        working-directory: core
+        run: |
+          python -m py_compile \
+            scripts/filter_p2_225_group_features.py \
+            scripts/build_p2_225_semantic_bundle.py \
+            scripts/build_p2_225_or_bundle.py \
+            scripts/generate_p2_225_nikkei_mirror.py \
+            scripts/postprocess_p2_225_group_full_mirror.py \
+            scripts/patch_p2_report_switches.py \
+            scripts/qa_p2_225_group_full_mirror.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.cfg.outputs.source_artifact }}
+          path: source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ steps.cfg.outputs.source_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify and filter technology features
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f ../source/signal_level_features.csv
+          test -f ../source/final_qa_status.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("../source")
+          q=json.loads((root/"final_qa_status.json").read_text(encoding="utf-8"))
+          s=json.loads((root/"status.json").read_text(encoding="utf-8"))
+          assert q.get("overall_pass") is True, q
+          assert s.get("overall_pass") is True, s
+          assert s.get("baseline_rows")==181318, s
+          assert s.get("unique_tickers")==225, s
+          PY
+          python scripts/filter_p2_225_group_features.py \
+            --features ../source/signal_level_features.csv \
+            --group Technology \
+            --output /tmp/technology/features.csv \
+            --status /tmp/technology/filter_status.json \
+            --expected-group-rows 48782 \
+            --expected-group-tickers 61
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-technology-features
+          path: /tmp/technology
+          retention-days: 30
+
+  semantic:
+    needs: filter
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.filter.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-technology-features
+          path: /tmp/features
+      - name: Build technology semantic bundle
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_semantic_bundle.py \
+            --features /tmp/features/features.csv \
+            --output-dir /tmp/semantic \
+            --expected-tickers 61
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-technology-semantic
+          path: /tmp/semantic
+          retention-days: 30
+
+  or_analysis:
+    needs: [filter, semantic]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.filter.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-technology-features
+          path: /tmp/features
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-technology-semantic
+          path: /tmp/semantic
+      - name: Build technology OR bundle
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_or_bundle.py \
+            --features /tmp/features/features.csv \
+            --semantic-dir /tmp/semantic \
+            --output-dir /tmp/or
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-technology-or
+          path: /tmp/or
+          retention-days: 30
+
+  condition_shard:
+    needs: filter
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.filter.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-technology-features
+          path: /tmp/features
+      - name: Render technology condition shard
+        working-directory: core
+        run: |
+          python scripts/generate_p2_225_nikkei_mirror.py \
+            --features /tmp/features/features.csv \
+            --output-dir "/tmp/shard_${{ matrix.shard }}" \
+            --canonical-dir preview/kabu \
+            --condition-shard-index ${{ matrix.shard }} \
+            --condition-shard-count 16 \
+            --condition-pages-only
+      - name: Stage shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/shard_artifact/conditions/charts
+          cp /tmp/shard_${{ matrix.shard }}/conditions/*.html /tmp/shard_artifact/conditions/
+          cp /tmp/shard_${{ matrix.shard }}/conditions/charts/*.html /tmp/shard_artifact/conditions/charts/
+          cp /tmp/shard_${{ matrix.shard }}/condition_shard_status.json /tmp/shard_artifact/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-technology-condition-shard-${{ matrix.shard }}
+          path: /tmp/shard_artifact
+          retention-days: 30
+
+  shell:
+    needs: [filter, semantic, or_analysis]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.filter.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-technology-features
+          path: /tmp/features
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-technology-semantic
+          path: /tmp/semantic
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-technology-or
+          path: /tmp/or
+      - name: Render technology shell
+        working-directory: core
+        run: |
+          python scripts/generate_p2_225_nikkei_mirror.py \
+            --features /tmp/features/features.csv \
+            --output-dir /tmp/shell \
+            --canonical-dir preview/kabu \
+            --semantic-dir /tmp/semantic \
+            --or-dir /tmp/or \
+            --skip-condition-pages
+          find /tmp/shell/conditions -maxdepth 1 -type f -name '*.html' ! -name 'index.html' -delete
+          find /tmp/shell/conditions/charts -maxdepth 1 -type f -name '*.html' -delete
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-technology-shell
+          path: /tmp/shell
+          retention-days: 30
+
+  merge:
+    needs: [filter, condition_shard, shell]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.filter.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-technology-shell
+          path: /tmp/merged
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-group-technology-condition-shard-*
+          path: /tmp/shards
+          merge-multiple: false
+      - name: Merge shards and apply technology labels
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/merged/conditions/charts
+          for d in /tmp/shards/p2-225-group-technology-condition-shard-*; do
+            cp "$d"/conditions/*.html /tmp/merged/conditions/
+            cp "$d"/conditions/charts/*.html /tmp/merged/conditions/charts/
+          done
+          python scripts/postprocess_p2_225_group_full_mirror.py \
+            --mirror-dir /tmp/merged \
+            --site-root preview/kabu \
+            --site-relative-dir analysis/225_group_all_period/technology \
+            --group Technology
+      - name: Verify condition inventory
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          ref=Path("core/preview/kabu/analysis/225_indicator_stageb")
+          out=Path("/tmp/merged")
+          for rel in ("conditions","conditions/charts"):
+              a=sorted(p.name for p in (ref/rel).glob("*.html"))
+              b=sorted(p.name for p in (out/rel).glob("*.html"))
+              assert a==b, (rel,len(a),len(b),sorted(set(a)-set(b))[:10],sorted(set(b)-set(a))[:10])
+              print(rel,len(a))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-technology-full-merged
+          path: /tmp/merged
+          retention-days: 30
+
+  qa_publish:
+    needs: [filter, merge]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.filter.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-technology-full-merged
+          path: /tmp/technology
+      - name: QA full technology mirror
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_group_full_mirror.py \
+            --mirror-dir /tmp/technology \
+            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+            --expected-rows 48782 \
+            --expected-tickers 61 \
+            --group-label 技術
+      - name: Publish technology and normalize selectors
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=preview/kabu/analysis/225_group_all_period/technology
+          rm -rf "$TARGET"
+          mkdir -p "$TARGET"
+          cp -a /tmp/technology/. "$TARGET"/
+          python scripts/patch_p2_report_switches.py --site-root preview/kabu
+          python scripts/qa_p2_225_group_full_mirror.py \
+            --mirror-dir "$TARGET" \
+            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+            --expected-rows 48782 \
+            --expected-tickers 61 \
+            --group-label 技術
+      - name: Commit and push private core
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A preview/kabu/analysis/225_group_all_period/technology
+          git add -A preview/kabu
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git commit -m "data: add full Technology 225-group mirror"
+          git push origin HEAD:refs/heads/research/p2-nikkei-complete-baseline-20260915
