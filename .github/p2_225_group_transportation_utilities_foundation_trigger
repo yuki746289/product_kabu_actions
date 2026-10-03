@@ -4,3 +4,4 @@ source_artifact: p2-225-raw-canonical-mirror-asset-final
 group: Transportation and Utilities
 expected_rows: 14848
 expected_tickers: 20
+retry: upload-path-fix-1
