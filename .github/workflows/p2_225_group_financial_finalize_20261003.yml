@@ -1,4 +1,4 @@
-name: P2 225 financial finalize 20220003
+name: P2 225 financial finalize 20261003
 
 on:
   push:
@@ -334,7 +334,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TARGET=preview/kabu/analysis/225_group_all_period/financialss
+          TARGET=preview/kabu/analysis/225_group_all_period/financials
           rm -rf "$TARGET"
           mkdir -p "$TARGET"
           cp -a /tmp/financial/. "$TARGET"/
