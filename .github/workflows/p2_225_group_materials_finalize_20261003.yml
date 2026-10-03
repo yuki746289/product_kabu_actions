@@ -1,0 +1,380 @@
+name: P2 225 materials finalize 20261003
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_group_materials_finalize_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  SOURCE_RUN_ID: "37110023289"
+  SOURCE_FEATURE_ARTIFACT: "p2-225-group-materials-features"
+  SEMANTIC_RUN_ID: "37110319800"
+  SEMANTIC_ARTIFACT: "p2-225-group-materials-semantic-split"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      core_sha: ${{ steps.cfg.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="expected_core_head"{print $2}' .github/p2_225_group_materials_finalize_trigger)"
+          test -n "$SHA"
+          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile finalization pipeline
+        working-directory: core
+        run: |
+          python -m py_compile \
+            scripts/build_p2_225_or_shard.py \
+            scripts/aggregate_p2_225_or_shards.py \
+            scripts/generate_p2_225_nikkei_mirror.py \
+            scripts/postprocess_p2_225_group_full_mirror.py \
+            scripts/patch_p2_report_switches.py \
+            scripts/qa_p2_225_group_full_mirror.py
+
+  or2:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_FEATURE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SEMANTIC_ARTIFACT }}
+          path: /tmp/semantic
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SEMANTIC_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: OR2 shard
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_or_shard.py \
+            --features /tmp/features/features.csv \
+            --semantic-dir /tmp/semantic \
+            --kind or2 \
+            --output-dir /tmp/or2 \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-materials-or2-${{ matrix.shard }}
+          path: /tmp/or2
+          retention-days: 30
+
+  or3:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_FEATURE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SEMANTIC_ARTIFACT }}
+          path: /tmp/semantic
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SEMANTIC_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: OR3 shard
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_or_shard.py \
+            --features /tmp/features/features.csv \
+            --semantic-dir /tmp/semantic \
+            --kind or3 \
+            --output-dir /tmp/or3 \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 32
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-materials-or3-${{ matrix.shard }}
+          path: /tmp/or3
+          retention-days: 30
+
+  or_aggregate:
+    needs: [preflight, or2, or3]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_FEATURE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SEMANTIC_ARTIFACT }}
+          path: /tmp/semantic
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SEMANTIC_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-group-materials-or2-*
+          path: /tmp/or2
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-group-materials-or3-*
+          path: /tmp/or3
+          merge-multiple: false
+      - name: Aggregate OR
+        working-directory: core
+        run: |
+          python scripts/aggregate_p2_225_or_shards.py \
+            --features /tmp/features/features.csv \
+            --semantic-dir /tmp/semantic \
+            --or2-root /tmp/or2 \
+            --or3-root /tmp/or3 \
+            --output-dir /tmp/or
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-materials-or
+          path: /tmp/or
+          retention-days: 30
+
+  shell:
+    needs: [preflight, or_aggregate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_FEATURE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SEMANTIC_ARTIFACT }}
+          path: /tmp/semantic
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SEMANTIC_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-materials-or
+          path: /tmp/or
+      - name: Render shell without condition pages
+        working-directory: core
+        run: |
+          python scripts/generate_p2_225_nikkei_mirror.py \
+            --features /tmp/features/features.csv \
+            --output-dir /tmp/shell \
+            --canonical-dir preview/kabu \
+            --semantic-dir /tmp/semantic \
+            --or-dir /tmp/or \
+            --skip-condition-pages
+          find /tmp/shell/conditions -maxdepth 1 -type f -name '*.html' ! -name 'index.html' -delete
+          find /tmp/shell/conditions/charts -maxdepth 1 -type f -name '*.html' -delete
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-group-materials-shell-final
+          path: /tmp/shell
+          retention-days: 30
+
+  merge_qa_publish:
+    needs: [preflight, shell]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-group-materials-shell-final
+          path: /tmp/materials
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-group-materials-condition-shard-*
+          path: /tmp/shards
+          merge-multiple: false
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Merge existing condition shards
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/materials/conditions/charts
+          for d in /tmp/shards/p2-225-group-materials-condition-shard-*; do
+            cp "$d"/conditions/*.html /tmp/materials/conditions/
+            cp "$d"/conditions/charts/*.html /tmp/materials/conditions/charts/
+          done
+          python - <<'PY'
+          from pathlib import Path
+          ref=Path("preview/kabu/analysis/225_indicator_stageb")
+          out=Path("/tmp/materials")
+          for rel in ("conditions","conditions/charts"):
+              a=sorted(p.name for p in (ref/rel).glob("*.html"))
+              b=sorted(p.name for p in (out/rel).glob("*.html"))
+              assert a==b, (rel,len(a),len(b),sorted(set(a)-set(b))[:10],sorted(set(b)-set(a))[:10])
+              print(rel,len(a))
+          PY
+      - name: Post-process and prepublish QA
+        working-directory: core
+        run: |
+          python scripts/postprocess_p2_225_group_full_mirror.py \
+            --mirror-dir /tmp/materials \
+            --site-root preview/kabu \
+            --site-relative-dir analysis/225_group_all_period/materials \
+            --group Materials
+          python scripts/qa_p2_225_group_full_mirror.py \
+            --mirror-dir /tmp/materials \
+            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+            --expected-rows 39007 \
+            --expected-tickers 48 \
+            --group-label 素材
+      - name: Publish to preview tree and normalize selectors
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=preview/kabu/analysis/225_group_all_period/materials
+          rm -rf "$TARGET"
+          mkdir -p "$TARGET"
+          cp -a /tmp/materials/. "$TARGET"/
+          python scripts/patch_p2_report_switches.py --site-root preview/kabu
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          root=Path("preview/kabu")
+          labels=["技術（全期間）","金融（全期間）","消費（全期間）","素材（全期間）","資本財・その他（全期間）","運輸・公益（全期間）","6分類比較"]
+          pages=[]
+          for p in root.rglob("*.html"):
+              t=p.read_text(encoding="utf-8",errors="replace")
+              if 'id="reportSwitch"' not in t:
+                  continue
+              m=re.search(r'<select id="reportSwitch"[^>]*>(.*?)</select>',t,re.S)
+              assert m, p
+              assert m.group(1).count("<option ")==11, (p,m.group(1).count("<option "))
+              for label in labels:
+                  assert label in m.group(1), (p,label)
+              pages.append(str(p.relative_to(root)))
+          assert pages
+          print("reportSwitch QA PASS pages=",len(pages))
+          PY
+          python scripts/qa_p2_225_group_full_mirror.py \
+            --mirror-dir "$TARGET" \
+            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+            --expected-rows 39007 \
+            --expected-tickers 48 \
+            --group-label 素材
+      - name: Commit and push private core
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A preview/kabu
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git commit -m "data: add full Materials 225-group mirror"
+          git push origin HEAD:refs/heads/research/p2-nikkei-complete-baseline-20260915
