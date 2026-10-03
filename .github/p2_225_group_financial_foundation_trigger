@@ -1,0 +1,6 @@
+expected_core_head: 3dfb14cd0f05125c4bfce81d710db0ced073b7c3
+source_run_id: 36979444713
+source_artifact: p2-225-raw-canonical-mirror-asset-final
+group: Financials
+expected_rows: 16307
+expected_tickers: 20
