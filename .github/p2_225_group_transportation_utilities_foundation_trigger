@@ -1,0 +1,6 @@
+expected_core_head: 2cdc06a6ca91776740a4c263528ea5117dc752a7
+source_run_id: 36979444713
+source_artifact: p2-225-raw-canonical-mirror-asset-final
+group: Transportation and Utilities
+expected_rows: 14848
+expected_tickers: 20
