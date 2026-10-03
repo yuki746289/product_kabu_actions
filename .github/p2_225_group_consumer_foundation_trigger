@@ -4,3 +4,4 @@ source_artifact: p2-225-raw-canonical-mirror-asset-final
 group: Consumer Goods
 expected_rows: 33330
 expected_tickers: 41
+attempt: 2
