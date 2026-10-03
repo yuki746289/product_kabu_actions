@@ -87,7 +87,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: p2-225-group-transportation-utilities-features
-          path: /tmp/capital_goods
+          path: /tmp/transportation_utilities
           retention-days: 30
 
   condition_shard:
