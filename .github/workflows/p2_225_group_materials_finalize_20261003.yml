@@ -322,7 +322,7 @@ jobs:
             --mirror-dir /tmp/materials \
             --site-root preview/kabu \
             --site-relative-dir analysis/225_group_all_period/materials \
-            --group Materials
+            --group "Materials"
           python scripts/qa_p2_225_group_full_mirror.py \
             --mirror-dir /tmp/materials \
             --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
