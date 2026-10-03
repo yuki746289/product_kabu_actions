@@ -380,6 +380,25 @@ jobs:
           mkdir -p "$TARGET"
           cp -a /tmp/technology/. "$TARGET"/
           python scripts/patch_p2_report_switches.py --site-root preview/kabu
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          root=Path("preview/kabu")
+          labels=["技術（全期間）","金融（全期間）","消費（全期間）","素材（全期間）","資本財・その他（全期間）","運輸・公益（全期間）","6分類比較"]
+          pages=[]
+          for p in root.rglob("*.html"):
+              t=p.read_text(encoding="utf-8",errors="replace")
+              if 'id="reportSwitch"' not in t:
+                  continue
+              m=re.search(r'<select id="reportSwitch"[^>]*>(.*?)</select>',t,re.S)
+              assert m, p
+              assert m.group(1).count("<option ")==11, (p,m.group(1).count("<option "))
+              for label in labels:
+                  assert label in m.group(1), (p,label)
+              pages.append(str(p.relative_to(root)))
+          assert pages, "no reportSwitch pages found"
+          print("reportSwitch QA PASS pages=",len(pages))
+          PY
           python scripts/qa_p2_225_group_full_mirror.py \
             --mirror-dir "$TARGET" \
             --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
