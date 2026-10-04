@@ -1,0 +1,494 @@
+name: P2 225 exclusion no transportation semantic 20261004
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_exclusion_no_transport_semantic_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  SOURCE_RUN_ID: "37201518110"
+  SOURCE_ARTIFACT: "p2-225-exclusion-no-transport-features"
+  EXPECTED_TICKERS: "205"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      core_sha: ${{ steps.cfg.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="expected_core_head"{print $2}' .github/p2_225_exclusion_no_transport_semantic_trigger)"
+          test -n "$SHA"
+          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile split semantic pipeline
+        working-directory: core
+        run: |
+          python -m py_compile \
+            scripts/build_p2_225_semantic_base.py \
+            scripts/build_p2_225_pair_shard.py \
+            scripts/build_p2_225_triple_shard.py \
+            scripts/aggregate_p2_225_structural.py \
+            scripts/build_p2_225_condition_stability_shard.py \
+            scripts/aggregate_p2_225_condition_stability.py \
+            scripts/build_p2_225_combo_stability_shard.py \
+            scripts/build_p2_225_combo_walkforward_shard.py \
+            scripts/assemble_p2_225_semantic_bundle.py
+
+  base:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Patch category ticker invariant in runner only
+        working-directory: core
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path("scripts/build_p2_225_semantic_base.py")
+          s=p.read_text(encoding="utf-8")
+          old='f["ticker"].astype(str).nunique()==225'
+          assert old in s
+          p.write_text(s.replace(old,'f["ticker"].astype(str).nunique()==205',1),encoding="utf-8")
+          PY
+      - name: Build semantic base
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_semantic_base.py \
+            --features /tmp/features/features.csv \
+            --output-dir /tmp/base
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-semantic-base
+          path: /tmp/base
+          retention-days: 30
+
+  pair:
+    needs: [preflight, base]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pair shard
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_pair_shard.py \
+            --features /tmp/features/features.csv \
+            --output-dir /tmp/pair \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-pair-${{ matrix.shard }}
+          path: /tmp/pair
+          retention-days: 30
+
+  triple:
+    needs: [preflight, base]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Triple shard
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_triple_shard.py \
+            --features /tmp/features/features.csv \
+            --output-dir /tmp/triple \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 16
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-triple-${{ matrix.shard }}
+          path: /tmp/triple
+          retention-days: 30
+
+  structural:
+    needs: [preflight, base, pair, triple]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-exclusion-no-transport-semantic-base, path: /tmp/base}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-transport-pair-*
+          path: /tmp/pairs
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-transport-triple-*
+          path: /tmp/triples
+          merge-multiple: false
+      - name: Aggregate structural
+        working-directory: core
+        run: |
+          python scripts/aggregate_p2_225_structural.py \
+            --base-dir /tmp/base \
+            --pair-root /tmp/pairs \
+            --triple-root /tmp/triples \
+            --output-dir /tmp/structural
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-structural
+          path: /tmp/structural
+          retention-days: 30
+
+  condition_stability:
+    needs: [preflight, structural]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-exclusion-no-transport-semantic-base, path: /tmp/base}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-exclusion-no-transport-structural, path: /tmp/structural}
+      - name: Condition stability shard
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_condition_stability_shard.py \
+            --features /tmp/features/features.csv \
+            --base-dir /tmp/base \
+            --structural-dir /tmp/structural \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 8 \
+            --output-dir /tmp/condition
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-condition-stability-${{ matrix.shard }}
+          path: /tmp/condition
+          retention-days: 30
+
+  condition_aggregate:
+    needs: [preflight, condition_stability]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-exclusion-no-transport-semantic-base, path: /tmp/base}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-transport-condition-stability-*
+          path: /tmp/condition_shards
+          merge-multiple: false
+      - name: Aggregate condition stability
+        working-directory: core
+        run: |
+          python scripts/aggregate_p2_225_condition_stability.py \
+            --shards-root /tmp/condition_shards \
+            --base-dir /tmp/base \
+            --output-dir /tmp/condition
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-condition
+          path: /tmp/condition
+          retention-days: 30
+
+  combo_stability:
+    needs: [preflight, structural]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {kind: pair, shard: 0, count: 8}
+          - {kind: pair, shard: 1, count: 8}
+          - {kind: pair, shard: 2, count: 8}
+          - {kind: pair, shard: 3, count: 8}
+          - {kind: pair, shard: 4, count: 8}
+          - {kind: pair, shard: 5, count: 8}
+          - {kind: pair, shard: 6, count: 8}
+          - {kind: pair, shard: 7, count: 8}
+          - {kind: triple, shard: 0, count: 16}
+          - {kind: triple, shard: 1, count: 16}
+          - {kind: triple, shard: 2, count: 16}
+          - {kind: triple, shard: 3, count: 16}
+          - {kind: triple, shard: 4, count: 16}
+          - {kind: triple, shard: 5, count: 16}
+          - {kind: triple, shard: 6, count: 16}
+          - {kind: triple, shard: 7, count: 16}
+          - {kind: triple, shard: 8, count: 16}
+          - {kind: triple, shard: 9, count: 16}
+          - {kind: triple, shard: 10, count: 16}
+          - {kind: triple, shard: 11, count: 16}
+          - {kind: triple, shard: 12, count: 16}
+          - {kind: triple, shard: 13, count: 16}
+          - {kind: triple, shard: 14, count: 16}
+          - {kind: triple, shard: 15, count: 16}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-exclusion-no-transport-structural, path: /tmp/structural}
+      - name: Combination stability shard
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_combo_stability_shard.py \
+            --features /tmp/features/features.csv \
+            --structural-dir /tmp/structural \
+            --kind ${{ matrix.kind }} \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count ${{ matrix.count }} \
+            --output-dir /tmp/combo_stability
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-combo-stability-${{ matrix.kind }}-${{ matrix.shard }}
+          path: /tmp/combo_stability
+          retention-days: 30
+
+  combo_walkforward:
+    needs: [preflight, structural]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-exclusion-no-transport-structural, path: /tmp/structural}
+      - name: Combination walk-forward shard
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_combo_walkforward_shard.py \
+            --features /tmp/features/features.csv \
+            --structural-dir /tmp/structural \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 14 \
+            --output-dir /tmp/combo_walkforward
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-combo-walkforward-${{ matrix.shard }}
+          path: /tmp/combo_walkforward
+          retention-days: 30
+
+  assemble:
+    needs: [preflight, base, structural, condition_aggregate, combo_stability, combo_walkforward]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: core/requirements.txt}
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-exclusion-no-transport-semantic-base, path: /tmp/base}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-exclusion-no-transport-structural, path: /tmp/structural}
+      - uses: actions/download-artifact@v4
+        with: {name: p2-225-exclusion-no-transport-condition, path: /tmp/condition}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-transport-combo-stability-*
+          path: /tmp/combo_stability
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-transport-combo-walkforward-*
+          path: /tmp/combo_walkforward
+          merge-multiple: false
+      - name: Patch category ticker invariant in runner only
+        working-directory: core
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path("scripts/assemble_p2_225_semantic_bundle.py")
+          s=p.read_text(encoding="utf-8")
+          old='int(bs["source_tickers"])==225'
+          assert old in s
+          p.write_text(s.replace(old,'int(bs["source_tickers"])==205',1),encoding="utf-8")
+          PY
+      - name: Assemble split semantic bundle
+        working-directory: core
+        run: |
+          python scripts/assemble_p2_225_semantic_bundle.py \
+            --base-dir /tmp/base \
+            --structural-dir /tmp/structural \
+            --condition-dir /tmp/condition \
+            --combo-stability-root /tmp/combo_stability \
+            --combo-walkforward-root /tmp/combo_walkforward \
+            --output-dir /tmp/semantic
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-semantic-split
+          path: /tmp/semantic
+          retention-days: 30
