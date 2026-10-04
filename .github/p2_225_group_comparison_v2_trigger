@@ -1,0 +1,5 @@
+expected_core_head: e7bfd04512a8d8afcfd50e2ec84c14b4cda260ae
+source_run_id: 36979444713
+source_artifact: p2-225-raw-canonical-mirror-asset-final
+expected_rows: 181318
+expected_tickers: 225
