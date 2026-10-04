@@ -4,4 +4,4 @@ source_artifact: p2-225-raw-canonical-mirror-asset-final
 expected_rows: 181318
 expected_tickers: 225
 
-verification: deterministic_regeneration
+verification: deterministic_regeneration_2
