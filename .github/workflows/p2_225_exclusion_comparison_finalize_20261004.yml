@@ -1,0 +1,170 @@
+name: P2 225 exclusion comparison finalize 20261004
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_exclusion_comparison_finalize_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  SOURCE_RUN_ID: "36979444713"
+  SOURCE_ARTIFACT: "p2-225-raw-canonical-mirror-asset-final"
+  CORE_BRANCH: "research/p2-nikkei-complete-baseline-20260915"
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="expected_core_head"{print $2}' .github/p2_225_exclusion_comparison_finalize_trigger)"
+          test -n "$SHA"
+          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Compile comparison and QA
+        working-directory: core
+        run: |
+          python -m py_compile \
+            scripts/generate_p2_225_exclusion_comparison.py \
+            scripts/qa_p2_225_exclusion_comparison.py \
+            scripts/patch_p2_report_switches.py \
+            scripts/qa_p2_225_exclusion_full_mirror.py \
+            scripts/qa_p2_225_group_full_mirror.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: /tmp/source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify required full mirrors
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/report_all_period.html
+          test -f preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/report_all_period.html
+          test -f /tmp/source/signal_level_features.csv
+      - name: Generate exclusion comparison
+        working-directory: core
+        run: |
+          python scripts/generate_p2_225_exclusion_comparison.py \
+            --features /tmp/source/signal_level_features.csv \
+            --site-root preview/kabu \
+            --output-dir preview/kabu/analysis/225_exclusion_all_period
+      - name: Normalize all report selectors
+        working-directory: core
+        run: python scripts/patch_p2_report_switches.py --site-root preview/kabu
+      - name: QA exclusion full mirrors
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_exclusion_full_mirror.py \
+            --mirror-dir preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities \
+            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+            --expected-rows 166470 \
+            --expected-tickers 205 \
+            --variant-label "運輸・公益除外" \
+            --expected-switch-options 14
+          python scripts/qa_p2_225_exclusion_full_mirror.py \
+            --mirror-dir preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities \
+            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+            --expected-rows 137426 \
+            --expected-tickers 170 \
+            --variant-label "資本財・その他＋運輸・公益除外" \
+            --expected-switch-options 14
+      - name: QA six existing groups after selector update
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_group () {
+            python scripts/qa_p2_225_group_full_mirror.py \
+              --mirror-dir "preview/kabu/analysis/225_group_all_period/$1" \
+              --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+              --expected-rows "$2" \
+              --expected-tickers "$3" \
+              --group-label "$4"
+          }
+          check_group technology 48782 61 技術
+          check_group financials 16307 20 金融
+          check_group consumer_goods 33330 41 消費
+          check_group materials 39007 48 素材
+          check_group capital_goods_others 29044 35 資本財・その他
+          check_group transportation_utilities 14848 20 運輸・公益
+      - name: QA comparison
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_exclusion_comparison.py \
+            --output-dir preview/kabu/analysis/225_exclusion_all_period \
+            --site-root preview/kabu
+      - name: Global selector QA
+        working-directory: core
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          root=Path("preview/kabu")
+          labels=[
+            "主要225株（運輸・公益除外）",
+            "主要225株（資本財・その他＋運輸・公益除外）",
+            "225株 除外条件比較",
+          ]
+          pages=[]
+          for p in root.rglob("*.html"):
+              t=p.read_text(encoding="utf-8",errors="replace")
+              if 'id="reportSwitch"' not in t:
+                  continue
+              m=re.search(r'<select id="reportSwitch"[^>]*>(.*?)</select>',t,re.S)
+              assert m, p
+              assert m.group(1).count("<option ")==14, (p,m.group(1).count("<option "))
+              for label in labels:
+                  assert label in m.group(1), (p,label)
+              pages.append(str(p.relative_to(root)))
+          assert pages
+          print("global reportSwitch PASS pages=",len(pages))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-comparison-final
+          path: |
+            core/preview/kabu/analysis/225_exclusion_all_period/comparison.html
+            core/preview/kabu/analysis/225_exclusion_all_period/comparison_data
+          retention-days: 30
+      - name: Commit and push private core
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A preview/kabu
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git commit -m "data: add 225 exclusion comparison and selectors"
+          git push origin HEAD:refs/heads/${CORE_BRANCH}
