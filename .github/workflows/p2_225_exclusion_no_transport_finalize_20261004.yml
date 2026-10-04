@@ -14,8 +14,8 @@ env:
   PYTHONUNBUFFERED: "1"
   SOURCE_RUN_ID: "37201518110"
   SOURCE_FEATURE_ARTIFACT: "p2-225-exclusion-no-transport-features"
-  SEMANTIC_RUN_ID: "37201933538"
-  SEMANTIC_ARTIFACT: "p2-225-exclusion-no-transport-semantic-split"
+  SEMANTIC_RUN_ID: "37207972996"
+  SEMANTIC_ARTIFACT: "p2-225-exclusion-no-transport-semantic-split-fine"
 
 jobs:
   preflight:
