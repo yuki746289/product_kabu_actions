@@ -89,6 +89,16 @@ jobs:
         run: |
           python scripts/generate_p2_225_group_comparison_v2.py             --features-csv /tmp/source/signal_level_features.csv             --site-root preview/kabu             --output-dir preview/kabu/analysis/225_group_all_period             --expected-rows 181318             --expected-tickers 225
 
+      - name: Verify deterministic regeneration
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/comparison-repro
+          python scripts/generate_p2_225_group_comparison_v2.py --features-csv /tmp/source/signal_level_features.csv --site-root preview/kabu --output-dir /tmp/comparison-repro --expected-rows 181318 --expected-tickers 225
+          cmp preview/kabu/analysis/225_group_all_period/comparison.html /tmp/comparison-repro/comparison.html
+          diff -qr preview/kabu/analysis/225_group_all_period/comparison_data /tmp/comparison-repro/comparison_data
+
       - name: QA six-group comparison
         working-directory: core
         run: |
@@ -125,6 +135,9 @@ jobs:
           git add preview/kabu/analysis/225_group_all_period/comparison.html
           git add preview/kabu/analysis/225_group_all_period/comparison_data
           git diff --cached --stat
-          test -n "$(git diff --cached --name-only)"
-          git commit -m "data: add six-group comparison summary"
-          git push origin HEAD:refs/heads/${CORE_BRANCH}
+          if git diff --cached --quiet; then
+            echo "No comparison output changes; verification-only run."
+          else
+            git commit -m "data: add six-group comparison summary"
+            git push origin HEAD:refs/heads/${CORE_BRANCH}
+          fi
