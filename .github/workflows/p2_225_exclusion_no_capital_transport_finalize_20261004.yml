@@ -14,8 +14,8 @@ env:
   PYTHONUNBUFFERED: "1"
   SOURCE_RUN_ID: "37201520569"
   SOURCE_FEATURE_ARTIFACT: "p2-225-exclusion-no-capital-transport-features"
-  SEMANTIC_RUN_ID: "37201967494"
-  SEMANTIC_ARTIFACT: "p2-225-exclusion-no-capital-transport-semantic-split"
+  SEMANTIC_RUN_ID: "37207975979"
+  SEMANTIC_ARTIFACT: "p2-225-exclusion-no-capital-transport-semantic-split-fine"
 
 jobs:
   preflight:
