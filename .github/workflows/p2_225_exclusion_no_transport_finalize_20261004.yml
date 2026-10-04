@@ -327,33 +327,20 @@ jobs:
             --expected-tickers 205 \
             --variant-label "運輸・公益除外" \
             --expected-switch-options 11
-      - name: Publish to preview tree
-        working-directory: core
+      - name: Final mirror QA summary
         shell: bash
         run: |
           set -euo pipefail
-          TARGET=preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities
-          rm -rf "$TARGET"
-          mkdir -p "$TARGET"
-          cp -a /tmp/no_transport/. "$TARGET"/
-          python scripts/qa_p2_225_exclusion_full_mirror.py \
-            --mirror-dir "$TARGET" \
-            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
-            --expected-rows 166470 \
-            --expected-tickers 205 \
-            --variant-label "運輸・公益除外" \
-            --expected-switch-options 11
-      - name: Commit and push private core
-        working-directory: core
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A preview/kabu
-          if git diff --cached --quiet; then
-            echo "No changes."
-            exit 0
-          fi
-          git commit -m "data: add full 225 mirror excluding Transportation and Utilities"
-          git push origin HEAD:refs/heads/research/p2-nikkei-complete-baseline-20260915
+          test -f /tmp/no_transport/exclusion_full_qa_status.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          q=json.loads(Path("/tmp/no_transport/exclusion_full_qa_status.json").read_text(encoding="utf-8"))
+          assert q.get("overall_pass") is True, q
+          print("full mirror QA PASS", q["expected_rows"], q["expected_tickers"])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-full-mirror
+          path: /tmp/no_transport
+          retention-days: 30
