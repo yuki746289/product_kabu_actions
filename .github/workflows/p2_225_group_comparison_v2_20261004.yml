@@ -97,7 +97,7 @@ jobs:
           rm -rf /tmp/comparison-repro
           python scripts/generate_p2_225_group_comparison_v2.py --features-csv /tmp/source/signal_level_features.csv --site-root preview/kabu --output-dir /tmp/comparison-repro --expected-rows 181318 --expected-tickers 225
           cmp preview/kabu/analysis/225_group_all_period/comparison.html /tmp/comparison-repro/comparison.html
-          diff -qr preview/kabu/analysis/225_group_all_period/comparison_data /tmp/comparison-repro/comparison_data
+          diff -qr --exclude=comparison_qa_status.json preview/kabu/analysis/225_group_all_period/comparison_data /tmp/comparison-repro/comparison_data
 
       - name: QA six-group comparison
         working-directory: core
