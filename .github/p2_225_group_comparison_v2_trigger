@@ -1,6 +1,6 @@
-expected_core_head: f5773a3910ec6b491b7c3077fa8628435249a070
+expected_core_head: e8bdd9e17c2ef73e38e2537e61dfead928a31f5f
 source_run_id: 36979444713
 source_artifact: p2-225-raw-canonical-mirror-asset-final
 expected_rows: 181318
 expected_tickers: 225
-retry_reason: fix_comparison_qa_boolean
+retry_reason: align_qa_status_key
