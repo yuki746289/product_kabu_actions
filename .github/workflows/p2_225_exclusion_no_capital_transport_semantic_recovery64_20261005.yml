@@ -1,0 +1,219 @@
+name: P2 225 exclusion no capital transport semantic recovery64 20261005
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_exclusion_no_capital_transport_semantic_recovery64_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  FOUNDATION_RUN_ID: "37201520569"
+  ORIGINAL_SEMANTIC_RUN_ID: "37201967494"
+  FINE_RUN_ID: "37207975979"
+  FEATURE_ARTIFACT: "p2-225-exclusion-no-capital-transport-features"
+
+jobs:
+  recover64:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [7,39]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      core_sha: ${{ steps.cfg.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="expected_core_head"{print $2}' .github/p2_225_exclusion_no_capital_transport_semantic_recovery64_trigger)"
+          test -n "$SHA"
+          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+
+      - run: pip install -r core/requirements.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.FEATURE_ARTIFACT }}
+          path: /tmp/features
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FOUNDATION_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-structural
+          path: /tmp/structural
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.ORIGINAL_SEMANTIC_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Recover triple stability shard 64-way
+        working-directory: core
+        run: |
+          python scripts/build_p2_225_combo_stability_shard.py \
+            --features /tmp/features/features.csv \
+            --structural-dir /tmp/structural \
+            --kind triple \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 64 \
+            --output-dir /tmp/recovery64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-combo-stability-triple64-${{ matrix.shard }}
+          path: /tmp/recovery64
+          retention-days: 30
+
+  assemble:
+    needs: recover64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ needs.recover64.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+
+      - run: pip install -r core/requirements.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-semantic-base
+          path: /tmp/base
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.ORIGINAL_SEMANTIC_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-structural
+          path: /tmp/structural
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.ORIGINAL_SEMANTIC_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-condition-fine
+          path: /tmp/condition
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FINE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-capital-transport-combo-stability-pair16-*
+          path: /tmp/pair16
+          merge-multiple: false
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FINE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-capital-transport-combo-stability-triple32fine-*
+          path: /tmp/triple32
+          merge-multiple: false
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FINE_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-capital-transport-combo-stability-triple64-*
+          path: /tmp/triple64
+          merge-multiple: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-capital-transport-combo-walkforward-*
+          path: /tmp/combo_walkforward
+          merge-multiple: false
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.ORIGINAL_SEMANTIC_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge complete stability set
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/combo_stability
+
+          cp -a /tmp/pair16/. /tmp/combo_stability/
+
+          # Copy the 31 successful 32-way triple shards, excluding shard 7.
+          find /tmp/triple32 -type f -name 'combo_stability_triple_*.csv' ! -name 'combo_stability_triple_07.csv' -exec cp {} /tmp/combo_stability/ \;
+          find /tmp/triple32 -type f -name 'combo_stability_triple_*_status.json' ! -name 'combo_stability_triple_07_status.json' -exec cp {} /tmp/combo_stability/ \;
+
+          # Old shard 7/32 is exactly the union of 7/64 and 39/64.
+          find /tmp/triple64 -type f -name 'combo_stability_triple_*.csv' -exec cp {} /tmp/combo_stability/ \;
+          find /tmp/triple64 -type f -name 'combo_stability_triple_*_status.json' -exec cp {} /tmp/combo_stability/ \;
+
+          echo "CSV count:"
+          find /tmp/combo_stability -type f -name 'combo_stability_*.csv' | wc -l
+
+      - name: Patch ticker invariant in runner only
+        working-directory: core
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path("scripts/assemble_p2_225_semantic_bundle.py")
+          s=p.read_text(encoding="utf-8")
+          old='int(bs["source_tickers"])==225'
+          assert old in s
+          p.write_text(s.replace(old,'int(bs["source_tickers"])==170',1),encoding="utf-8")
+          PY
+
+      - name: Assemble recovered semantic bundle
+        working-directory: core
+        run: |
+          python scripts/assemble_p2_225_semantic_bundle.py \
+            --base-dir /tmp/base \
+            --structural-dir /tmp/structural \
+            --condition-dir /tmp/condition \
+            --combo-stability-root /tmp/combo_stability \
+            --combo-walkforward-root /tmp/combo_walkforward \
+            --output-dir /tmp/semantic
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-semantic-split-final
+          path: /tmp/semantic
+          retention-days: 30
