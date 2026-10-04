@@ -19,17 +19,24 @@ env:
 jobs:
   finalize:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve core SHA
+      - name: Resolve contract
         id: cfg
         shell: bash
         run: |
           set -euo pipefail
-          SHA="$(awk -F': ' '$1=="expected_core_head"{print $2}' .github/p2_225_exclusion_comparison_finalize_trigger)"
-          test -n "$SHA"
-          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+          FILE=.github/p2_225_exclusion_comparison_finalize_trigger
+          awk -F': ' '
+            $1=="expected_core_head"{print "core_sha="$2}
+            $1=="no_transport_run_id"{print "no_transport_run_id="$2}
+            $1=="no_capital_transport_run_id"{print "no_capital_transport_run_id="$2}
+          ' "$FILE" >> "$GITHUB_OUTPUT"
+          test -n "$(awk -F': ' '$1=="expected_core_head"{print $2}' "$FILE")"
+          test -n "$(awk -F': ' '$1=="no_transport_run_id"{print $2}' "$FILE")"
+          test -n "$(awk -F': ' '$1=="no_capital_transport_run_id"{print $2}' "$FILE")"
+
       - uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
@@ -38,12 +45,15 @@ jobs:
           path: core
           fetch-depth: 0
           persist-credentials: true
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: core/requirements.txt
+
       - run: pip install -r core/requirements.txt
+
       - name: Compile comparison and QA
         working-directory: core
         run: |
@@ -53,6 +63,7 @@ jobs:
             scripts/patch_p2_report_switches.py \
             scripts/qa_p2_225_exclusion_full_mirror.py \
             scripts/qa_p2_225_group_full_mirror.py
+
       - uses: actions/download-artifact@v4
         with:
           name: ${{ env.SOURCE_ARTIFACT }}
@@ -60,14 +71,58 @@ jobs:
           repository: yuki746289/product_kabu_actions
           run-id: ${{ env.SOURCE_RUN_ID }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Verify required full mirrors
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-full-mirror
+          path: /tmp/no_transport
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ steps.cfg.outputs.no_transport_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-full-mirror
+          path: /tmp/no_capital_transport
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ steps.cfg.outputs.no_capital_transport_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify staged full mirrors
         working-directory: core
         shell: bash
         run: |
           set -euo pipefail
-          test -f preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/report_all_period.html
-          test -f preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/report_all_period.html
           test -f /tmp/source/signal_level_features.csv
+          test -f /tmp/no_transport/report_all_period.html
+          test -f /tmp/no_transport/exclusion_full_qa_status.json
+          test -f /tmp/no_capital_transport/report_all_period.html
+          test -f /tmp/no_capital_transport/exclusion_full_qa_status.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for p in (
+              Path("/tmp/no_transport/exclusion_full_qa_status.json"),
+              Path("/tmp/no_capital_transport/exclusion_full_qa_status.json"),
+          ):
+              q=json.loads(p.read_text(encoding="utf-8"))
+              assert q.get("overall_pass") is True, q
+          print("staged mirror QA PASS")
+          PY
+
+      - name: Publish both full mirrors into preview tree
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=preview/kabu/analysis/225_exclusion_all_period
+          rm -rf "$ROOT/exclude_transportation_utilities"
+          rm -rf "$ROOT/exclude_capital_goods_transportation_utilities"
+          mkdir -p "$ROOT/exclude_transportation_utilities"
+          mkdir -p "$ROOT/exclude_capital_goods_transportation_utilities"
+          cp -a /tmp/no_transport/. "$ROOT/exclude_transportation_utilities"/
+          cp -a /tmp/no_capital_transport/. "$ROOT/exclude_capital_goods_transportation_utilities"/
+
       - name: Generate exclusion comparison
         working-directory: core
         run: |
@@ -75,9 +130,11 @@ jobs:
             --features /tmp/source/signal_level_features.csv \
             --site-root preview/kabu \
             --output-dir preview/kabu/analysis/225_exclusion_all_period
+
       - name: Normalize all report selectors
         working-directory: core
         run: python scripts/patch_p2_report_switches.py --site-root preview/kabu
+
       - name: QA exclusion full mirrors
         working-directory: core
         run: |
@@ -95,6 +152,7 @@ jobs:
             --expected-tickers 170 \
             --variant-label "資本財・その他＋運輸・公益除外" \
             --expected-switch-options 14
+
       - name: QA six existing groups after selector update
         working-directory: core
         shell: bash
@@ -114,12 +172,14 @@ jobs:
           check_group materials 39007 48 素材
           check_group capital_goods_others 29044 35 資本財・その他
           check_group transportation_utilities 14848 20 運輸・公益
+
       - name: QA comparison
         working-directory: core
         run: |
           python scripts/qa_p2_225_exclusion_comparison.py \
             --output-dir preview/kabu/analysis/225_exclusion_all_period \
             --site-root preview/kabu
+
       - name: Global selector QA
         working-directory: core
         shell: bash
@@ -147,6 +207,7 @@ jobs:
           assert pages
           print("global reportSwitch PASS pages=",len(pages))
           PY
+
       - uses: actions/upload-artifact@v4
         with:
           name: p2-225-exclusion-comparison-final
@@ -154,6 +215,7 @@ jobs:
             core/preview/kabu/analysis/225_exclusion_all_period/comparison.html
             core/preview/kabu/analysis/225_exclusion_all_period/comparison_data
           retention-days: 30
+
       - name: Commit and push private core
         working-directory: core
         shell: bash
@@ -166,5 +228,5 @@ jobs:
             echo "No changes."
             exit 0
           fi
-          git commit -m "data: add 225 exclusion comparison and selectors"
+          git commit -m "data: add 225 exclusion full mirrors and comparison"
           git push origin HEAD:refs/heads/${CORE_BRANCH}
