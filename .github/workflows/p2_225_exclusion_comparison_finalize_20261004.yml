@@ -62,7 +62,8 @@ jobs:
             scripts/qa_p2_225_exclusion_comparison.py \
             scripts/patch_p2_report_switches.py \
             scripts/qa_p2_225_exclusion_full_mirror.py \
-            scripts/qa_p2_225_group_full_mirror.py
+            scripts/qa_p2_225_group_full_mirror.py \
+            scripts/prepare_p2_225_exclusion_publishable.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -109,6 +110,20 @@ jobs:
               assert q.get("overall_pass") is True, q
           print("staged mirror QA PASS")
           PY
+
+      - name: Convert mirrors to GitHub-publishable split detail form
+        working-directory: core
+        run: |
+          python scripts/prepare_p2_225_exclusion_publishable.py \
+            --mirror-dir /tmp/no_transport \
+            --variant-label "運輸・公益除外" \
+            --expected-rows 166470 \
+            --chunk-size 5000
+          python scripts/prepare_p2_225_exclusion_publishable.py \
+            --mirror-dir /tmp/no_capital_transport \
+            --variant-label "資本財・その他＋運輸・公益除外" \
+            --expected-rows 137426 \
+            --chunk-size 5000
 
       - name: Publish both full mirrors into preview tree
         working-directory: core
@@ -215,6 +230,19 @@ jobs:
             core/preview/kabu/analysis/225_exclusion_all_period/comparison.html
             core/preview/kabu/analysis/225_exclusion_all_period/comparison_data
           retention-days: 30
+
+      - name: Enforce GitHub file-size ceiling
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          LARGE="$(find preview/kabu/analysis/225_exclusion_all_period -type f -size +99M -print)"
+          if [ -n "$LARGE" ]; then
+            echo "Files over 99MB remain:"
+            echo "$LARGE"
+            exit 3
+          fi
+          echo "No exclusion publish file exceeds 99MB."
 
       - name: Commit and push private core
         working-directory: core
