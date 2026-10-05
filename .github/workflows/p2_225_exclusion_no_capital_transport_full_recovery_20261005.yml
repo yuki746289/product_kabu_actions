@@ -1,0 +1,137 @@
+name: P2 225 exclusion no capital transport full recovery 20261005
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_exclusion_no_capital_transport_full_recovery_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  SHELL_RUN_ID: "37246667869"
+  FOUNDATION_RUN_ID: "37201520569"
+  SHELL_ARTIFACT: "p2-225-exclusion-no-capital-transport-shell-final"
+  SHARD_PATTERN: "p2-225-exclusion-no-capital-transport-condition-shard-*"
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(awk -F': ' '$1=="expected_core_head"{print $2}' .github/p2_225_exclusion_no_capital_transport_full_recovery_trigger)"
+          test -n "$SHA"
+          echo "core_sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+
+      - run: pip install -r core/requirements.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SHELL_ARTIFACT }}
+          path: /tmp/mirror
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.SHELL_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ env.SHARD_PATTERN }}
+          path: /tmp/shards
+          merge-multiple: false
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.FOUNDATION_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge condition shards
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mirror/conditions/charts
+          for d in /tmp/shards/p2-225-exclusion-no-capital-transport-condition-shard-*; do
+            cp "$d"/conditions/*.html /tmp/mirror/conditions/
+            cp "$d"/conditions/charts/*.html /tmp/mirror/conditions/charts/
+          done
+          python - <<'PY'
+          from pathlib import Path
+          ref=Path("preview/kabu/analysis/225_indicator_stageb")
+          out=Path("/tmp/mirror")
+          for rel in ("conditions","conditions/charts"):
+              a=sorted(p.name for p in (ref/rel).glob("*.html"))
+              b=sorted(p.name for p in (out/rel).glob("*.html"))
+              assert a==b, (rel,len(a),len(b),sorted(set(a)-set(b))[:10],sorted(set(b)-set(a))[:10])
+              print(rel,len(a))
+          PY
+
+      - name: Post-process variant label
+        working-directory: core
+        run: |
+          python scripts/postprocess_p2_225_exclusion_full_mirror.py \
+            --mirror-dir /tmp/mirror \
+            --variant-label "資本財・その他＋運輸・公益除外"
+
+      - name: Stage mirror and normalize 14-option selectors
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+          rm -rf "$TARGET"
+          mkdir -p "$TARGET"
+          cp -a /tmp/mirror/. "$TARGET"/
+          python scripts/patch_p2_report_switches.py --site-root preview/kabu
+
+      - name: QA recovered full mirror
+        working-directory: core
+        run: |
+          python scripts/qa_p2_225_exclusion_full_mirror.py \
+            --mirror-dir "preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities" \
+            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+            --expected-rows 137426 \
+            --expected-tickers 170 \
+            --variant-label "資本財・その他＋運輸・公益除外" \
+            --expected-switch-options 14
+
+      - name: Verify QA pass
+        working-directory: core
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/exclusion_full_qa_status.json")
+          q=json.loads(p.read_text(encoding="utf-8"))
+          assert q.get("overall_pass") is True, q
+          print("RECOVERED FULL MIRROR PASS", q["expected_rows"], q["expected_tickers"])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-full-mirror-recovered
+          path: core/preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities
+          retention-days: 30
