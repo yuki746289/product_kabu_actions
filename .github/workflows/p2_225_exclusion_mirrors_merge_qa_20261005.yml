@@ -1,0 +1,165 @@
+name: P2 225 exclusion mirrors merge QA 20261005
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_exclusion_mirrors_merge_qa_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  merge_qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve contract
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=.github/p2_225_exclusion_mirrors_merge_qa_trigger
+          awk -F': ' '
+            $1=="expected_core_head"{print "core_sha="$2}
+            $1=="no_transport_shell_run_id"{print "no_transport_shell_run_id="$2}
+            $1=="no_capital_transport_shell_run_id"{print "no_capital_transport_shell_run_id="$2}
+          ' "$FILE" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+
+      - run: pip install -r core/requirements.txt
+
+      - name: Compile QA pipeline
+        working-directory: core
+        run: |
+          python -m py_compile \
+            scripts/postprocess_p2_225_exclusion_full_mirror.py \
+            scripts/qa_p2_225_exclusion_full_mirror.py \
+            scripts/patch_p2_report_switches.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-shell-final
+          path: /tmp/no_transport
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ steps.cfg.outputs.no_transport_shell_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-shell-final
+          path: /tmp/no_capital_transport
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ steps.cfg.outputs.no_capital_transport_shell_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-transport-condition-shard-*
+          path: /tmp/no_transport_shards
+          merge-multiple: false
+          repository: yuki746289/product_kabu_actions
+          run-id: "37201518110"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-225-exclusion-no-capital-transport-condition-shard-*
+          path: /tmp/no_capital_transport_shards
+          merge-multiple: false
+          repository: yuki746289/product_kabu_actions
+          run-id: "37201520569"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge condition pages
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          merge_one () {
+            local mirror="$1"
+            local shards="$2"
+            local prefix="$3"
+            mkdir -p "$mirror/conditions/charts"
+            for d in "$shards"/"$prefix"-*; do
+              cp "$d"/conditions/*.html "$mirror/conditions/"
+              cp "$d"/conditions/charts/*.html "$mirror/conditions/charts/"
+            done
+          }
+          merge_one /tmp/no_transport /tmp/no_transport_shards p2-225-exclusion-no-transport-condition-shard
+          merge_one /tmp/no_capital_transport /tmp/no_capital_transport_shards p2-225-exclusion-no-capital-transport-condition-shard
+
+          python - <<'PY'
+          from pathlib import Path
+          ref=Path("preview/kabu/analysis/225_indicator_stageb")
+          for out in (Path("/tmp/no_transport"),Path("/tmp/no_capital_transport")):
+              for rel in ("conditions","conditions/charts"):
+                  a=sorted(p.name for p in (ref/rel).glob("*.html"))
+                  b=sorted(p.name for p in (out/rel).glob("*.html"))
+                  assert a==b,(out,rel,len(a),len(b),sorted(set(a)-set(b))[:10],sorted(set(b)-set(a))[:10])
+          print("condition inventories PASS")
+          PY
+
+      - name: Post-process and QA no transport
+        working-directory: core
+        run: |
+          python scripts/postprocess_p2_225_exclusion_full_mirror.py \
+            --mirror-dir /tmp/no_transport \
+            --variant-label "運輸・公益除外" \
+            --site-root preview/kabu \
+            --site-relative-dir "analysis/225_exclusion_all_period/exclude_transportation_utilities"
+          python scripts/qa_p2_225_exclusion_full_mirror.py \
+            --mirror-dir /tmp/no_transport \
+            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+            --expected-rows 166470 \
+            --expected-tickers 205 \
+            --variant-label "運輸・公益除外" \
+            --expected-switch-options 14
+
+      - name: Post-process and QA no capital transport
+        working-directory: core
+        run: |
+          python scripts/postprocess_p2_225_exclusion_full_mirror.py \
+            --mirror-dir /tmp/no_capital_transport \
+            --variant-label "資本財・その他＋運輸・公益除外" \
+            --site-root preview/kabu \
+            --site-relative-dir "analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+          python scripts/qa_p2_225_exclusion_full_mirror.py \
+            --mirror-dir /tmp/no_capital_transport \
+            --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
+            --expected-rows 137426 \
+            --expected-tickers 170 \
+            --variant-label "資本財・その他＋運輸・公益除外" \
+            --expected-switch-options 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-full-mirror
+          path: /tmp/no_transport
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-full-mirror
+          path: /tmp/no_capital_transport
+          retention-days: 30
