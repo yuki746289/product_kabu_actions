@@ -319,14 +319,16 @@ jobs:
         run: |
           python scripts/postprocess_p2_225_exclusion_full_mirror.py \
             --mirror-dir /tmp/no_capital_transport \
-            --variant-label "資本財・その他＋運輸・公益除外"
+            --variant-label "資本財・その他＋運輸・公益除外" \
+            --site-root preview/kabu \
+            --site-relative-dir "analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
           python scripts/qa_p2_225_exclusion_full_mirror.py \
             --mirror-dir /tmp/no_capital_transport \
             --reference-225-dir preview/kabu/analysis/225_indicator_stageb \
             --expected-rows 137426 \
             --expected-tickers 170 \
             --variant-label "資本財・その他＋運輸・公益除外" \
-            --expected-switch-options 11
+            --expected-switch-options 14
       - name: Final mirror QA summary
         shell: bash
         run: |
