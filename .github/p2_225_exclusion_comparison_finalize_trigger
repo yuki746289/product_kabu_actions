@@ -1,3 +1,4 @@
-expected_core_head: 0fdeaf2696ed545b85a1457e6908eaa7527903c6
+expected_core_head: ea00ce37444d6e38169f99f9c656447786b16385
 no_transport_run_id: 37249724114
 no_capital_transport_run_id: 37249724114
+retry_reason: fix_group_qa_syntax
