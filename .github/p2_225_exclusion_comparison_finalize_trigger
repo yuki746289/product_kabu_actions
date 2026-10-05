@@ -1,4 +1,4 @@
 expected_core_head: 74880dc738ff655abfe22352c9a427dc8121d7b6
 no_transport_run_id: 37249724114
 no_capital_transport_run_id: 37249724114
-retry_reason: split_oversized_signal_detail_before_publish
+retry_reason: shallow_checkout_and_split_publish
