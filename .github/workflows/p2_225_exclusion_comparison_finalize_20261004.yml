@@ -43,7 +43,7 @@ jobs:
           ref: ${{ steps.cfg.outputs.core_sha }}
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: true
 
       - uses: actions/setup-python@v5
