@@ -295,7 +295,7 @@ jobs:
               rows = re.findall(r"<tr>(.*?)</tr>", body.group(1), re.S)
               counts = []
               for row in rows:
-                  cells = re.findall(r"<td(?:\\s[^>]*)?>(.*?)</td>", row, re.S)
+                  cells = re.findall(r"<td(?:\s[^>]*)?>(.*?)</td>", row, re.S)
                   if len(cells) < 4:
                       raise RuntimeError(f"short row in {title}")
                   count_text = re.sub(r"<[^>]+>", "", cells[3]).replace(",", "").strip()
@@ -458,7 +458,7 @@ jobs:
                   rows = re.findall(r"<tr>(.*?)</tr>", body.group(1), re.S)
                   assert rows, (target, title)
                   for row in rows:
-                      cells = re.findall(r"<td(?:\\s[^>]*)?>(.*?)</td>", row, re.S)
+                      cells = re.findall(r"<td(?:\s[^>]*)?>(.*?)</td>", row, re.S)
                       assert len(cells) >= 4, (target, title)
                       count = int(re.sub(r"<[^>]+>", "", cells[3]).replace(",", "").strip())
                       assert count >= 60, (target, title, count)
