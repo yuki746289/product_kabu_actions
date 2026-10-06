@@ -1,0 +1,509 @@
+# Created: 2026-10-06T20:58:00+09:00
+name: P2 225 high-entry 60 complete recovery 20261006
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_high_entry_60_complete_recovery_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  CORE_REPO: yuki746289/product_kabu
+  CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+  PRIOR_GROUP_RUN_ID: "37434818560"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      core_sha: ${{ steps.cfg.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve fixed core SHA
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=.github/p2_225_high_entry_60_complete_recovery_trigger
+          CORE_SHA="$(awk -F': ' '$1=="expected_core_head"{print $2}' "$FILE")"
+          test -n "$CORE_SHA"
+          echo "core_sha=$CORE_SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ steps.cfg.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Architecture and script gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_actions_architecture.py             --core-dir core             --expected-core-sha "${{ steps.cfg.outputs.core_sha }}"
+          test "$(git -C core rev-parse HEAD)" = "${{ steps.cfg.outputs.core_sha }}"
+          python -m py_compile             core/scripts/generate_p2_high_entry_accuracy_report.py             core/scripts/postprocess_p2_accuracy_highlight.py
+
+  generate_complete:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: canonical
+            source_kind: full_mirror
+            source_run: "36979444713"
+            source_artifact: p2-225-raw-canonical-mirror-asset-final
+            target: preview/kabu/analysis/225_indicator_stageb
+            label: ""
+            expected_rows: 181318
+            expected_single: 977
+            expected_pair: 3025
+            expected_triple: 6787
+            expected_manifest: 447
+          - key: exclude_transport
+            source_kind: features
+            source_run: "37201518110"
+            source_artifact: p2-225-exclusion-no-transport-features
+            target: preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities
+            label: 運輸・公益除外
+            expected_rows: 166470
+            expected_single: 0
+            expected_pair: 0
+            expected_triple: 0
+            expected_manifest: 0
+          - key: exclude_capital_transport
+            source_kind: features
+            source_run: "37201520569"
+            source_artifact: p2-225-exclusion-no-capital-transport-features
+            target: preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities
+            label: 資本財・その他＋運輸・公益除外
+            expected_rows: 137426
+            expected_single: 0
+            expected_pair: 0
+            expected_triple: 0
+            expected_manifest: 0
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ needs.preflight.outputs.core_sha }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+
+      - run: pip install -r core/requirements.txt
+
+      - name: Architecture gate
+        run: |
+          python scripts/check_actions_architecture.py             --core-dir core             --expected-core-sha "${{ needs.preflight.outputs.core_sha }}"
+
+      - name: Download exact successful input artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.source_artifact }}
+          path: /tmp/source
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ matrix.source_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare exact complete inputs
+        working-directory: core
+        env:
+          DATASET_KEY: ${{ matrix.key }}
+          SOURCE_KIND: ${{ matrix.source_kind }}
+          TARGET: ${{ matrix.target }}
+          EXPECTED_ROWS: ${{ matrix.expected_rows }}
+          EXPECTED_SINGLE: ${{ matrix.expected_single }}
+          EXPECTED_PAIR: ${{ matrix.expected_pair }}
+          EXPECTED_TRIPLE: ${{ matrix.expected_triple }}
+          EXPECTED_MANIFEST: ${{ matrix.expected_manifest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORK="/tmp/high-entry/$DATASET_KEY"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+
+          if [ "$SOURCE_KIND" = "full_mirror" ]; then
+            cp /tmp/source/signal_level_features.csv "$WORK/"
+            cp /tmp/source/advantage_single_candidates.csv "$WORK/"
+            cp /tmp/source/advantage_pairwise_candidates.csv "$WORK/"
+            cp /tmp/source/advantage_triple_candidates.csv "$WORK/"
+            cp /tmp/source/condition_detail_manifest.csv "$WORK/"
+          else
+            test -f /tmp/source/features.csv
+            cp /tmp/source/features.csv "$WORK/signal_level_features.csv"
+            cp "$TARGET/advantage_single_candidates.csv" "$WORK/"
+            cp "$TARGET/advantage_pairwise_candidates.csv" "$WORK/"
+            cp "$TARGET/advantage_triple_candidates.csv" "$WORK/"
+            cp "$TARGET/condition_detail_manifest.csv" "$WORK/"
+          fi
+
+          export WORK EXPECTED_ROWS EXPECTED_SINGLE EXPECTED_PAIR EXPECTED_TRIPLE EXPECTED_MANIFEST DATASET_KEY SOURCE_KIND
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          import pandas as pd
+
+          work = Path(os.environ["WORK"])
+          files = {
+              "signal": work / "signal_level_features.csv",
+              "single": work / "advantage_single_candidates.csv",
+              "pair": work / "advantage_pairwise_candidates.csv",
+              "triple": work / "advantage_triple_candidates.csv",
+              "manifest": work / "condition_detail_manifest.csv",
+          }
+          for label, path in files.items():
+              if not path.is_file() or path.stat().st_size == 0:
+                  raise RuntimeError(f"missing complete input {label}: {path}")
+
+          def row_count(path: Path) -> int:
+              with path.open("rb") as f:
+                  return max(0, sum(1 for _ in f) - 1)
+
+          counts = {k: row_count(v) for k, v in files.items()}
+          expected_rows = int(os.environ["EXPECTED_ROWS"])
+          if counts["signal"] != expected_rows:
+              raise RuntimeError(f"signal row count mismatch: {counts['signal']} != {expected_rows}")
+
+          exact = {
+              "single": int(os.environ["EXPECTED_SINGLE"]),
+              "pair": int(os.environ["EXPECTED_PAIR"]),
+              "triple": int(os.environ["EXPECTED_TRIPLE"]),
+              "manifest": int(os.environ["EXPECTED_MANIFEST"]),
+          }
+          for key, expected in exact.items():
+              if expected and counts[key] != expected:
+                  raise RuntimeError(f"{key} row count mismatch: {counts[key]} != {expected}")
+              if counts[key] <= 0:
+                  raise RuntimeError(f"empty candidate input: {key}")
+
+          sha = {}
+          for key, path in files.items():
+              h = hashlib.sha256()
+              with path.open("rb") as f:
+                  for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
+                      h.update(chunk)
+              sha[key] = h.hexdigest()
+
+          # Parse the actual signal CSV in chunks as a schema/readability check.
+          parsed = 0
+          for chunk in pd.read_csv(files["signal"], usecols=["as_of"], chunksize=50000):
+              parsed += len(chunk)
+          if parsed != expected_rows:
+              raise RuntimeError(f"parsed signal rows mismatch: {parsed} != {expected_rows}")
+
+          print({
+              "dataset": os.environ["DATASET_KEY"],
+              "source_kind": os.environ["SOURCE_KIND"],
+              "counts": counts,
+              "sha256": sha,
+          })
+          PY
+
+      - name: Regenerate high-entry only
+        working-directory: core
+        env:
+          WORK: /tmp/high-entry/${{ matrix.key }}
+          DATASET_LABEL: ${{ matrix.label }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          scripts = Path("scripts").resolve()
+          sys.path.insert(0, str(scripts))
+          import generate_p2_high_entry_accuracy_report as gen
+          import postprocess_p2_accuracy_highlight as ui
+
+          work = Path(os.environ["WORK"]).resolve()
+          gen.OUT = work
+          gen.ANALYSIS = work / "analysis"
+          gen.main()
+
+          label = os.environ.get("DATASET_LABEL", "").strip()
+          generated = [work / "analysis" / "high_entry_accuracy.html"]
+          generated.extend(sorted((work / "analysis" / "high_entry_charts").glob("*.html")))
+          for path in generated:
+              if label:
+                  text = path.read_text(encoding="utf-8")
+                  text = text.replace("P2 主要225株", f"P2 主要225株・{label}")
+                  text = text.replace("主要225株 P2 Long", f"主要225株・{label} P2 Long")
+                  path.write_text(text, encoding="utf-8")
+              ui.apply_to_file(path)
+          print({"postprocessed_files": len(generated), "dataset_label": label or "canonical"})
+          PY
+
+      - name: Focused 60-entry QA
+        working-directory: core
+        env:
+          WORK: /tmp/high-entry/${{ matrix.key }}
+          DATASET_KEY: ${{ matrix.key }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          scripts = Path("scripts").resolve()
+          sys.path.insert(0, str(scripts))
+          import generate_p2_high_entry_accuracy_report as gen
+
+          work = Path(os.environ["WORK"]).resolve()
+          gen.OUT = work
+          gen.ANALYSIS = work / "analysis"
+          candidates = gen._load_unique()
+          page_path = work / "analysis" / "high_entry_accuracy.html"
+          page = page_path.read_text(encoding="utf-8")
+
+          def section_rows(title):
+              marker = f"<h2>{title}</h2>"
+              start = page.index(marker)
+              end = page.find("<h2>", start + len(marker))
+              block = page[start:] if end < 0 else page[start:end]
+              body = re.search(r"<tbody>(.*?)</tbody>", block, re.S)
+              if not body:
+                  raise RuntimeError(f"tbody missing: {title}")
+              rows = re.findall(r"<tr>(.*?)</tr>", body.group(1), re.S)
+              counts = []
+              for row in rows:
+                  cells = re.findall(r"<td(?:\\s[^>]*)?>(.*?)</td>", row, re.S)
+                  if len(cells) < 4:
+                      raise RuntimeError(f"short row in {title}")
+                  count_text = re.sub(r"<[^>]+>", "", cells[3]).replace(",", "").strip()
+                  counts.append(int(count_text))
+              return rows, counts
+
+          balanced_pool = candidates[(candidates["count"] >= 60) & (candidates["min_win_pct"] >= 60)]
+          accuracy_pool = candidates[candidates["count"] >= 60]
+          balanced_rows, balanced_counts = section_rows("件数 × 正解率のバランス")
+          accuracy_rows, accuracy_counts = section_rows("高正解率")
+
+          assert len(balanced_rows) == min(40, len(balanced_pool))
+          assert len(accuracy_rows) == min(40, len(accuracy_pool))
+          assert balanced_counts and min(balanced_counts) >= 60
+          assert accuracy_counts and min(accuracy_counts) >= 60
+
+          for token in (
+              'p2-accuracy-highlight-script',
+              'product_kabu_favorites_v1',
+              'p2-growth-500',
+              'p2-growth-1000',
+              'nth-child(5n)',
+              'p2-scroll-20',
+          ):
+              assert token in page, token
+
+          print({
+              "dataset": os.environ["DATASET_KEY"],
+              "balanced_pool_ge60": len(balanced_pool),
+              "balanced_displayed": len(balanced_rows),
+              "balanced_min_count": min(balanced_counts),
+              "accuracy_pool_ge60": len(accuracy_pool),
+              "accuracy_displayed": len(accuracy_rows),
+              "accuracy_min_count": min(accuracy_counts),
+          })
+          PY
+
+      - name: Stage publish-only files
+        env:
+          DATASET_KEY: ${{ matrix.key }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="/tmp/high-entry/$DATASET_KEY/analysis"
+          DST="/tmp/publish/$DATASET_KEY/analysis"
+          mkdir -p "$DST"
+          cp "$SRC/high_entry_accuracy.html" "$DST/"
+          if [ -d "$SRC/high_entry_charts" ]; then
+            mkdir -p "$DST/high_entry_charts"
+            cp "$SRC/high_entry_charts/"*.html "$DST/high_entry_charts/" 2>/dev/null || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: high-entry-60-complete-${{ matrix.key }}
+          path: /tmp/publish/${{ matrix.key }}
+          retention-days: 7
+
+  publish:
+    needs: [preflight, generate_complete]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download already-passed six-group outputs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: high-entry-60-*
+          path: /tmp/prior
+          merge-multiple: false
+          repository: yuki746289/product_kabu_actions
+          run-id: ${{ env.PRIOR_GROUP_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download complete canonical/exclusion outputs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: high-entry-60-complete-*
+          path: /tmp/complete
+          merge-multiple: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ env.CORE_BRANCH }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Architecture and branch-head gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_actions_architecture.py             --core-dir core             --expected-core-sha "${{ needs.preflight.outputs.core_sha }}"
+          test "$(git -C core rev-parse HEAD)" = "${{ needs.preflight.outputs.core_sha }}"
+          test -z "$(git -C core status --porcelain)"
+
+      - name: Overlay only nine high-entry outputs
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          copy_one () {
+            local src="$1"
+            local target="$2"
+            test -f "$src/analysis/high_entry_accuracy.html"
+            mkdir -p "$target/analysis/high_entry_charts"
+            cp "$src/analysis/high_entry_accuracy.html" "$target/analysis/high_entry_accuracy.html"
+            if [ -d "$src/analysis/high_entry_charts" ]; then
+              cp "$src/analysis/high_entry_charts/"*.html "$target/analysis/high_entry_charts/" 2>/dev/null || true
+            fi
+          }
+
+          copy_one /tmp/complete/high-entry-60-complete-canonical preview/kabu/analysis/225_indicator_stageb
+          copy_one /tmp/prior/high-entry-60-technology preview/kabu/analysis/225_group_all_period/technology
+          copy_one /tmp/prior/high-entry-60-financials preview/kabu/analysis/225_group_all_period/financials
+          copy_one /tmp/prior/high-entry-60-consumer_goods preview/kabu/analysis/225_group_all_period/consumer_goods
+          copy_one /tmp/prior/high-entry-60-materials preview/kabu/analysis/225_group_all_period/materials
+          copy_one /tmp/prior/high-entry-60-capital_goods_others preview/kabu/analysis/225_group_all_period/capital_goods_others
+          copy_one /tmp/prior/high-entry-60-transportation_utilities preview/kabu/analysis/225_group_all_period/transportation_utilities
+          copy_one /tmp/complete/high-entry-60-complete-exclude_transport preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities
+          copy_one /tmp/complete/high-entry-60-complete-exclude_capital_transport preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities
+
+      - name: Final focused QA and diff gate
+        working-directory: core
+        run: |
+          python - <<'PY'
+          import re
+          import subprocess
+          from pathlib import Path
+
+          targets = [
+              Path("preview/kabu/analysis/225_indicator_stageb"),
+              Path("preview/kabu/analysis/225_group_all_period/technology"),
+              Path("preview/kabu/analysis/225_group_all_period/financials"),
+              Path("preview/kabu/analysis/225_group_all_period/consumer_goods"),
+              Path("preview/kabu/analysis/225_group_all_period/materials"),
+              Path("preview/kabu/analysis/225_group_all_period/capital_goods_others"),
+              Path("preview/kabu/analysis/225_group_all_period/transportation_utilities"),
+              Path("preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities"),
+              Path("preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities"),
+          ]
+
+          for target in targets:
+              page = target / "analysis" / "high_entry_accuracy.html"
+              text = page.read_text(encoding="utf-8")
+              for title in ("件数 × 正解率のバランス", "高正解率"):
+                  marker = f"<h2>{title}</h2>"
+                  start = text.index(marker)
+                  end = text.find("<h2>", start + len(marker))
+                  block = text[start:] if end < 0 else text[start:end]
+                  body = re.search(r"<tbody>(.*?)</tbody>", block, re.S)
+                  assert body, (target, title)
+                  rows = re.findall(r"<tr>(.*?)</tr>", body.group(1), re.S)
+                  assert rows, (target, title)
+                  for row in rows:
+                      cells = re.findall(r"<td(?:\\s[^>]*)?>(.*?)</td>", row, re.S)
+                      assert len(cells) >= 4, (target, title)
+                      count = int(re.sub(r"<[^>]+>", "", cells[3]).replace(",", "").strip())
+                      assert count >= 60, (target, title, count)
+
+              for href in re.findall(r'href="([^"]+)"', text):
+                  if href.startswith("high_entry_charts/") or href.startswith("../conditions/charts/"):
+                      resolved = (page.parent / href).resolve()
+                      assert resolved.is_file(), (page, href)
+
+              for token in (
+                  'p2-accuracy-highlight-script',
+                  'product_kabu_favorites_v1',
+                  'p2-growth-500',
+                  'p2-growth-1000',
+                  'nth-child(5n)',
+              ):
+                  assert token in text, (target, token)
+
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", "--"],
+              text=True,
+              encoding="utf-8",
+          ).splitlines()
+          roots = [str(t / "analysis" / "high_entry_charts") + "/" for t in targets]
+          pages = {str(t / "analysis" / "high_entry_accuracy.html") for t in targets}
+          bad = [
+              p for p in changed
+              if p not in pages and not any(p.startswith(root) and p.endswith(".html") for root in roots)
+          ]
+          assert not bad, bad
+          assert changed, "no generated changes"
+          print({"changed_files": len(changed), "forbidden_changes": bad})
+          PY
+
+      - name: Commit and push high-entry-only refresh
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add             preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_accuracy.html             preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_charts             preview/kabu/analysis/225_group_all_period/technology/analysis/high_entry_accuracy.html             preview/kabu/analysis/225_group_all_period/technology/analysis/high_entry_charts             preview/kabu/analysis/225_group_all_period/financials/analysis/high_entry_accuracy.html             preview/kabu/analysis/225_group_all_period/financials/analysis/high_entry_charts             preview/kabu/analysis/225_group_all_period/consumer_goods/analysis/high_entry_accuracy.html             preview/kabu/analysis/225_group_all_period/consumer_goods/analysis/high_entry_charts             preview/kabu/analysis/225_group_all_period/materials/analysis/high_entry_accuracy.html             preview/kabu/analysis/225_group_all_period/materials/analysis/high_entry_charts             preview/kabu/analysis/225_group_all_period/capital_goods_others/analysis/high_entry_accuracy.html             preview/kabu/analysis/225_group_all_period/capital_goods_others/analysis/high_entry_charts             preview/kabu/analysis/225_group_all_period/transportation_utilities/analysis/high_entry_accuracy.html             preview/kabu/analysis/225_group_all_period/transportation_utilities/analysis/high_entry_charts             preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/analysis/high_entry_accuracy.html             preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/analysis/high_entry_charts             preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/analysis/high_entry_accuracy.html             preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/analysis/high_entry_charts
+
+          git diff --cached --name-only
+          test -n "$(git diff --cached --name-only)"
+          git commit -m "data: refresh complete high-entry rankings at 60-entry threshold"
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
