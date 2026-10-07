@@ -1,0 +1,101 @@
+name: P2 UI favorites and stacked-entry validation 20261007
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_ui_favorites_stacked_entry_trigger'
+
+permissions:
+  contents: read
+
+env:
+  CORE_REPO: yuki746289/product_kabu
+  CORE_SHA: 4c8288c0e888c05f3a5cf8140c9a784622342061
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Architecture gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_actions_architecture.py             --core-dir core             --expected-core-sha "${CORE_SHA}"
+          test "$(git -C core rev-parse HEAD)" = "${CORE_SHA}"
+
+      - name: Compile changed Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile             core/scripts/p2_monthly_chart.py             core/scripts/postprocess_p2_accuracy_highlight.py
+
+      - name: Postprocess representative dataset page and chart
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/ui-check
+          mkdir -p "$ROOT/analysis/high_entry_charts"
+          cp core/preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/analysis/high_entry_accuracy.html              "$ROOT/analysis/high_entry_accuracy.html"
+          CHART="$(find core/preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/analysis/high_entry_charts -name '*.html' | head -n 1)"
+          test -n "$CHART"
+          cp "$CHART" "$ROOT/analysis/high_entry_charts/sample.html"
+
+          python core/scripts/postprocess_p2_accuracy_highlight.py --root "$ROOT"
+
+          grep -F 'function currentDatasetFavorites()' "$ROOT/analysis/high_entry_accuracy.html"
+          grep -F 'p2-favorites-table' "$ROOT/analysis/high_entry_accuracy.html"
+          grep -F '^[+-]?' core/scripts/postprocess_p2_accuracy_highlight.py
+          grep -F 'id="correctLegend"' "$ROOT/analysis/high_entry_charts/sample.html"
+          grep -F 'id="incorrectLegend"' "$ROOT/analysis/high_entry_charts/sample.html"
+          grep -F "正解: '+correct+'本" "$ROOT/analysis/high_entry_charts/sample.html"
+          grep -F "不正解: '+incorrect+'本" "$ROOT/analysis/high_entry_charts/sample.html"
+          grep -F "ctx.fillStyle='#2457a6'" "$ROOT/analysis/high_entry_charts/sample.html"
+          grep -F "ctx.fillStyle='#c2413b'" "$ROOT/analysis/high_entry_charts/sample.html"
+
+      - name: JavaScript syntax check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          root=Path("/tmp/ui-check")
+          out=Path("/tmp/js-check")
+          out.mkdir(exist_ok=True)
+          n=0
+          for html in root.rglob("*.html"):
+              text=html.read_text(encoding="utf-8")
+              for i,script in enumerate(re.findall(r"<script[^>]*>(.*?)</script>",text,re.S)):
+                  p=out/f"{n:03d}_{html.stem}_{i}.js"
+                  p.write_text(script,encoding="utf-8")
+                  n+=1
+          if n == 0:
+              raise SystemExit("no scripts extracted")
+          print({"script_blocks":n})
+          PY
+          for f in /tmp/js-check/*.js; do node --check "$f"; done
+
+      - name: Generator contract check
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F "const evaluable=Math.max(0,Number(r.e)||0);" core/scripts/p2_monthly_chart.py
+          grep -F "正解: '+correct+'本" core/scripts/p2_monthly_chart.py
+          grep -F "不正解: '+incorrect+'本" core/scripts/p2_monthly_chart.py
