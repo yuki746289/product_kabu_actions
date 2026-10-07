@@ -1,0 +1,111 @@
+name: P2 profitability detail validation 20261007
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/p2_profitability_detail_trigger'
+
+permissions:
+  contents: read
+
+env:
+  CORE_REPO: yuki746289/product_kabu
+  CORE_SHA: 3a0ee11fa1cef5e2caefdb9a7b87c1baa8096e7c
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/p2_monthly_chart.py
+          sparse-checkout-cone-mode: false
+
+      - name: Verify core SHA
+        shell: pwsh
+        run: |
+          $actual=(git -C core rev-parse HEAD).Trim()
+          if ($actual -ne $env:CORE_SHA) { throw "core SHA mismatch: $actual" }
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check --quiet numpy pandas
+
+      - name: Python compile
+        shell: pwsh
+        run: |
+          python -m py_compile core/scripts/p2_monthly_chart.py
+
+      - name: Profitability metric unit test
+        shell: pwsh
+        run: |
+          @'
+          import json, math, re, sys
+          from pathlib import Path
+          import numpy as np
+          import pandas as pd
+
+          sys.path.insert(0, str(Path("core/scripts").resolve()))
+          import p2_monthly_chart as m
+
+          frame = pd.DataFrame({
+              "as_of": pd.to_datetime(["2026-01-05","2026-01-06","2026-02-05","2026-02-06"]),
+          })
+          for h in (5,10,20):
+              frame[f"moved_predicted_{h}d"] = [1,1,0,0]
+              frame[f"directional_return_{h}d_pct"] = [10.0,2.0,-3.0,-5.0]
+
+          mask=np.array([True,True,True,True])
+          p=m.profitability_metrics(frame,mask)["horizons"]["10"]
+          assert p["evaluated"] == 4, p
+          assert p["wins"] == 2 and p["losses"] == 2, p
+          assert math.isclose(p["win_rate_pct"],50.0), p
+          assert math.isclose(p["expected_return_pct"],1.0), p
+          assert math.isclose(p["avg_profit_pct"],6.0), p
+          assert math.isclose(p["avg_loss_pct"],-4.0), p
+          assert math.isclose(p["pnl_spread_pct"],2.0), p
+          assert math.isclose(p["payoff_ratio"],1.5), p
+          assert math.isclose(p["profit_factor"],1.5), p
+          assert math.isclose(p["profit"]["median"],6.0), p
+          assert math.isclose(p["profit"]["max"],10.0), p
+          assert math.isclose(p["profit"]["min"],2.0), p
+          assert math.isclose(p["loss"]["median"],-4.0), p
+          assert math.isclose(p["loss"]["min"],-5.0), p
+          assert math.isclose(p["loss"]["max"],-3.0), p
+          assert sum(p["hist_counts"]) == 4, p
+
+          page=m.monthly_chart_page("test",frame,mask,"../index.html")
+          required=[
+              "損益分布と期待値",
+              "平均損益幅差",
+              "Profit Factor",
+              "エントリー損益分布",
+              "const PROFITABILITY=",
+              'id="profitChart"',
+              'id="profitExpected"',
+          ]
+          for x in required:
+              assert x in page, x
+
+          Path("generated_test.html").write_text(page,encoding="utf-8")
+          scripts=re.findall(r"<script>([\s\S]*?)</script>",page)
+          assert scripts
+          Path("generated_test.js").write_text("\n".join(scripts),encoding="utf-8")
+          print(json.dumps(p,ensure_ascii=False,indent=2))
+          '@ | Set-Content -Encoding UTF8 test_profitability.py
+          python test_profitability.py
+
+      - name: Generated JavaScript syntax check
+        shell: pwsh
+        run: |
+          node --check generated_test.js
