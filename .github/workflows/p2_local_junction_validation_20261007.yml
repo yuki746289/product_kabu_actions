@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: ad535ad8147ad7301bf801bba7fc19ddb4fd3f6f
+  CORE_SHA: 4ee87a64c4d2deb1f0839ca0653d72b298d81959
 
 jobs:
   validate-windows:
@@ -39,17 +39,33 @@ jobs:
           $actual=(git -C core rev-parse HEAD).Trim()
           if ($actual -ne $env:CORE_SHA) { throw "core SHA mismatch: $actual" }
 
-      - name: Reproduce PowerShell path normalization
+      - name: Verify fixed PowerShell path normalization
         shell: pwsh
         run: |
           $raw='C:\Users\yuki_\OneDrive\Documents\github\product_kabu\preview\kabu'
-          $current=$raw.Replace('\\','/')
-          $correct=$raw.Replace('\','/')
+          $src=[IO.Path]::GetFullPath($raw).Replace('\','/').TrimEnd('/')
           Write-Host "raw=$raw"
-          Write-Host "current=$current"
-          Write-Host "correct=$correct"
-          if ($current -ne $raw) { throw 'Expected current expression to leave single backslashes unchanged' }
-          if ($correct -ne 'C:/Users/yuki_/OneDrive/Documents/github/product_kabu/preview/kabu') { throw 'Correct expression did not normalize path' }
+          Write-Host "normalized=$src"
+          if ($src -ne 'C:/Users/yuki_/OneDrive/Documents/github/product_kabu/preview/kabu') {
+            throw "Path normalization failed: $src"
+          }
+
+          $template=Get-Content -Raw core/apache/product_kabu_local.conf
+          $rendered=$template.Replace('__KABU_SOURCE__',$src)
+          $aliasLine=($rendered -split [Environment]::NewLine | Where-Object { $_ -match '^Alias ' } | Select-Object -First 1)
+          $dirLine=($rendered -split [Environment]::NewLine | Where-Object { $_ -match '^<Directory ' } | Select-Object -First 1)
+          Write-Host "alias=$aliasLine"
+          Write-Host "directory=$dirLine"
+
+          if ($aliasLine -ne 'Alias "/kabu/" "C:/Users/yuki_/OneDrive/Documents/github/product_kabu/preview/kabu/"') {
+            throw "Alias line incorrect: $aliasLine"
+          }
+          if ($dirLine -ne '<Directory "C:/Users/yuki_/OneDrive/Documents/github/product_kabu/preview/kabu">') {
+            throw "Directory line incorrect: $dirLine"
+          }
+          if (($aliasLine + $dirLine) -match '\\') {
+            throw 'Backslash remained in generated Apache path'
+          }
 
       - name: JavaScript syntax check
         shell: pwsh
