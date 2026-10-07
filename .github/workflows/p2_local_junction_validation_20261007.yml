@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: 0cdf0d6d46cdf94f8979a75ae6028433ea5912ec
+  CORE_SHA: a332c08df4ec0b10ead40a5f006816afcfe6e0c3
 
 jobs:
   validate-windows:
@@ -75,6 +75,10 @@ jobs:
           if ($bat -match 'postprocess_p2_accuracy_highlight\.py') { throw 'disk postprocess must not remain in deploy' }
           if (-not $bat.Contains('fsutil reparsepoint query "%DEST_DIR%"')) { throw 'reparse-point protection missing' }
           if (-not $bat.Contains('httpd.exe" -t')) { throw 'Apache config test missing' }
+          if (-not $bat.Contains('Stopping Apache before switching the document tree')) { throw 'Apache stop step missing' }
+          $stopPos=$bat.IndexOf('Stopping Apache before switching the document tree')
+          $movePos=$bat.IndexOf('Temporarily moving the previous physical Apache copy')
+          if ($stopPos -lt 0 -or $movePos -lt 0 -or $stopPos -gt $movePos) { throw 'Apache must stop before physical copy rename' }
 
       - name: Simulate Apache response injection
         shell: pwsh
