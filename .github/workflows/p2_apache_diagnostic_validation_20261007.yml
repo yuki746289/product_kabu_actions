@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: b8870110f841afe747333eb45c7335fde5a7a864
+  CORE_SHA: 6fd0c871717ba801b12fd48662e466f42ebf3cb7
 
 jobs:
   validate:
