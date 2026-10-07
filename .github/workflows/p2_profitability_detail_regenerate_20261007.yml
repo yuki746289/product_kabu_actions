@@ -61,6 +61,7 @@ jobs:
       - name: Verify changed paths and content
         shell: pwsh
         run: |
+          Remove-Item core/scripts/__pycache__ -Recurse -Force -ErrorAction SilentlyContinue
           $changed=@(git -C core status --porcelain)
           Write-Host "Changed files: $($changed.Count)"
           if ($changed.Count -ne 904) {
