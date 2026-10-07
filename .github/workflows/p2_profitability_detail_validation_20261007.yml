@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: 9c4c18595ccc932a3cd399c51e7e80c7cbd04d4b
+  CORE_SHA: 96bc4360bd3ecc19ca9a16846828a0b2f184c285
 
 jobs:
   validate:
@@ -68,7 +68,9 @@ jobs:
               frame[f"directional_return_{h}d_pct"] = [10.0,2.0,-3.0,-5.0]
 
           mask=np.array([True,True,True,True])
-          p=m.profitability_metrics(frame,mask)["horizons"]["10"]
+          prepared=m.prepare_profitability_arrays(frame)
+          metrics=m.profitability_metrics(frame,mask,prepared=prepared)
+          p=metrics["horizons"]["10"]
           assert p["evaluated"] == 4, p
           assert p["wins"] == 2 and p["losses"] == 2, p
           assert math.isclose(p["win_rate_pct"],50.0), p
@@ -86,7 +88,12 @@ jobs:
           assert math.isclose(p["loss"]["max"],-3.0), p
           assert sum(p["hist_counts"]) == 4, p
 
-          page=m.monthly_chart_page("test",frame,mask,"../index.html")
+          rows=m.monthly_chart_rows(frame,mask)
+          page=m.monthly_chart_page(
+              "test",frame,mask,"../index.html",
+              precomputed_rows=rows,
+              precomputed_profitability=metrics,
+          )
           required=[
               "損益分布と期待値",
               "平均損益幅差",
