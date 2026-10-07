@@ -39,6 +39,18 @@ jobs:
           $actual=(git -C core rev-parse HEAD).Trim()
           if ($actual -ne $env:CORE_SHA) { throw "core SHA mismatch: $actual" }
 
+      - name: Reproduce PowerShell path normalization
+        shell: pwsh
+        run: |
+          $raw='C:\Users\yuki_\OneDrive\Documents\github\product_kabu\preview\kabu'
+          $current=$raw.Replace('\\','/')
+          $correct=$raw.Replace('\','/')
+          Write-Host "raw=$raw"
+          Write-Host "current=$current"
+          Write-Host "correct=$correct"
+          if ($current -ne $raw) { throw 'Expected current expression to leave single backslashes unchanged' }
+          if ($correct -ne 'C:/Users/yuki_/OneDrive/Documents/github/product_kabu/preview/kabu') { throw 'Correct expression did not normalize path' }
+
       - name: JavaScript syntax check
         shell: pwsh
         run: |
