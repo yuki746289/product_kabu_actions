@@ -53,7 +53,7 @@ jobs:
           ROOT=/tmp/ui-check
           mkdir -p "$ROOT/analysis/high_entry_charts"
           cp core/preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/analysis/high_entry_accuracy.html              "$ROOT/analysis/high_entry_accuracy.html"
-          CHART="$(find core/preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/analysis/high_entry_charts -name '*.html' | head -n 1)"
+          CHART="$(find core/preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/analysis/high_entry_charts -name '*.html' -print -quit)"
           test -n "$CHART"
           cp "$CHART" "$ROOT/analysis/high_entry_charts/sample.html"
 
