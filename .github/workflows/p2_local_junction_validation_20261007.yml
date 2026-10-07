@@ -95,7 +95,9 @@ jobs:
 
           if (-not $css.Contains('.p2-favorites-table')) { throw 'favorites CSS missing' }
           if (-not $conf.Contains('Alias "/kabu/" "__KABU_SOURCE__/"')) { throw 'Apache Alias template missing' }
-          if (-not $conf.Contains('AddOutputFilter SUBSTITUTE .html')) { throw 'Apache extension SUBSTITUTE filter missing' }
+          if (-not $conf.Contains('<LocationMatch "^/kabu(?:/|$)">')) { throw 'Apache URL LocationMatch missing' }
+          if (-not $conf.Contains('SetOutputFilter SUBSTITUTE')) { throw 'Apache SUBSTITUTE output filter missing' }
+          if (-not $conf.Contains('Header set X-Product-Kabu-Alias "active"')) { throw 'Apache diagnostic header missing' }
           if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.js')) { throw 'runtime JS injection missing' }
           if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.css')) { throw 'runtime CSS injection missing' }
 
