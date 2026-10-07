@@ -1,0 +1,50 @@
+name: P2 Apache diagnostic validation 20261007
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/p2_apache_diagnostic_trigger'
+
+permissions:
+  contents: read
+
+env:
+  CORE_REPO: yuki746289/product_kabu
+  CORE_SHA: 6c1fd84c275731363e13967045ca0a776900d98a
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/diagnose_apache_local.ps1
+          sparse-checkout-cone-mode: false
+
+      - name: Verify fixed core SHA
+        shell: pwsh
+        run: |
+          $actual=(git -C core rev-parse HEAD).Trim()
+          if ($actual -ne $env:CORE_SHA) { throw "core SHA mismatch: $actual" }
+
+      - name: PowerShell parse check
+        shell: pwsh
+        run: |
+          $path='core/scripts/diagnose_apache_local.ps1'
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.Message }
+            throw "PowerShell parse errors: $($errors.Count)"
+          }
+          Write-Host 'Diagnostic script parse: PASS'
