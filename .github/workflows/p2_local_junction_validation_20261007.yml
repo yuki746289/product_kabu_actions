@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: 521d0e54b39d61bc2c3aa5f791e8f8fdeecd9835
+  CORE_SHA: 4861d324c1156a28e9db418a508a13fc78bd074c
 
 jobs:
   validate-windows:
@@ -66,7 +66,8 @@ jobs:
           }
 
           if (-not $css.Contains('.p2-favorites-table')) { throw 'favorites CSS missing' }
-          if (-not $conf.Contains('SetOutputFilter SUBSTITUTE')) { throw 'Apache SUBSTITUTE filter missing' }
+          if (-not $conf.Contains('FilterProvider KABU_RUNTIME SUBSTITUTE')) { throw 'Apache dynamic SUBSTITUTE provider missing' }
+          if (-not $conf.Contains('FilterChain KABU_RUNTIME')) { throw 'Apache dynamic filter chain missing' }
           if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.js')) { throw 'runtime JS injection missing' }
           if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.css')) { throw 'runtime CSS injection missing' }
 
@@ -76,8 +77,8 @@ jobs:
           if (-not $bat.Contains('fsutil reparsepoint query "%DEST_DIR%"')) { throw 'reparse-point protection missing' }
           if (-not $bat.Contains('httpd.exe" -t')) { throw 'Apache config test missing' }
           if (-not $bat.Contains('Stopping Apache before switching the document tree')) { throw 'Apache stop step missing' }
-          if (-not $bat.Contains('%SystemRoot%\\System32\\find.exe')) { throw 'Windows find.exe pin missing' }
-          if (-not $bat.Contains('%SystemRoot%\\System32\\timeout.exe')) { throw 'Windows timeout.exe pin missing' }
+          if (-not $bat.Contains('%SystemRoot%\System32\find.exe')) { throw 'Windows find.exe pin missing' }
+          if (-not $bat.Contains('%SystemRoot%\System32\timeout.exe')) { throw 'Windows timeout.exe pin missing' }
           $stopPos=$bat.IndexOf('Stopping Apache before switching the document tree')
           $movePos=$bat.IndexOf('Temporarily moving the previous physical Apache copy')
           if ($stopPos -lt 0 -or $movePos -lt 0 -or $stopPos -gt $movePos) { throw 'Apache must stop before physical copy rename' }
