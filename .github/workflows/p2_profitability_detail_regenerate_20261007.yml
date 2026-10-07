@@ -70,10 +70,11 @@ jobs:
 
           $changed=@(git -C core status --porcelain)
           Write-Host "Changed files: $($changed.Count)"
-          if ($changed.Count -ne 1018) {
+          if ($changed.Count -lt 1 -or $changed.Count -gt 1018) {
             $changed | Select-Object -First 30 | ForEach-Object { Write-Host $_ }
-            throw "Expected exactly 1018 modified detail pages"
+            throw "Unexpected modified detail page count: $($changed.Count)"
           }
+          Write-Host "This run modified $($changed.Count) detail pages; previously updated pages may be unchanged."
 
           $allowed='preview/kabu/analysis/(225_group_all_period/.+|225_exclusion_all_period/.+|225_indicator_stageb)/analysis/high_entry_charts/h-[0-9a-f]+\.html$'
           $bad=@($changed | Where-Object {
