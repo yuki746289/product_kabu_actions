@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: 3a0ee11fa1cef5e2caefdb9a7b87c1baa8096e7c
+  CORE_SHA: 9c4c18595ccc932a3cd399c51e7e80c7cbd04d4b
 
 jobs:
   validate:
@@ -28,6 +28,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             scripts/p2_monthly_chart.py
+            scripts/regenerate_p2_profitability_detail_pages.py
           sparse-checkout-cone-mode: false
 
       - name: Verify core SHA
@@ -45,6 +46,7 @@ jobs:
         shell: pwsh
         run: |
           python -m py_compile core/scripts/p2_monthly_chart.py
+          python -m py_compile core/scripts/regenerate_p2_profitability_detail_pages.py
 
       - name: Profitability metric unit test
         shell: pwsh
