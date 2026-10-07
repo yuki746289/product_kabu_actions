@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: 412410461e47a6b3189daf757080a5aa79d5b3de
+  CORE_SHA: 901ad90113deb4ce79c93421d2e9a4ed463dd672
 
 jobs:
   validate-windows:
@@ -66,8 +66,7 @@ jobs:
           }
 
           if (-not $css.Contains('.p2-favorites-table')) { throw 'favorites CSS missing' }
-          if (-not $conf.Contains('FilterProvider KABU_RUNTIME SUBSTITUTE')) { throw 'Apache dynamic SUBSTITUTE provider missing' }
-          if (-not $conf.Contains('FilterChain KABU_RUNTIME')) { throw 'Apache dynamic filter chain missing' }
+          if (-not $conf.Contains('AddOutputFilter SUBSTITUTE .html')) { throw 'Apache extension SUBSTITUTE filter missing' }
           if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.js')) { throw 'runtime JS injection missing' }
           if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.css')) { throw 'runtime CSS injection missing' }
 
@@ -81,6 +80,32 @@ jobs:
           if ($bat -match '(?i)(^|\s)timeout(?:\.exe)?\s+/t') { throw 'timeout.exe wait must not remain' }
           if (-not $bat.Contains('Stop-Process -Force')) { throw 'PowerShell force-stop missing' }
           if (-not $bat.Contains('Start-Sleep')) { throw 'PowerShell wait missing' }
+          if ($bat -match '(?im)^\s*pause\s*
+          $stopPos=$bat.IndexOf('Stopping Apache before switching the document tree')
+          $movePos=$bat.IndexOf('Temporarily moving the previous physical Apache copy')
+          if ($stopPos -lt 0 -or $movePos -lt 0 -or $stopPos -gt $movePos) { throw 'Apache must stop before physical copy rename' }
+
+      - name: Simulate Apache response injection
+        shell: pwsh
+        run: |
+          $sample='<!doctype html><html><head></head><body><script id="p2-accuracy-highlight-script">old()</script></body></html>'
+          $sample=$sample.Replace('<script id="p2-accuracy-highlight-script">','<script type="text/plain" id="p2-accuracy-highlight-script">')
+          $sample=$sample.Replace('</head>','<link rel="stylesheet" href="/kabu/_runtime/p2_local_runtime.css"></head>')
+          $sample=$sample.Replace('</body>','<script src="/kabu/_runtime/p2_local_runtime.js"></script></body>')
+          if (-not $sample.Contains('type="text/plain" id="p2-accuracy-highlight-script"')) { throw 'old inline script was not disabled' }
+          if (-not $sample.Contains('/kabu/_runtime/p2_local_runtime.css')) { throw 'CSS was not injected' }
+          if (-not $sample.Contains('/kabu/_runtime/p2_local_runtime.js')) { throw 'JS was not injected' }
+
+      - name: Windows junction behavior
+        shell: cmd
+        run: |
+          mkdir junction_src
+          echo junction-ok>junction_src\probe.txt
+          mklink /J junction_dst junction_src
+          type junction_dst\probe.txt | findstr /C:"junction-ok"
+          rmdir junction_dst
+          if not exist junction_src\probe.txt exit /b 1
+) { throw 'pause must not remain for Git Bash execution' }
           $stopPos=$bat.IndexOf('Stopping Apache before switching the document tree')
           $movePos=$bat.IndexOf('Temporarily moving the previous physical Apache copy')
           if ($stopPos -lt 0 -or $movePos -lt 0 -or $stopPos -gt $movePos) { throw 'Apache must stop before physical copy rename' }
