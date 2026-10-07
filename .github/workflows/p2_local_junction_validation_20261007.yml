@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: 4861d324c1156a28e9db418a508a13fc78bd074c
+  CORE_SHA: 412410461e47a6b3189daf757080a5aa79d5b3de
 
 jobs:
   validate-windows:
@@ -77,8 +77,10 @@ jobs:
           if (-not $bat.Contains('fsutil reparsepoint query "%DEST_DIR%"')) { throw 'reparse-point protection missing' }
           if (-not $bat.Contains('httpd.exe" -t')) { throw 'Apache config test missing' }
           if (-not $bat.Contains('Stopping Apache before switching the document tree')) { throw 'Apache stop step missing' }
-          if (-not $bat.Contains('%SystemRoot%\System32\find.exe')) { throw 'Windows find.exe pin missing' }
-          if (-not $bat.Contains('%SystemRoot%\System32\timeout.exe')) { throw 'Windows timeout.exe pin missing' }
+          if ($bat -match '(?i)tasklist\.exe') { throw 'tasklist polling must not remain' }
+          if ($bat -match '(?i)(^|\s)timeout(?:\.exe)?\s+/t') { throw 'timeout.exe wait must not remain' }
+          if (-not $bat.Contains('Stop-Process -Force')) { throw 'PowerShell force-stop missing' }
+          if (-not $bat.Contains('Start-Sleep')) { throw 'PowerShell wait missing' }
           $stopPos=$bat.IndexOf('Stopping Apache before switching the document tree')
           $movePos=$bat.IndexOf('Temporarily moving the previous physical Apache copy')
           if ($stopPos -lt 0 -or $movePos -lt 0 -or $stopPos -gt $movePos) { throw 'Apache must stop before physical copy rename' }
