@@ -1,4 +1,4 @@
-name: P2 local junction validation 20261007
+name: P2 local Alias validation 20261007
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: 901ad90113deb4ce79c93421d2e9a4ed463dd672
+  CORE_SHA: ad535ad8147ad7301bf801bba7fc19ddb4fd3f6f
 
 jobs:
   validate-windows:
@@ -44,7 +44,7 @@ jobs:
         run: |
           node --check core/preview/kabu/_runtime/p2_local_runtime.js
 
-      - name: Runtime contract check
+      - name: Runtime and deploy contract check
         shell: pwsh
         run: |
           $js=Get-Content -Raw core/preview/kabu/_runtime/p2_local_runtime.js
@@ -66,24 +66,28 @@ jobs:
           }
 
           if (-not $css.Contains('.p2-favorites-table')) { throw 'favorites CSS missing' }
+          if (-not $conf.Contains('Alias "/kabu/" "__KABU_SOURCE__/"')) { throw 'Apache Alias template missing' }
           if (-not $conf.Contains('AddOutputFilter SUBSTITUTE .html')) { throw 'Apache extension SUBSTITUTE filter missing' }
           if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.js')) { throw 'runtime JS injection missing' }
           if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.css')) { throw 'runtime CSS injection missing' }
 
-          if (-not $bat.Contains('mklink /J "%DEST_DIR%" "%SOURCE_DIR%"')) { throw 'junction command missing' }
+          if ($bat -match '(?i)mklink\s+/J') { throw 'junction command must not remain' }
           if ($bat -match '(?i)\bxcopy\b') { throw 'xcopy must not remain' }
           if ($bat -match 'postprocess_p2_accuracy_highlight\.py') { throw 'disk postprocess must not remain in deploy' }
-          if (-not $bat.Contains('fsutil reparsepoint query "%DEST_DIR%"')) { throw 'reparse-point protection missing' }
-          if (-not $bat.Contains('httpd.exe" -t')) { throw 'Apache config test missing' }
-          if (-not $bat.Contains('Stopping Apache before switching the document tree')) { throw 'Apache stop step missing' }
-          if ($bat -match '(?i)tasklist\.exe') { throw 'tasklist polling must not remain' }
+          if ($bat -match '(?im)^\s*pause\s*$') { throw 'pause must not remain for Git Bash execution' }
           if ($bat -match '(?i)(^|\s)timeout(?:\.exe)?\s+/t') { throw 'timeout.exe wait must not remain' }
-          if (-not $bat.Contains('Stop-Process -Force')) { throw 'PowerShell force-stop missing' }
-          if (-not $bat.Contains('Start-Sleep')) { throw 'PowerShell wait missing' }
-          if ($bat -match '(?im)^\s*pause\s*
-          $stopPos=$bat.IndexOf('Stopping Apache before switching the document tree')
-          $movePos=$bat.IndexOf('Temporarily moving the previous physical Apache copy')
-          if ($stopPos -lt 0 -or $movePos -lt 0 -or $stopPos -gt $movePos) { throw 'Apache must stop before physical copy rename' }
+          if (-not $bat.Contains('__KABU_SOURCE__')) { throw 'Alias source replacement missing' }
+          if (-not $bat.Contains('Mode          : Apache Alias')) { throw 'Alias success marker missing' }
+          if (-not $bat.Contains('Remove-Item -LiteralPath')) { throw 'legacy duplicate cleanup missing' }
+
+      - name: Alias template materialization
+        shell: pwsh
+        run: |
+          $template=Get-Content -Raw core/apache/product_kabu_local.conf
+          $src='C:/Users/test/project/preview/kabu'
+          $rendered=$template.Replace('__KABU_SOURCE__',$src)
+          if (-not $rendered.Contains('Alias "/kabu/" "C:/Users/test/project/preview/kabu/"')) { throw 'Alias render failed' }
+          if (-not $rendered.Contains('<Directory "C:/Users/test/project/preview/kabu">')) { throw 'Directory render failed' }
 
       - name: Simulate Apache response injection
         shell: pwsh
@@ -95,38 +99,3 @@ jobs:
           if (-not $sample.Contains('type="text/plain" id="p2-accuracy-highlight-script"')) { throw 'old inline script was not disabled' }
           if (-not $sample.Contains('/kabu/_runtime/p2_local_runtime.css')) { throw 'CSS was not injected' }
           if (-not $sample.Contains('/kabu/_runtime/p2_local_runtime.js')) { throw 'JS was not injected' }
-
-      - name: Windows junction behavior
-        shell: cmd
-        run: |
-          mkdir junction_src
-          echo junction-ok>junction_src\probe.txt
-          mklink /J junction_dst junction_src
-          type junction_dst\probe.txt | findstr /C:"junction-ok"
-          rmdir junction_dst
-          if not exist junction_src\probe.txt exit /b 1
-) { throw 'pause must not remain for Git Bash execution' }
-          $stopPos=$bat.IndexOf('Stopping Apache before switching the document tree')
-          $movePos=$bat.IndexOf('Temporarily moving the previous physical Apache copy')
-          if ($stopPos -lt 0 -or $movePos -lt 0 -or $stopPos -gt $movePos) { throw 'Apache must stop before physical copy rename' }
-
-      - name: Simulate Apache response injection
-        shell: pwsh
-        run: |
-          $sample='<!doctype html><html><head></head><body><script id="p2-accuracy-highlight-script">old()</script></body></html>'
-          $sample=$sample.Replace('<script id="p2-accuracy-highlight-script">','<script type="text/plain" id="p2-accuracy-highlight-script">')
-          $sample=$sample.Replace('</head>','<link rel="stylesheet" href="/kabu/_runtime/p2_local_runtime.css"></head>')
-          $sample=$sample.Replace('</body>','<script src="/kabu/_runtime/p2_local_runtime.js"></script></body>')
-          if (-not $sample.Contains('type="text/plain" id="p2-accuracy-highlight-script"')) { throw 'old inline script was not disabled' }
-          if (-not $sample.Contains('/kabu/_runtime/p2_local_runtime.css')) { throw 'CSS was not injected' }
-          if (-not $sample.Contains('/kabu/_runtime/p2_local_runtime.js')) { throw 'JS was not injected' }
-
-      - name: Windows junction behavior
-        shell: cmd
-        run: |
-          mkdir junction_src
-          echo junction-ok>junction_src\probe.txt
-          mklink /J junction_dst junction_src
-          type junction_dst\probe.txt | findstr /C:"junction-ok"
-          rmdir junction_dst
-          if not exist junction_src\probe.txt exit /b 1
