@@ -40,7 +40,6 @@ jobs:
             preview/kabu/analysis/225_exclusion_all_period/*/advantage_pairwise_candidates.csv
             preview/kabu/analysis/225_exclusion_all_period/*/advantage_triple_candidates.csv
             preview/kabu/analysis/225_exclusion_all_period/*/analysis/high_entry_charts
-            preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_charts
           sparse-checkout-cone-mode: false
 
       - name: Verify source SHA
@@ -65,49 +64,13 @@ jobs:
           Remove-Item core/scripts/__pycache__ -Recurse -Force -ErrorAction SilentlyContinue
           $changed=@(git -C core status --porcelain)
           Write-Host "Changed files: $($changed.Count)"
-          if ($changed.Count -ne 114) {
+          if ($changed.Count -ne 904) {
             $changed | Select-Object -First 30 | ForEach-Object { Write-Host $_ }
-            throw "Expected exactly 114 newly modified 225 detail pages"
+            throw "Expected exactly 904 modified detail pages"
           }
+
           $bad=@($changed | Where-Object {
-            $_ -notmatch 'preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_charts/h-[0-9a-f]+\.html
-          })
-          if ($bad.Count) {
-            $bad | Select-Object -First 30 | ForEach-Object { Write-Host $_ }
-            throw "Non-detail paths were modified"
-          }
-
-          $pages=@(
-            Get-ChildItem core/preview/kabu/analysis/225_group_all_period -Recurse -Filter 'h-*.html' |
-              Where-Object { $_.FullName -match 'analysis\\high_entry_charts' }
-          ) + @(
-            Get-ChildItem core/preview/kabu/analysis/225_exclusion_all_period -Recurse -Filter 'h-*.html' |
-              Where-Object { $_.FullName -match 'analysis\\high_entry_charts' }
-          ) + @(
-            Get-ChildItem core/preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_charts -Filter 'h-*.html'
-          )
-          if ($pages.Count -ne 1018) { throw "Expected 1018 checked-out detail pages, got $($pages.Count)" }
-
-          foreach($p in $pages) {
-            $txt=Get-Content -Raw -LiteralPath $p.FullName
-            foreach($needle in @('損益分布と期待値','平均損益幅差','Profit Factor','エントリー損益分布','const PROFITABILITY=')) {
-              if(-not $txt.Contains($needle)) { throw "Missing $needle in $($p.FullName)" }
-            }
-          }
-
-          $sample='core/preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/analysis/high_entry_charts/h-a0a5ecdec45df4a9.html'
-          if(-not (Test-Path $sample)) { throw "Reference sample page missing" }
-          Write-Host "Reference sample updated: $sample"
-
-      - name: Commit generated detail pages
-        shell: pwsh
-        run: |
-          git -C core config user.name "github-actions[bot]"
-          git -C core config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C core add preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_charts
-          git -C core commit -m "feat: add profitability analysis to 225 detail pages"
-          git -C core push origin HEAD:${{ env.CORE_BRANCH }}
-
+            $_ -notmatch 'preview/kabu/analysis/(225_group_all_period|225_exclusion_all_period)/.+/analysis/high_entry_charts/h-[0-9a-f]+\.html$'
           })
           if ($bad.Count) {
             $bad | Select-Object -First 30 | ForEach-Object { Write-Host $_ }
@@ -121,11 +84,19 @@ jobs:
             Get-ChildItem core/preview/kabu/analysis/225_exclusion_all_period -Recurse -Filter 'h-*.html' |
               Where-Object { $_.FullName -match 'analysis\\high_entry_charts' }
           )
-          if ($pages.Count -ne 904) { throw "Expected 904 checked-out detail pages, got $($pages.Count)" }
+          if ($pages.Count -ne 904) {
+            throw "Expected 904 checked-out detail pages, got $($pages.Count)"
+          }
 
           foreach($p in $pages) {
             $txt=Get-Content -Raw -LiteralPath $p.FullName
-            foreach($needle in @('損益分布と期待値','平均損益幅差','Profit Factor','エントリー損益分布','const PROFITABILITY=')) {
+            foreach($needle in @(
+              '損益分布と期待値',
+              '平均損益幅差',
+              'Profit Factor',
+              'エントリー損益分布',
+              'const PROFITABILITY='
+            )) {
               if(-not $txt.Contains($needle)) { throw "Missing $needle in $($p.FullName)" }
             }
           }
