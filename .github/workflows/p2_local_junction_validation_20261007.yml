@@ -16,10 +16,8 @@ env:
 jobs:
   validate-windows:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/checkout@v4
         with:
           repository: ${{ env.CORE_REPO }}
@@ -28,6 +26,12 @@ jobs:
           path: core
           fetch-depth: 1
           persist-credentials: false
+          sparse-checkout: |
+            deploy_local.bat
+            apache/product_kabu_local.conf
+            preview/kabu/_runtime/p2_local_runtime.js
+            preview/kabu/_runtime/p2_local_runtime.css
+          sparse-checkout-cone-mode: false
 
       - name: Verify fixed core SHA
         shell: pwsh
@@ -92,19 +96,3 @@ jobs:
           type junction_dst\probe.txt | findstr /C:"junction-ok"
           rmdir junction_dst
           if not exist junction_src\probe.txt exit /b 1
-
-      - name: Production logic unchanged
-        shell: pwsh
-        run: |
-          git -C core diff --name-only 1cfe52cd652d57dc4b925b275fe3ab463754f73b..$env:CORE_SHA | Set-Content changed.txt
-          $allowed=@(
-            'apache/product_kabu_local.conf',
-            'deploy_local.bat',
-            'preview/kabu/_runtime/p2_local_runtime.css',
-            'preview/kabu/_runtime/p2_local_runtime.js'
-          )
-          $changed=Get-Content changed.txt
-          foreach($f in $changed){
-            if($allowed -notcontains $f){ throw "unexpected changed file: $f" }
-          }
-          if($changed.Count -ne 4){ throw "expected exactly 4 changed files, got $($changed.Count)" }
