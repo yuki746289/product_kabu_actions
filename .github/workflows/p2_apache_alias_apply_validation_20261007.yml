@@ -1,0 +1,107 @@
+name: P2 Apache Alias apply validation 20261007
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/p2_apache_alias_apply_trigger'
+
+permissions:
+  contents: read
+
+env:
+  CORE_REPO: yuki746289/product_kabu
+  CORE_SHA: 98cee00f9ac0a645e57ba7690faea5cbcb3c22c4
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            deploy_local.bat
+            scripts/apply_apache_alias_local.ps1
+            apache/product_kabu_local.conf
+          sparse-checkout-cone-mode: false
+
+      - name: Verify fixed core SHA
+        shell: pwsh
+        run: |
+          $actual=(git -C core rev-parse HEAD).Trim()
+          if ($actual -ne $env:CORE_SHA) { throw "core SHA mismatch: $actual" }
+
+      - name: PowerShell parse check
+        shell: pwsh
+        run: |
+          $path='core/scripts/apply_apache_alias_local.ps1'
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.Message }
+            throw "PowerShell parse errors: $($errors.Count)"
+          }
+
+      - name: Deployment contract check
+        shell: pwsh
+        run: |
+          $ps=Get-Content -Raw core/scripts/apply_apache_alias_local.ps1
+          $bat=Get-Content -Raw core/deploy_local.bat
+          $conf=Get-Content -Raw core/apache/product_kabu_local.conf
+
+          $required=@(
+            "serviceName = 'Apache2.4'",
+            'Stop-Service -Name $serviceName -Force',
+            'Start-Service -Name $serviceName',
+            'Wait-ServiceState $serviceName ''Stopped'' 30',
+            'Wait-ServiceState $serviceName ''Running'' 30',
+            'Test-LiveAlias',
+            "Headers['X-Product-Kabu-Alias']",
+            'p2_local_runtime.js',
+            'Runtime JS was not injected into HTML.',
+            'Remove-Item -LiteralPath $legacyRoot -Recurse -Force',
+            'Restore-Original',
+            'Generated Apache paths still contain backslashes.',
+            'DONE',
+            'Duplicate HTML: removed'
+          )
+          foreach($needle in $required) {
+            if(-not $ps.Contains($needle)) { throw "Missing deployment contract: $needle" }
+          }
+
+          $verifyPos=$ps.IndexOf('Test-LiveAlias')
+          $deletePos=$ps.IndexOf('Removing legacy Apache duplicate')
+          if($verifyPos -lt 0 -or $deletePos -lt 0 -or $verifyPos -gt $deletePos) {
+            throw 'Live Alias verification must occur before legacy deletion'
+          }
+
+          if(-not $conf.Contains('Alias "/kabu/" "__KABU_SOURCE__/"')) { throw 'Alias template missing' }
+          if(-not $conf.Contains('Header set X-Product-Kabu-Alias "active"')) { throw 'diagnostic header missing' }
+          if(-not $conf.Contains('SetOutputFilter SUBSTITUTE')) { throw 'SUBSTITUTE filter missing' }
+
+          if($bat -match '(?i)mklink|xcopy|postprocess_p2_accuracy_highlight') {
+            throw 'Old deployment logic remains in deploy_local.bat'
+          }
+          if(-not $bat.Contains('apply_apache_alias_local.ps1')) { throw 'Thin launcher target missing' }
+
+      - name: Path rendering check
+        shell: pwsh
+        run: |
+          $template=Get-Content -Raw core/apache/product_kabu_local.conf
+          $raw='C:\Users\yuki_\OneDrive\Documents\github\product_kabu\preview\kabu'
+          $src=[IO.Path]::GetFullPath($raw).Replace('\','/').TrimEnd('/')
+          if($src -ne 'C:/Users/yuki_/OneDrive/Documents/github/product_kabu/preview/kabu') {
+            throw "Normalization failed: $src"
+          }
+          $rendered=$template.Replace('__KABU_SOURCE__',$src)
+          if(-not $rendered.Contains('Alias "/kabu/" "C:/Users/yuki_/OneDrive/Documents/github/product_kabu/preview/kabu/"')) {
+            throw 'Alias rendering failed'
+          }
