@@ -11,7 +11,7 @@ permissions:
 
 env:
   CORE_REPO: yuki746289/product_kabu
-  CORE_SHA: 98cee00f9ac0a645e57ba7690faea5cbcb3c22c4
+  CORE_SHA: aec3c39bccfd748c3e18abb4e3438c8db1513df0
 
 jobs:
   validate:
@@ -91,6 +91,9 @@ jobs:
             throw 'Old deployment logic remains in deploy_local.bat'
           }
           if(-not $bat.Contains('apply_apache_alias_local.ps1')) { throw 'Thin launcher target missing' }
+          if(-not $ps.Contains('Start-Transcript -LiteralPath $LogPath -Force')) { throw 'Elevated transcript capture missing' }
+          if(-not $ps.Contains('===== Elevated Apache migration result =====')) { throw 'Elevated log replay missing' }
+          if(-not $ps.Contains('Elevated process exit code:')) { throw 'Elevated exit code reporting missing' }
 
       - name: Path rendering check
         shell: pwsh
