@@ -1,0 +1,110 @@
+name: P2 local junction validation 20261007
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/p2_local_junction_trigger'
+
+permissions:
+  contents: read
+
+env:
+  CORE_REPO: yuki746289/product_kabu
+  CORE_SHA: eb8e8c7392c392be748def53535a83eebb902279
+
+jobs:
+  validate-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify fixed core SHA
+        shell: pwsh
+        run: |
+          $actual=(git -C core rev-parse HEAD).Trim()
+          if ($actual -ne $env:CORE_SHA) { throw "core SHA mismatch: $actual" }
+
+      - name: JavaScript syntax check
+        shell: pwsh
+        run: |
+          node --check core/preview/kabu/_runtime/p2_local_runtime.js
+
+      - name: Runtime contract check
+        shell: pwsh
+        run: |
+          $js=Get-Content -Raw core/preview/kabu/_runtime/p2_local_runtime.js
+          $css=Get-Content -Raw core/preview/kabu/_runtime/p2_local_runtime.css
+          $conf=Get-Content -Raw core/apache/product_kabu_local.conf
+          $bat=Get-Content -Raw core/deploy_local.bat
+
+          @(
+            'p2-favorites-table',
+            'p2-growth-500',
+            'p2-growth-1000',
+            'correctLegend',
+            'incorrectLegend',
+            '#2457a6',
+            '#c2413b',
+            '__P2_LOCAL_RUNTIME_V1__'
+          ) | ForEach-Object {
+            if (-not $js.Contains($_)) { throw "runtime contract missing: $_" }
+          }
+
+          if (-not $css.Contains('.p2-favorites-table')) { throw 'favorites CSS missing' }
+          if (-not $conf.Contains('AddOutputFilterByType SUBSTITUTE text/html')) { throw 'Apache SUBSTITUTE filter missing' }
+          if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.js')) { throw 'runtime JS injection missing' }
+          if (-not $conf.Contains('/kabu/_runtime/p2_local_runtime.css')) { throw 'runtime CSS injection missing' }
+
+          if (-not $bat.Contains('mklink /J "%DEST_DIR%" "%SOURCE_DIR%"')) { throw 'junction command missing' }
+          if ($bat -match '(?i)\bxcopy\b') { throw 'xcopy must not remain' }
+          if ($bat -match 'postprocess_p2_accuracy_highlight\.py') { throw 'disk postprocess must not remain in deploy' }
+          if (-not $bat.Contains('fsutil reparsepoint query "%DEST_DIR%"')) { throw 'reparse-point protection missing' }
+          if (-not $bat.Contains('httpd.exe" -t')) { throw 'Apache config test missing' }
+
+      - name: Simulate Apache response injection
+        shell: pwsh
+        run: |
+          $sample='<!doctype html><html><head></head><body><script id="p2-accuracy-highlight-script">old()</script></body></html>'
+          $sample=$sample.Replace('<script id="p2-accuracy-highlight-script">','<script type="text/plain" id="p2-accuracy-highlight-script">')
+          $sample=$sample.Replace('</head>','<link rel="stylesheet" href="/kabu/_runtime/p2_local_runtime.css"></head>')
+          $sample=$sample.Replace('</body>','<script src="/kabu/_runtime/p2_local_runtime.js"></script></body>')
+          if (-not $sample.Contains('type="text/plain" id="p2-accuracy-highlight-script"')) { throw 'old inline script was not disabled' }
+          if (-not $sample.Contains('/kabu/_runtime/p2_local_runtime.css')) { throw 'CSS was not injected' }
+          if (-not $sample.Contains('/kabu/_runtime/p2_local_runtime.js')) { throw 'JS was not injected' }
+
+      - name: Windows junction behavior
+        shell: cmd
+        run: |
+          mkdir junction_src
+          echo junction-ok>junction_src\probe.txt
+          mklink /J junction_dst junction_src
+          type junction_dst\probe.txt | findstr /C:"junction-ok"
+          rmdir junction_dst
+          if not exist junction_src\probe.txt exit /b 1
+
+      - name: Production logic unchanged
+        shell: pwsh
+        run: |
+          git -C core diff --name-only 1cfe52cd652d57dc4b925b275fe3ab463754f73b..$env:CORE_SHA | Set-Content changed.txt
+          $allowed=@(
+            'apache/product_kabu_local.conf',
+            'deploy_local.bat',
+            'preview/kabu/_runtime/p2_local_runtime.css',
+            'preview/kabu/_runtime/p2_local_runtime.js'
+          )
+          $changed=Get-Content changed.txt
+          foreach($f in $changed){
+            if($allowed -notcontains $f){ throw "unexpected changed file: $f" }
+          }
+          if($changed.Count -ne 4){ throw "expected exactly 4 changed files, got $($changed.Count)" }
