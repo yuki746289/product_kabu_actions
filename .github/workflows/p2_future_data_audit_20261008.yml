@@ -1,0 +1,65 @@
+name: P2 future data audit 20261008
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/p2_future_data_audit_trigger'
+
+permissions:
+  contents: read
+
+env:
+  CORE_REPO: yuki746289/product_kabu
+  CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+  CORE_SHA: 786f287c3240d34eec0f324792fd9c860fe28511
+
+jobs:
+  audit:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ env.CORE_BRANCH }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            scripts
+            preview/kabu/analysis/225_group_all_period/*/signal_level_features.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Verify source SHA
+        shell: pwsh
+        run: |
+          $actual=(git -C core rev-parse HEAD).Trim()
+          if ($actual -ne $env:CORE_SHA) { throw "core SHA mismatch: $actual" }
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check --quiet pandas numpy
+
+      - name: Compile audit
+        shell: pwsh
+        run: |
+          python -m py_compile core/scripts/audit_p2_future_data_leakage.py
+
+      - name: Run future-data audit
+        shell: pwsh
+        run: |
+          python core/scripts/audit_p2_future_data_leakage.py --site-root core/preview/kabu --output core/p2_future_data_audit_20261008.json
+
+      - name: Show audit summary
+        shell: pwsh
+        run: |
+          $a=Get-Content -Raw core/p2_future_data_audit_20261008.json | ConvertFrom-Json
+          Write-Host "predictor_causality_pass=$($a.predictor_causality_pass)"
+          Write-Host "fail_count=$($a.fail_count)"
+          Write-Host "warning_count=$($a.warning_count)"
+          Write-Host "rows=$($a.data_summary.rows)"
+          Write-Host "tickers=$($a.data_summary.tickers)"
+          if(-not $a.predictor_causality_pass) { throw "predictor causality audit failed" }
