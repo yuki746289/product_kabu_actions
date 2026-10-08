@@ -12,7 +12,7 @@ permissions:
 env:
   CORE_REPO: yuki746289/product_kabu
   CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
-  CORE_SHA: 786f287c3240d34eec0f324792fd9c860fe28511
+  CORE_SHA: 8698c9cb319a029685ac322305df40c29a29e4f3
 
 jobs:
   audit:
