@@ -90,7 +90,8 @@ jobs:
           roots = []
           for name,base in datasets.TARGETS.items():
               p = base/'analysis/high_entry_accuracy.html'
-              old = subprocess.check_output(['git','show',f'HEAD:{p.as_posix()}']).decode('utf-8')
+              rel = p.relative_to(Path.cwd()).as_posix()
+              old = subprocess.check_output(['git','show','HEAD:'+rel]).decode('utf-8')
               current = p.read_text(encoding='utf-8')
               section = refresh.extract_growth(current)
               n, links = refresh.inspect_growth(section)
@@ -99,7 +100,7 @@ jobs:
               assert current.replace(section,'',1) == old, f'{name}: previous sections/layout altered'
               for token in ('product_kabu_favorites_v1','p2-growth-500','p2-growth-1000'):
                   assert token in current, (name,token)
-              roots.append(p.parent.as_posix())
+              roots.append(p.parent.relative_to(Path.cwd()).as_posix())
               print('PASS', name, 'rows=',n,'links=',links)
           names = [r[3:] for r in subprocess.check_output(
               ['git','status','--porcelain','--untracked-files=all'],text=True).splitlines()]
