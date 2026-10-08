@@ -1,0 +1,8 @@
+created_at_jst: 2026-10-08T22:15:00+09:00
+purpose: add research-only growth-priority ranking to 225 high-entry HTML
+source_core_head: ce526394c4872b763f50c14b8de83355bbbfe052
+source_artifact_run: 36979444713
+source_artifact: p2-225-raw-canonical-mirror-asset-final
+no_private_actions: true
+no_p2_recomputation: true
+no_production_deploy: true
