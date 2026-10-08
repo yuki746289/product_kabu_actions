@@ -1,0 +1,5 @@
+created_at_jst: 2026-10-08T23:07:00+09:00
+purpose: Generate 6-group and 2-exclusion growth rankings using existing CSV only
+expected_core_head: 96f5882cda98606bb6572708dec39fd8618e50fb
+production_p2_change: forbidden
+private_actions: forbidden
