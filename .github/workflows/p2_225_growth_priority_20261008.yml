@@ -31,7 +31,7 @@ jobs:
         with:
           repository: yuki746289/product_kabu
           ref: ce526394c4872b763f50c14b8de83355bbbfe052
-          token: \${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
           persist-credentials: true
@@ -67,7 +67,7 @@ jobs:
           repository: yuki746289/product_kabu_actions
           run-id: "36979444713"
           name: p2-225-raw-canonical-mirror-asset-final
-          github-token: \${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           path: /tmp/verified_225
 
       - name: Update only growth section from 225 CSV
@@ -123,11 +123,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CURRENT="$(git ls-remote origin "refs/heads/\${CORE_BRANCH}" | cut -f1)"
+          CURRENT="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
           test "$CURRENT" = ce526394c4872b763f50c14b8de83355bbbfe052 || {
             echo "Branch advanced since snapshot. Not pushing."; exit 1;
           }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "data(research): add verified 225 growth priority HTML"
-          git push origin "HEAD:refs/heads/\${CORE_BRANCH}"
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
