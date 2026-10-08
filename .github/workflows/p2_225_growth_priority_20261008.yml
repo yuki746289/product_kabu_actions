@@ -1,0 +1,133 @@
+# Created: 2026-10-08T22:00:00+09:00
+# Research only: reads completed 225 artifact, changes one HTML page and linked charts.
+name: P2 225 growth-priority HTML 20261008
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_225_growth_priority_20261008_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-225-growth-priority-20261008
+  cancel-in-progress: false
+
+jobs:
+  refresh_growth:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+    steps:
+      - name: Checkout public Actions code
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned private research branch snapshot
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ce526394c4872b763f50c14b8de83355bbbfe052
+          token: \${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Verify private snapshot and original HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = ce526394c4872b763f50c14b8de83355bbbfe052
+          test "$(git -C core hash-object preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_accuracy.html)" = 7202187e53a437809df2c6a8e5b3cae4fab3bf92
+          test -z "$(git -C core status --porcelain)"
+          python3 scripts/check_actions_architecture.py --core-dir core --expected-core-sha ce526394c4872b763f50c14b8de83355bbbfe052
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+
+      - name: Dependencies and regression tests
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          python -m py_compile scripts/refresh_p2_growth_from_csv.py scripts/generate_p2_high_entry_accuracy_report.py
+          python -m unittest discover -s tests -p 'test_refresh_p2_growth_from_csv.py' -v
+          python -m unittest discover -s tests -p 'test_p2_high_entry_growth_ranking.py' -v
+
+      - name: Download prior successful 225 artifact, without recomputing P2
+        uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: "36979444713"
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: \${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/verified_225
+
+      - name: Update only growth section from 225 CSV
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/verified_225/signal_level_features.csv
+          test -f /tmp/verified_225/all_pairwise_combinations.csv
+          test -f /tmp/verified_225/tested_triple_combinations.csv
+          python scripts/refresh_p2_growth_from_csv.py --csv-dir /tmp/verified_225
+
+      - name: QA preserved original sections, 30 links and approved paths
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import subprocess
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, str(Path('scripts').resolve()))
+          import refresh_p2_growth_from_csv as refresh
+
+          target = Path('preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_accuracy.html')
+          original = subprocess.check_output(['git','show','HEAD:'+target.as_posix()]).decode('utf-8')
+          current = target.read_text(encoding='utf-8')
+          section = refresh.extract_growth(current)
+          n, linked = refresh.inspect_growth(section)
+          assert (n, linked) == (30, 30), (n, linked)
+          assert current.replace(section,'',1) == original, 'Original four sections changed'
+          for token in ('product_kabu_favorites_v1','p2-accuracy-highlight-script','p2-growth-500','p2-growth-1000'):
+              assert token in current, token
+          files = subprocess.check_output(['git','status','--porcelain','--untracked-files=all'],text=True).splitlines()
+          assert files, 'Nothing changed'
+          for line in files:
+              name = line[3:]
+              valid = name == target.as_posix() or (
+                  name.startswith(target.parent.as_posix()+'/high_entry_charts/')
+                  and name.endswith('.html')
+              )
+              assert valid, name
+          print({'growth_rows':n,'linked':linked,'allowed_changes':len(files),'existing_sections_preserved':True})
+          PY
+          git diff --check
+          git add preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_accuracy.html
+          git add preview/kabu/analysis/225_indicator_stageb/analysis/high_entry_charts
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+
+      - name: Commit verified research preview only
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT="$(git ls-remote origin "refs/heads/\${CORE_BRANCH}" | cut -f1)"
+          test "$CURRENT" = ce526394c4872b763f50c14b8de83355bbbfe052 || {
+            echo "Branch advanced since snapshot. Not pushing."; exit 1;
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "data(research): add verified 225 growth priority HTML"
+          git push origin "HEAD:refs/heads/\${CORE_BRANCH}"
