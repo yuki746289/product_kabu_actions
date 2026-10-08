@@ -3,3 +3,7 @@ purpose: Generate 6-group and 2-exclusion growth rankings using existing CSV onl
 expected_core_head: 96f5882cda98606bb6572708dec39fd8618e50fb
 production_p2_change: forbidden
 private_actions: forbidden
+
+retry: 2
+retry_reason: final_QA_git_show_absolute_path_rejected
+workflow_fix_commit: 8748445bcc6bdb878c4e9017751e2fdeb9f98fd8
