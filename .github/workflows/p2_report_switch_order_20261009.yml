@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      CORE_SHA: 8fba42d59e99295c2988b32ae637422d22902a23
+      CORE_SHA: cd4daaa08efcc99cd632b4375ccedb6a22a845c5
     steps:
       - name: Checkout public workflow
         uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 8fba42d59e99295c2988b32ae637422d22902a23
+          ref: cd4daaa08efcc99cd632b4375ccedb6a22a845c5
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
