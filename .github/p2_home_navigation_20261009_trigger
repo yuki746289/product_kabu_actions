@@ -1,0 +1,6 @@
+created_at_jst: 2026-10-09
+purpose: Rebuild 14 categorized home cards and repair broken Top links
+expected_research_sha: 71a36b8bb663ce05b4c46d5507ea51fd6ceafc7e
+no_private_actions: true
+no_p2_or_artifact_recomputation: true
+no_production_deploy: true
