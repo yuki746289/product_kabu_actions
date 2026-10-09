@@ -1,0 +1,8 @@
+created_at_jst: 2026-10-09
+purpose: Recheck only alleged signal-row mismatches and retain numeric discrepancies
+code_sha: e688bae5b5d00157d4fb632350ef849abdbb21b8
+previous_completed_shards_run: 37907348451
+report_snapshot: b119f3958f2bbcc315bdceadb599e9d782a1b51b
+private_actions: forbidden
+html_or_source_csv_changes: forbidden
+false_positive_rule: compare_exact_source_rows_after_explicit_display_alias_normalization
