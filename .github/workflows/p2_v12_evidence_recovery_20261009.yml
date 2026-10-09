@@ -1,0 +1,118 @@
+# Created: 2026-10-09 JST
+# Recovery of unsaved diagnostic results; no acceptance criteria are relaxed.
+name: P2 v12 evidence diagnostic recovery 20261009
+on:
+  push:
+    branches: [main]
+    paths: ['.github/p2_v12_evidence_recovery_20261009_trigger']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-v12-evidence-review-20261009
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CORE_SHA: f730d277d733e4714ddc22fe9847a4b34b57f178
+      CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+      PYTHONUNBUFFERED: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: f730d277d733e4714ddc22fe9847a4b34b57f178
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            scripts
+            tests
+            docs
+            config
+          persist-credentials: true
+      - name: Enforce public-only architecture
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then exit 1; fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Run unchanged comparison tests
+        working-directory: core
+        run: |
+          pip install -r requirements.txt
+          python -m unittest discover -s tests -p 'test_p2_v12_evidence_review_20261009.py' -v
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '36979444713'
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/p2-verified225
+      - name: Recreate previously unsaved comparison records
+        working-directory: core
+        env:
+          KABU_READ_TOKEN: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+        run: |
+          python scripts/reviews/p2_v12_evidence_review_20261009.py \
+            --artifact-dir "$RUNNER_TEMP/p2-verified225" \
+            --cache-dir "$RUNNER_TEMP/p2-review-cache" \
+            --output-dir docs/reviews/p2_v12_results_20261009
+      - name: Record discrepancies without declaring them PASS
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          p=Path('docs/reviews/p2_v12_results_20261009')
+          s=json.loads((p/'summary.json').read_text())
+          f=pd.read_csv(p/'all_condition_comparisons.csv')
+          bad=f.loc[~f['html_match']].copy()
+          bad['count_difference']=bad['signal_count']-bad['html_count']
+          for h in (5,10,20): bad[f'win_difference_{h}']=bad[f'win_{h}']-bad[f'html_win_{h}']
+          columns=['dataset','condition_id','condition_key','label','html_count','signal_count','count_difference']
+          for h in (5,10,20): columns += [f'html_win_{h}',f'win_{h}',f'win_difference_{h}',f'n_{h}']
+          bad[columns].to_csv(p/'html_reconciliation_failures.csv',index=False)
+          s['data_reconciliation_status']='FAIL' if len(bad) else 'PASS'
+          s['review_status']='COMPLETED_DIAGNOSTIC_NOT_ADOPTED'
+          s['first_unsaved_run']=37884091977
+          s['save_recovery_reason']='Initial workflow discarded completed diagnostics after a reconciliation assertion; comparison code unchanged.'
+          assert s['adoptable_conditions']==0
+          assert len(s['datasets'])==9 and s['source_group_union_matches_225']
+          assert len(bad)==s['html_mismatches_total']
+          (p/'summary.json').write_text(json.dumps(s,ensure_ascii=False,indent=2)+'\n')
+          report=p/'RESULTS.md'
+          text=report.read_text()
+          note=f'\n\n## HTML照合の判定\n\n**{s["data_reconciliation_status"]}**: 不一致{len(bad)}件。採用基準を緩めていません。該当IDは探索的候補から除外。詳細はhtml_reconciliation_failures.csv。\n'
+          report.write_text(text+note)
+          print({'saved_as':'diagnostic','conditions':len(f),'html_mismatch_count':len(bad),'adopted':0})
+          PY
+          test -z "$(git diff --name-only)"
+          git add docs/reviews/p2_v12_results_20261009
+          git diff --cached --check
+          if git diff --cached --name-only | grep -v '^docs/reviews/p2_v12_results_20261009/'; then exit 1; fi
+      - name: Save diagnostics only to private review folder
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$CORE_SHA" || { echo 'Branch advanced; refusing overwrite'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'research: save completed v12 comparisons and 13 HTML reconciliation diagnostics'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
