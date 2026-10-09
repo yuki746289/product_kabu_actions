@@ -1,0 +1,10 @@
+created_at_jst: 2026-10-09
+purpose: Complete all-condition verification using saved page checkpoints
+code_sha: a0144042e812478cc1ce106480d583215c1459b7
+partial_source_run: 37907348451
+completed_recheck_run: 37909249853
+recover_datasets: all_225,exclude_capital_goods_transportation_utilities
+partitions_per_dataset: 8
+completed_numeric_page_checks: reuse
+source_html_or_p2_changes: forbidden
+private_actions: forbidden
