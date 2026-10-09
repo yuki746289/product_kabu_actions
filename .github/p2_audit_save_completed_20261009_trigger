@@ -1,0 +1,10 @@
+created_at_jst: 2026-10-09
+scope: Save existing completed audit evidence only
+core_sha: 8401a7ed80bc721b9041a58ac6c17402bab77dc4
+completed_analysis_run: 37914960843
+final_artifact_id: 11609421573
+supplemental_artifact_id: 11608742679
+recovery_reason: git sparse-checkout add did not accept --no-cone; use checkout patterns from the start
+no_numerical_recomputation: true
+no_source_data_or_html_changes: true
+no_production_deploy: true
