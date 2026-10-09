@@ -1,0 +1,239 @@
+# Created: 2026-10-09 JST
+# Source read-only. Reuse completed pages and successful prior dataset artifacts.
+name: P2 audit page-checkpoint recovery 20261009
+on:
+  push:
+    branches: [main]
+    paths: ['.github/p2_audit_checkpoint_recovery_20261009_trigger']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-audit-checkpoint-recovery
+  cancel-in-progress: false
+env:
+  AUDIT_CODE_SHA: a0144042e812478cc1ce106480d583215c1459b7
+  CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.AUDIT_CODE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Public architecture gate
+        run: python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$AUDIT_CODE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Check numerical equivalence, deliberate errors and checkpoint reuse
+        working-directory: core
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          python -m py_compile scripts/audits/*.py
+          for name in test_p2_all_condition_verification_20261009.py test_p2_condition_audit_shard_20261009.py test_p2_audit_findings_recheck_20261009.py test_p2_unlinked_chart_verification_20261009.py test_p2_resume_page_checkpoints_20261009.py; do
+            python -m unittest discover -s tests -p "$name" -v
+          done
+
+  partition:
+    needs: tests
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        dataset: [all_225, exclude_capital_goods_transportation_utilities]
+        part: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.AUDIT_CODE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: true
+      - name: Public architecture gate
+        run: python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$AUDIT_CODE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '37907348451'
+          name: p2-condition-shard-37907348451-${{ matrix.dataset }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/checkpoint
+      - name: Read only this page partition and existing semantic CSV
+        working-directory: core
+        env:
+          DATASET: ${{ matrix.dataset }}
+          PART: ${{ matrix.part }}
+        run: python scripts/audits/resume_p2_condition_pages_20261009.py --dataset "$DATASET" --part "$PART" --parts 8 --prepare-sparse
+      - uses: actions/download-artifact@v4
+        if: matrix.dataset == 'all_225'
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '36979444713'
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/verified225
+      - name: Reuse completed page proof and check unfinished pages only
+        working-directory: core
+        env:
+          DATASET: ${{ matrix.dataset }}
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ "$DATASET" = all_225 ]; then EXTRA=(--artifact-dir "$RUNNER_TEMP/verified225"); fi
+          python scripts/audits/resume_p2_condition_pages_20261009.py \
+            --dataset "$DATASET" --part "$PART" --parts 8 --previous-root "$RUNNER_TEMP/checkpoint" "${EXTRA[@]}" \
+            --output-dir "$RUNNER_TEMP/partition-proof/$DATASET/$PART"
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-page-recovery-${{ github.run_id }}-${{ matrix.dataset }}-${{ matrix.part }}
+          path: ${{ runner.temp }}/partition-proof/
+          retention-days: 30
+          if-no-files-found: warn
+
+  finish:
+    needs: partition
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.AUDIT_CODE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: true
+      - name: Public architecture gate
+        run: python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$AUDIT_CODE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-page-recovery-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/partitions
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '37909249853'
+          pattern: p2-audit-rechecked-37909249853-*
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/completed-rechecks
+          merge-multiple: false
+      - name: Merge only complete page evidence with exhaustive Git inventory
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/audits/combine_p2_page_checkpoints_20261009.py \
+            --partitions "$RUNNER_TEMP/partitions" --completed-rechecks "$RUNNER_TEMP/completed-rechecks" \
+            --output-dir "$RUNNER_TEMP/all-datasets"
+          python scripts/audits/finalize_p2_audit_recheck_20261009.py --parts-root "$RUNNER_TEMP/all-datasets" --prepare-sparse
+          python scripts/audits/finalize_p2_audit_recheck_20261009.py --parts-root "$RUNNER_TEMP/all-datasets" --output-dir "$RUNNER_TEMP/final-proof"
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-complete-condition-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/final-proof/
+          retention-days: 30
+      - name: Prepare remaining supplementary graphs without recomputing prior checks
+        working-directory: core
+        run: python scripts/audits/verify_p2_unlinked_charts_20261009.py --evidence-dir "$RUNNER_TEMP/final-proof" --prepare-sparse
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '36979444713'
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/verified225
+      - name: Verify remaining exact-hash graph definitions and monthly data
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/audits/verify_p2_unlinked_charts_20261009.py \
+            --evidence-dir "$RUNNER_TEMP/final-proof" --artifact-dir "$RUNNER_TEMP/verified225" \
+            --output-dir "$RUNNER_TEMP/supplemental-proof"
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-final-supplementary-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/supplemental-proof/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Save tested verification code and evidence, never source reports
+        working-directory: core
+        run: |
+          set -euo pipefail
+          git fetch --filter=blob:none --depth=1 origin "refs/heads/${CORE_BRANCH}"
+          BASE="$(git rev-parse FETCH_HEAD)"
+          git checkout -B audit-final-save FETCH_HEAD
+          git sparse-checkout add --no-cone /docs/audits/
+          test ! -e docs/audits/p2_all_conditions_final_20261009
+          test ! -e docs/audits/p2_supplemental_charts_20261009
+          git checkout "$AUDIT_CODE_SHA" -- scripts/audits/recheck_p2_audit_findings_20261009.py scripts/audits/finalize_p2_audit_recheck_20261009.py scripts/audits/verify_p2_unlinked_charts_20261009.py scripts/audits/resume_p2_condition_pages_20261009.py scripts/audits/combine_p2_page_checkpoints_20261009.py tests/test_p2_audit_findings_recheck_20261009.py tests/test_p2_unlinked_chart_verification_20261009.py tests/test_p2_resume_page_checkpoints_20261009.py
+          cp -a "$RUNNER_TEMP/final-proof" docs/audits/p2_all_conditions_final_20261009
+          cp -a "$RUNNER_TEMP/supplemental-proof" docs/audits/p2_supplemental_charts_20261009
+          git add docs/audits/p2_all_conditions_final_20261009 docs/audits/p2_supplemental_charts_20261009
+          git diff --cached --check
+          if git diff --cached --name-only | grep -Ev '^(docs/audits/(p2_all_conditions_final_20261009|p2_supplemental_charts_20261009)/|scripts/audits/(recheck_p2_audit_findings_20261009|finalize_p2_audit_recheck_20261009|verify_p2_unlinked_charts_20261009|resume_p2_condition_pages_20261009|combine_p2_page_checkpoints_20261009)\.py$|tests/test_p2_(audit_findings_recheck|unlinked_chart_verification|resume_page_checkpoints)_20261009\.py$)'; then exit 1; fi
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$BASE" || { echo 'Branch changed; proof preserved in artifacts'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'audit: complete all HTML condition coverage with checkpoint reuse and verified discrepancy classification'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
