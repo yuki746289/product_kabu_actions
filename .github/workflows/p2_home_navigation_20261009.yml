@@ -1,0 +1,135 @@
+# Created: 2026-10-09 JST
+# Public Actions only. No research/Production P2 recomputation.
+name: P2 categorized home and broken top link fix 20261009
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_home_navigation_20261009_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-home-navigation-20261009
+  cancel-in-progress: false
+
+jobs:
+  update_home_navigation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CORE_SHA: 71a36b8bb663ce05b4c46d5507ea51fd6ceafc7e
+      CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout public actions
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned private preview with partial clone
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 71a36b8bb663ce05b4c46d5507ea51fd6ceafc7e
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          persist-credentials: true
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            scripts
+            tests
+            docs
+            preview/kabu
+
+      - name: Verify research source and architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core status --porcelain)"
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run static generator and links regression tests
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/repair_p2_top_navigation.py scripts/patch_p2_report_switches.py
+          python -m unittest discover -s tests -p 'test_repair_p2_top_navigation_20261009.py' -v
+
+      - name: Build complete catalog and repair missing top-link destinations
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/repair_p2_top_navigation.py --site-root preview/kabu
+
+      - name: Verify catalog, every top href, and limited diff scope
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,html,re,subprocess,sys
+          from urllib.parse import unquote,urlsplit
+          sys.path.insert(0,str(Path('scripts').resolve()))
+          import repair_p2_top_navigation as nav
+          root=Path('preview/kabu').resolve()
+          index=(root/'index.html').read_text(encoding='utf-8')
+          src=nav.entries(index,root)
+          assert len(src)==14,len(src)
+          assert index.count(nav.CAT_START)==1 and index.count(nav.CAT_END)==1
+          section=index.split(nav.CAT_START,1)[1].split(nav.CAT_END,1)[0]
+          assert section.count('<section class="card report-category">')==6
+          urls=[html.unescape(x) for x in re.findall(r'<li><a href="([^"]+)"',section)]
+          assert urls==[u for u,_ in src]
+          assert '開始年・終了年は分析データから自動取得します' not in index
+          assert 'P2 株式分析レポート一覧' in index
+          bad=[];visited=0;links=0
+          for p in root.rglob('*.html'):
+              visited+=1
+              raw=p.read_text(encoding='utf-8')
+              for m in nav.LINK.finditer(raw):
+                  label=''.join(html.unescape(re.sub(r'<[^>]+>','',m.group('label'))).split()).strip('←→')
+                  if label not in ('トップへ','トップページへ'):
+                      continue
+                  href=html.unescape(m.group('href'))
+                  url=urlsplit(href)
+                  if url.scheme or url.netloc or href.startswith('#'):
+                      continue
+                  links+=1
+                  dest=(p.parent/unquote(url.path)).resolve()
+                  if not dest.is_file() or not dest.is_relative_to(root):
+                      bad.append((p.relative_to(root).as_posix(),href))
+          assert not bad,bad[:30]
+          files=subprocess.check_output(['git','status','--porcelain','--untracked-files=all'],text=True).splitlines()
+          changed=[s[3:] for s in files]
+          assert 'preview/kabu/index.html' in changed,changed[:20]
+          assert all(f.startswith('preview/kabu/') and f.endswith('.html') for f in changed),changed
+          assert not any('/analysis/high_entry_accuracy.html' in p for p in changed)
+          print(json.dumps({'catalog_items':len(src),'catalog_sections':6,'scanned_html':visited,'top_links_checked':links,'top_links_broken':len(bad),'changed_html_files':len(changed),'sample_changes':changed[:40]},ensure_ascii=False))
+          PY
+          git diff --check
+          git add preview/kabu
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+
+      - name: Commit only verified research navigation HTML
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$CORE_SHA" || { echo 'Research head changed. Not pushing.'; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "ui(research): categorized 14-report home and repair broken top links"
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
