@@ -3,3 +3,7 @@ purpose: Verify the 14-option report switch reorder and labels on research branc
 source_commit: 8fba42d59e99295c2988b32ae637422d22902a23
 private_actions: forbidden
 production_logic: unchanged
+
+retry: 2
+retry_reason: unit_test_expected_HTML_decoded_label
+source_commit_retry: cd4daaa08efcc99cd632b4375ccedb6a22a845c5
