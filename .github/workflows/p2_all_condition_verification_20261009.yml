@@ -1,0 +1,133 @@
+# Created: 2026-10-09 JST
+# Updated: 2026-10-09 JST
+# Read-only verification of existing research reports. Never executes Private Actions.
+name: P2 all condition HTML verification 20261009
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_all_condition_verification_20261009_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-all-condition-verification-20261009
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      CORE_SHA: b119f3958f2bbcc315bdceadb599e9d782a1b51b
+      CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+      PYTHONUNBUFFERED: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - name: Checkout public execution repository
+        uses: actions/checkout@v4
+      - name: Checkout pinned private validation code first
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: b119f3958f2bbcc315bdceadb599e9d782a1b51b
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            scripts
+            tests
+            docs/audits
+            docs/ACTIONS_MIGRATION.md
+          persist-credentials: true
+      - name: Enforce public-only architecture and fixed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core status --porcelain)"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then exit 1; fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Syntax and verification-code regression tests
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          python -m py_compile scripts/audits/p2_condition_verification_core.py scripts/audits/verify_all_p2_conditions_20261009.py scripts/audits/run_all_p2_condition_views_20261009.py tests/test_p2_all_condition_verification_20261009.py
+          python -m unittest discover -s tests -p 'test_p2_all_condition_verification_20261009.py' -v
+      - name: Fetch existing generated preview without regeneration
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          git sparse-checkout add preview/kabu
+          test -f preview/kabu/index.html
+          test -z "$(git status --porcelain)"
+          git ls-tree -r HEAD preview/kabu > "$RUNNER_TEMP/p2-preview-source-tree.txt"
+      - name: Reuse existing successful 225 source artifact
+        uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '36979444713'
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/verified225
+      - name: Audit all condition views and listings
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/audits/run_all_p2_condition_views_20261009.py \
+            --site-root preview/kabu \
+            --artifact-dir "$RUNNER_TEMP/verified225" \
+            --output-dir docs/audits/p2_all_conditions_20261009
+      - name: Verify completeness and preserve failures as failures
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,json
+          from pathlib import Path
+          root=Path('docs/audits/p2_all_conditions_20261009')
+          summary=json.loads((root/'summary.json').read_text())
+          assert summary['execution_status']=='COMPLETED'
+          assert summary['source_sha']=='b119f3958f2bbcc315bdceadb599e9d782a1b51b'
+          inventory=list(csv.DictReader((root/'page_inventory.csv').open()))
+          expected=len(list(Path('preview/kabu').rglob('*.html')))
+          assert len(inventory)==expected,(len(inventory),expected)
+          assert len({r['page'] for r in inventory})==expected
+          assert summary['totals']['conditions_seen']>961
+          assert summary['totals']['numeric_checks']>0
+          # No assertion requiring zero mismatches: this is an audit, not a fix.
+          print(json.dumps({'data_status':summary['data_status'],'totals':summary['totals'],'conditions':summary['condition_status_counts']},ensure_ascii=False))
+          PY
+          git diff --exit-code -- preview scripts tests config
+          git diff --check
+      - name: Save audit evidence only to private research branch
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$CORE_SHA" || { echo 'Branch advanced; refusing overwrite'; exit 1; }
+          git add docs/audits/p2_all_conditions_20261009
+          git diff --cached --check
+          if git diff --cached --name-only | grep -v '^docs/audits/p2_all_conditions_20261009/'; then exit 1; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'audit: record complete condition-view verification including failures and unverified scope'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
