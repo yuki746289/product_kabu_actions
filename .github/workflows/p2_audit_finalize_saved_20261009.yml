@@ -1,0 +1,180 @@
+# Created: 2026-10-09 JST
+# Updated: 2026-10-09 JST
+# Audit-only. Reuse the 16 completed partitions and 8 completed dataset artifacts.
+name: P2 saved evidence finalization 20261009
+on:
+  push:
+    branches: [main]
+    paths: ['.github/p2_audit_finalize_saved_20261009_trigger']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-audit-finalize-saved-20261009
+  cancel-in-progress: false
+env:
+  CORE_SHA: 8401a7ed80bc721b9041a58ac6c17402bab77dc4
+  PREVIOUS_CODE_SHA: a0144042e812478cc1ce106480d583215c1459b7
+  CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  finish_saved:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: true
+      - name: Public execution and exact source gate
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test -z "$(git -C core status --porcelain)"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then exit 1; fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Restore only prior tested helpers and apply strict schema compatibility
+        working-directory: core
+        run: |
+          set -euo pipefail
+          git fetch --filter=blob:none --depth=1 origin "$PREVIOUS_CODE_SHA"
+          python - <<'PY'
+          from pathlib import Path
+          import os, subprocess
+          old=os.environ['PREVIOUS_CODE_SHA']
+          for name in ('merge_p2_condition_audit_shards_20261009.py','p2_condition_verification_core.py','run_all_p2_condition_views_20261009.py','run_p2_condition_audit_shard_20261009.py','verify_all_p2_conditions_20261009.py'):
+              p='scripts/audits/'+name
+              a=subprocess.check_output(['git','rev-parse','HEAD:'+p],text=True).strip()
+              b=subprocess.check_output(['git','rev-parse',old+':'+p],text=True).strip()
+              assert a==b, ('Audited base code changed',p,a,b)
+          helpers=['scripts/audits/'+n+'.py' for n in (
+              'recheck_p2_audit_findings_20261009','finalize_p2_audit_recheck_20261009',
+              'verify_p2_unlinked_charts_20261009','resume_p2_condition_pages_20261009',
+              'combine_p2_page_checkpoints_20261009')]
+          helpers+=['tests/test_p2_'+n+'_20261009.py' for n in (
+              'audit_findings_recheck','unlinked_chart_verification','resume_page_checkpoints')]
+          for name in helpers:
+              data=subprocess.check_output(['git','show',old+':'+name])
+              p=Path(name)
+              if p.exists():
+                  assert p.read_bytes()==data, ('Do not replace a changed helper',name)
+              else:
+                  p.parent.mkdir(parents=True,exist_ok=True)
+                  p.write_bytes(data)
+          assert not subprocess.check_output(['git','diff','--name-only',old,'HEAD','--','preview/kabu'],text=True).strip(), 'Source HTML/CSV changed'
+          PY
+          python scripts/audits/p2_audit_summary_schema_20261009.py --patch-finalizer scripts/audits/finalize_p2_audit_recheck_20261009.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Run prior 27 tests and 9 strict schema regression tests
+        working-directory: core
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          python -m py_compile scripts/audits/*.py
+          for name in test_p2_all_condition_verification_20261009.py test_p2_condition_audit_shard_20261009.py test_p2_audit_findings_recheck_20261009.py test_p2_unlinked_chart_verification_20261009.py test_p2_resume_page_checkpoints_20261009.py test_p2_audit_summary_schema_20261009.py; do
+            python -m unittest discover -s tests -p "$name" -v
+          done
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '37911712303'
+          pattern: p2-page-recovery-37911712303-*
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/partitions
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '37909249853'
+          pattern: p2-audit-rechecked-37909249853-*
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/completed-rechecks
+          merge-multiple: false
+      - name: Finalize all saved evidence and exhaustive HTML coverage
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/audits/combine_p2_page_checkpoints_20261009.py --partitions "$RUNNER_TEMP/partitions" --completed-rechecks "$RUNNER_TEMP/completed-rechecks" --output-dir "$RUNNER_TEMP/all-datasets"
+          python scripts/audits/finalize_p2_audit_recheck_20261009.py --parts-root "$RUNNER_TEMP/all-datasets" --prepare-sparse
+          python scripts/audits/finalize_p2_audit_recheck_20261009.py --parts-root "$RUNNER_TEMP/all-datasets" --output-dir "$RUNNER_TEMP/final-proof"
+          git diff --exit-code -- preview/kabu data config
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-saved-final-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/final-proof/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Read only unresolved supplementary charts and existing sources
+        working-directory: core
+        run: python scripts/audits/verify_p2_unlinked_charts_20261009.py --evidence-dir "$RUNNER_TEMP/final-proof" --prepare-sparse
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '36979444713'
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/verified225
+      - name: Verify pending exact-hash graphs without rerunning prior page checks
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/audits/verify_p2_unlinked_charts_20261009.py --evidence-dir "$RUNNER_TEMP/final-proof" --artifact-dir "$RUNNER_TEMP/verified225" --output-dir "$RUNNER_TEMP/supplemental-proof"
+          git diff --exit-code -- preview/kabu data config
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-saved-supplemental-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/supplemental-proof/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Save completed audit evidence and code to research branch only
+        working-directory: core
+        run: |
+          set -euo pipefail
+          git sparse-checkout add --no-cone /docs/audits/
+          test ! -e docs/audits/p2_all_conditions_final_20261009
+          test ! -e docs/audits/p2_supplemental_charts_20261009
+          cp -a "$RUNNER_TEMP/final-proof" docs/audits/p2_all_conditions_final_20261009
+          cp -a "$RUNNER_TEMP/supplemental-proof" docs/audits/p2_supplemental_charts_20261009
+          python - <<'PY'
+          from pathlib import Path
+          import json, os, subprocess
+          root=Path('docs/audits/p2_all_conditions_final_20261009')
+          a=json.loads((root/'summary.json').read_text())
+          b=json.loads(Path('docs/audits/p2_supplemental_charts_20261009/summary.json').read_text())
+          assert a['execution_status']=='COMPLETED'
+          assert a['coverage']['missing_html']==0 and a['coverage']['duplicate_html']==0
+          assert b['execution_status']=='COMPLETED'
+          manifest={'run_id':os.environ['GITHUB_RUN_ID'],'core_sha':os.environ['CORE_SHA'],'prior_code_sha':os.environ['PREVIOUS_CODE_SHA'],'reused_partition_run':37911712303,'reused_dataset_run':37909249853,'source_report_sha':a['source_report_sha'],'source_files_unchanged':True,'data_status':a['data_status'],'supplemental_statuses':b['additional_status_counts'],'note':'Workflow success is execution completion, not data PASS. No source HTML, CSV, or P2 rule was changed.'}
+          (root/'recovery_manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')
+          print(json.dumps(manifest,ensure_ascii=False))
+          PY
+          git add scripts/audits/recheck_p2_audit_findings_20261009.py scripts/audits/finalize_p2_audit_recheck_20261009.py scripts/audits/verify_p2_unlinked_charts_20261009.py scripts/audits/resume_p2_condition_pages_20261009.py scripts/audits/combine_p2_page_checkpoints_20261009.py tests/test_p2_audit_findings_recheck_20261009.py tests/test_p2_unlinked_chart_verification_20261009.py tests/test_p2_resume_page_checkpoints_20261009.py docs/audits/p2_all_conditions_final_20261009 docs/audits/p2_supplemental_charts_20261009
+          git diff --cached --check
+          if git diff --cached --name-only | grep -Ev '^(docs/audits/(p2_all_conditions_final_20261009|p2_supplemental_charts_20261009)/|scripts/audits/(recheck_p2_audit_findings_20261009|finalize_p2_audit_recheck_20261009|verify_p2_unlinked_charts_20261009|resume_p2_condition_pages_20261009|combine_p2_page_checkpoints_20261009)\.py$|tests/test_p2_(audit_findings_recheck|unlinked_chart_verification|resume_page_checkpoints)_20261009\.py$)'; then exit 1; fi
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$CORE_SHA" || { echo 'Branch advanced; artifacts preserved without overwrite'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'audit: finalize saved condition evidence, strict schema checks and supplementary graphs'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
