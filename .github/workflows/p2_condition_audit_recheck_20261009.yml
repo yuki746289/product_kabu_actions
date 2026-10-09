@@ -1,0 +1,215 @@
+# Created: 2026-10-09 JST
+# Read-only rechecks. Uses prior saved shards, never reruns P2 or old complete analyses.
+name: P2 condition audit targeted recheck 20261009
+on:
+  push:
+    branches: [main]
+    paths: ['.github/p2_condition_audit_recheck_20261009_trigger']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-condition-audit-recheck-20261009
+  cancel-in-progress: false
+env:
+  AUDIT_CODE_SHA: e688bae5b5d00157d4fb632350ef849abdbb21b8
+  CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.AUDIT_CODE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Public architecture gate
+        run: python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$AUDIT_CODE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Check alias handling and deliberate error detection
+        working-directory: core
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          python -m py_compile scripts/audits/recheck_p2_audit_findings_20261009.py scripts/audits/finalize_p2_audit_recheck_20261009.py
+          python -m unittest discover -s tests -p 'test_p2_audit_findings_recheck_20261009.py' -v
+
+  recheck:
+    needs: tests
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        dataset: [financials, technology, consumer_goods, materials, capital_goods_others, transportation_utilities, all_225, exclude_transportation_utilities, exclude_capital_goods_transportation_utilities, nikkei_index]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.AUDIT_CODE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: true
+      - name: Public architecture gate
+        run: python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$AUDIT_CODE_SHA"
+      - name: Wait only for the assigned prior evidence artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATASET: ${{ matrix.dataset }}
+        run: |
+          python3 - <<'PY'
+          import json,os,time,urllib.request
+          target='p2-condition-shard-37907348451-'+os.environ['DATASET']
+          endpoint='https://api.github.com/repos/yuki746289/product_kabu_actions/actions/runs/37907348451/artifacts?per_page=100'
+          req=urllib.request.Request(endpoint,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':'application/vnd.github+json'})
+          for attempt in range(45):
+              with urllib.request.urlopen(req,timeout=30) as response:data=json.load(response)
+              if any(a['name']==target and not a['expired'] for a in data['artifacts']):break
+              time.sleep(20)
+          else:raise SystemExit('Prior evidence artifact not completed; no recomputation attempted')
+          print('FOUND',target)
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '37907348451'
+          name: p2-condition-shard-37907348451-${{ matrix.dataset }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/prior
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - name: Fetch only source pages needed to recheck disputed comparisons
+        working-directory: core
+        env:
+          DATASET: ${{ matrix.dataset }}
+        run: |
+          python scripts/audits/recheck_p2_audit_findings_20261009.py --dataset "$DATASET" --previous-root "$RUNNER_TEMP/prior" --prepare-sparse
+      - uses: actions/download-artifact@v4
+        if: matrix.dataset == 'all_225'
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '36979444713'
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/verified225
+      - name: Recheck source identities and displayed signal multisets
+        working-directory: core
+        env:
+          DATASET: ${{ matrix.dataset }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ "$DATASET" = all_225 ]; then EXTRA=(--artifact-dir "$RUNNER_TEMP/verified225"); fi
+          python scripts/audits/recheck_p2_audit_findings_20261009.py \
+            --dataset "$DATASET" --previous-root "$RUNNER_TEMP/prior" "${EXTRA[@]}" \
+            --output-dir "$RUNNER_TEMP/rechecked/$DATASET"
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-audit-rechecked-${{ github.run_id }}-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/rechecked/
+          retention-days: 30
+          if-no-files-found: warn
+
+  finalize:
+    needs: recheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.AUDIT_CODE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: true
+      - name: Public architecture gate
+        run: python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$AUDIT_CODE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-audit-rechecked-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/rechecked-parts
+          merge-multiple: false
+      - name: Confirm complete coverage and compare legacy table contents
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/audits/finalize_p2_audit_recheck_20261009.py --parts-root "$RUNNER_TEMP/rechecked-parts" --prepare-sparse
+          python scripts/audits/finalize_p2_audit_recheck_20261009.py --parts-root "$RUNNER_TEMP/rechecked-parts" --output-dir "$RUNNER_TEMP/final-evidence"
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-condition-audit-final-${{ github.run_id }}
+          path: ${{ runner.temp }}/final-evidence/
+          retention-days: 30
+      - name: Append evidence and tested checker only to current research branch
+        working-directory: core
+        run: |
+          set -euo pipefail
+          git fetch --filter=blob:none --depth=1 origin "refs/heads/${CORE_BRANCH}"
+          BASE="$(git rev-parse FETCH_HEAD)"
+          git checkout -B audit-save FETCH_HEAD
+          git sparse-checkout add --no-cone /docs/audits/
+          test -f docs/audits/p2_all_conditions_sharded_20261009/summary.json
+          test ! -e docs/audits/p2_all_conditions_final_20261009
+          git checkout "$AUDIT_CODE_SHA" -- scripts/audits/recheck_p2_audit_findings_20261009.py scripts/audits/finalize_p2_audit_recheck_20261009.py tests/test_p2_audit_findings_recheck_20261009.py
+          cp -a "$RUNNER_TEMP/final-evidence" docs/audits/p2_all_conditions_final_20261009
+          git add docs/audits/p2_all_conditions_final_20261009
+          git diff --cached --check
+          if git diff --cached --name-only | grep -Ev '^(docs/audits/p2_all_conditions_final_20261009/|scripts/audits/(recheck_p2_audit_findings_20261009|finalize_p2_audit_recheck_20261009)\.py$|tests/test_p2_audit_findings_recheck_20261009\.py$)'; then exit 1; fi
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$BASE" || { echo 'Branch advanced; evidence remains in artifact'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'audit: finalize all-condition evidence after source-backed checker rechecks'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
