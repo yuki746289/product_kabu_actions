@@ -1,0 +1,10 @@
+created_at_jst: 2026-10-09
+request: preserve authorized v12 review diagnostics and resolve HTML reconciliation differences
+core_expected_commit: f730d277d733e4714ddc22fe9847a4b34b57f178
+data_expected_commit: e9b8607f89d028e501773a83207df55bb10a1e8d
+original_run: 37884091977
+reason: original calculation completed but final HTML reconciliation gate prevented diagnostic persistence
+accept_failed_reconciliation: false
+private_actions: forbidden
+source_data_or_production_changes: forbidden
+trading_or_deployment: forbidden
