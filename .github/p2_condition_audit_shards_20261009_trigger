@@ -1,0 +1,11 @@
+created_at_jst: 2026-10-09
+purpose: Read-only verification of every existing P2 condition page and listing
+core_sha: 19bcd744aba4d51b5e0eddc24256e241332ac835
+previous_cancelled_run: 37892049670
+source_report_sha: b119f3958f2bbcc315bdceadb599e9d782a1b51b
+source_artifact_run: 36979444713
+source_artifact_name: p2-225-raw-canonical-mirror-asset-final
+private_actions: forbidden
+production_changes: forbidden
+html_changes: forbidden
+result: record_failures_and_unverified_without_relabeling_as_pass
