@@ -1,0 +1,11 @@
+created_at_jst: 2026-10-09
+request: complete evidence review under the preregistered policy and checklist
+core_expected_commit: f4442160f19a512f663e08a67de29a421a3f2162
+data_expected_commit: e9b8607f89d028e501773a83207df55bb10a1e8d
+policy_commit: 993c43967ab850995100669a6d4f48a135273a45
+checklist_commit: 1be0715743dc5b994d2593a09df647a5134b5895
+comparison_protocol_commit: df9941795b0e5d58632bb27e9b773b2c104e22c8
+reuse_artifact_id: 11215122247
+private_actions: forbidden
+existing_p2_and_preview_changes: forbidden
+trading_and_deployment: forbidden
