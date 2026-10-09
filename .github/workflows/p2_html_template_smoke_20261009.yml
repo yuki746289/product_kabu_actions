@@ -1,0 +1,100 @@
+# Created: 2026-10-09 JST
+# Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
+name: P2 HTML template smoke 20261009
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2_html_template_smoke_20261009.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-html-template-smoke-20261009
+  cancel-in-progress: false
+
+jobs:
+  check_and_generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      CORE_SHA: d8aecc42065ad5079863bc888ca96efc4b359509
+      CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+      PYTHONUNBUFFERED: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - name: Checkout public Actions repository
+        uses: actions/checkout@v4
+      - name: Checkout pinned private source without modifying it
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: d8aecc42065ad5079863bc888ca96efc4b359509
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/financials/
+            /preview/kabu/analysis/225_indicator_stageb/index.html
+            /preview/kabu/report_225_all_period.html
+          persist-credentials: false
+      - name: Verify Public Actions architecture and pinned core
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo "Private repository has forbidden workflows"
+            exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned-range research dependencies
+        shell: bash
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+      - name: Execute 20 unit tests and 2-page financials smoke
+        shell: bash
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/run_p2_html_template_smoke_20261009.py --repo-root .
+      - name: Verify source data and working-tree remain unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+          echo "Read-only source contract: PASS"
+      - name: Upload limited smoke evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-template-smoke-evidence
+          path: |
+            core/build/p2_html_smoke/*/smoke_summary.json
+            core/build/p2_html_smoke/*/generated/build_manifest.json
+            core/build/p2_html_smoke/*/audited/summary.json
+            core/build/p2_html_smoke/*/audited/pages.csv
+            core/build/p2_html_smoke/*/audited/failures.csv
+          if-no-files-found: warn
+          retention-days: 7
