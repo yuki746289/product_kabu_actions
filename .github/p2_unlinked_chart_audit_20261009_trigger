@@ -1,0 +1,7 @@
+created_at_jst: 2026-10-09
+purpose: Resolve remaining supplemental charts using existing registered condition keys
+code_sha: 3b955c74a0f0a0f093fc74524801996adbcfc9db
+prior_audit_run: 37909249853
+private_actions: forbidden
+original_html_changes: forbidden
+original_signal_recalculation: forbidden
