@@ -1,0 +1,50 @@
+# Created: 2026-10-09 JST
+# Run only in public Actions. Verify default bat landing and its selected HTML option.
+name: P2 local default 225 all-period QA 20261009
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_local_default_225_all_period_20261009_trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  verify_initial_view:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch pinned private research files without running private Actions
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: be52fa0ca1b37d686d7a4229d7524796f7cde7c9
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /deploy_local.bat
+            /tests/test_p2_local_default_open_20261009.py
+            /preview/kabu/analysis/225_indicator_stageb/report_all_period.html
+            /docs/ACTIONS_MIGRATION.md
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify source HEAD, run Python syntax and static regression
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = be52fa0ca1b37d686d7a4229d7524796f7cde7c9
+          test -f docs/ACTIONS_MIGRATION.md
+          test -z "$(git status --porcelain)"
+          python -m py_compile tests/test_p2_local_default_open_20261009.py
+          python -m unittest discover -s tests -p 'test_p2_local_default_open_20261009.py' -v
