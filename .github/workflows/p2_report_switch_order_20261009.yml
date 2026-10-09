@@ -1,0 +1,54 @@
+# Created: 2026-10-09T09:25:00+09:00
+# Public Actions only. Private repository is read-only and sparsely checked out.
+name: P2 report switch ordering QA 20261009
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_report_switch_order_20261009_trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  selector_tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CORE_SHA: 8fba42d59e99295c2988b32ae637422d22902a23
+    steps:
+      - name: Checkout public workflow
+        uses: actions/checkout@v4
+      - name: Read private research source without private Actions
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 8fba42d59e99295c2988b32ae637422d22902a23
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            scripts
+            tests
+            requirements.txt
+            docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Verify exact source and architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Execute source-level regression and syntax tests
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          python -m py_compile scripts/patch_p2_report_switches.py tests/test_p2_report_switch_order_20261009.py
+          python -m unittest discover -s tests -p 'test_p2_report_switch_order_20261009.py' -v
