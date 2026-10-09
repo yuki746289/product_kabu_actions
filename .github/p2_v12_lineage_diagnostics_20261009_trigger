@@ -1,0 +1,7 @@
+created_at_jst: 2026-10-09
+purpose: determine whether the 13 observed HTML count/win discrepancies originate in parameter variants sharing one condition ID
+core_expected_commit: 4184756b83a90a64778efa0c7d8b6318575ce8bb
+source_snapshot: e9b8607f89d028e501773a83207df55bb10a1e8d
+existing_completed_review_commit: 6c465ab7be92bdfb49147c1e960e0434033ee262
+no_original_signal_recalculation: true
+no_original_html_or_production_changes: true
