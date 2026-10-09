@@ -1,0 +1,10 @@
+created_at_jst: 2026-10-09
+request: Continue all-condition verification and finish saved-evidence aggregation
+core_sha: 8401a7ed80bc721b9041a58ac6c17402bab77dc4
+prior_code_sha: a0144042e812478cc1ce106480d583215c1459b7
+reuse_partitions: 37911712303
+reuse_completed_datasets: 37909249853
+private_actions: forbidden
+modify_source_html_csv_p2: forbidden
+rerun_completed_numeric_checks: forbidden
+production_deploy: forbidden
