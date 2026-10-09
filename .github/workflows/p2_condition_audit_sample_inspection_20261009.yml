@@ -1,0 +1,43 @@
+# Created: 2026-10-09 JST
+# Read only an already completed audit artifact. No private checkout or writes.
+name: P2 audit saved-sample inspection 20261009
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/p2_condition_audit_sample_inspection_20261009.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '37907348451'
+          name: p2-condition-shard-37907348451-financials
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: sample
+      - name: Summarize existing discrepancies, not new calculations
+        run: |
+          python3 - <<'PY'
+          import csv,json
+          from collections import Counter,defaultdict
+          from pathlib import Path
+          p=next(Path('sample').rglob('summary.json')).parent
+          s=json.loads((p/'summary.json').read_text())
+          print('SHARD_SUMMARY',json.dumps(s,ensure_ascii=False))
+          metrics=Counter(); examples=defaultdict(list)
+          with (p/'failures.csv').open() as f:
+              for row in csv.DictReader(f):
+                  metrics[row['metric']]+=1
+                  if len(examples[row['metric']])<2:examples[row['metric']].append(row)
+          print('FAILURE_METRICS',json.dumps(dict(metrics),ensure_ascii=False))
+          for metric,rows in examples.items():
+              print('FAILURE_EXAMPLES',metric,json.dumps(rows,ensure_ascii=False))
+          with (p/'page_inventory.csv').open() as f:
+              rows=list(csv.DictReader(f))
+          print('UNKNOWN_REASONS',json.dumps(dict(Counter(x['notes'] for x in rows if x['status']=='UNVERIFIED')),ensure_ascii=False))
+          PY
