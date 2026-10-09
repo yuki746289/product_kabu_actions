@@ -1,0 +1,159 @@
+# Created: 2026-10-09 JST
+# Additional source-backed checks only. Never regenerate market signals or reports.
+name: P2 remaining chart verification 20261009
+on:
+  push:
+    branches: [main]
+    paths: ['.github/p2_unlinked_chart_audit_20261009_trigger']
+permissions:
+  contents: read
+  actions: read
+env:
+  AUDIT_CODE_SHA: 3b955c74a0f0a0f093fc74524801996adbcfc9db
+  CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.AUDIT_CODE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: true
+      - name: Public-only architecture gate
+        run: python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$AUDIT_CODE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Verify supplemental checker before reading report evidence
+        working-directory: core
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          python -m py_compile scripts/audits/verify_p2_unlinked_charts_20261009.py
+          python -m unittest discover -s tests -p 'test_p2_unlinked_chart_verification_20261009.py' -v
+      - name: Require preceding source-backed audit to finish successfully
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os,json,time,urllib.request
+          req=urllib.request.Request('https://api.github.com/repos/yuki746289/product_kabu_actions/actions/runs/37909249853',headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':'application/vnd.github+json'})
+          for attempt in range(60):
+              with urllib.request.urlopen(req,timeout=30) as response:s=json.load(response)
+              if s['status']=='completed':
+                  if s['conclusion']!='success':raise SystemExit('Prior evidence run failed; do not bypass')
+                  break
+              time.sleep(20)
+          else:raise SystemExit('Prior audit not completed within this bounded execution')
+          print('Prior audit complete; reusing saved evidence')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '37909249853'
+          name: p2-condition-audit-final-37909249853
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/prior-final
+      - name: Materialize only unresolved graphs and existing group signals
+        working-directory: core
+        run: python scripts/audits/verify_p2_unlinked_charts_20261009.py --evidence-dir "$RUNNER_TEMP/prior-final" --prepare-sparse
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '36979444713'
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/verified225
+      - name: Verify full hash identities and underlying monthly values
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/audits/verify_p2_unlinked_charts_20261009.py \
+            --evidence-dir "$RUNNER_TEMP/prior-final" --artifact-dir "$RUNNER_TEMP/verified225" \
+            --output-dir "$RUNNER_TEMP/chart-proof"
+          git diff --exit-code
+          python - <<'PY'
+          import sys,csv,json,os
+          from collections import Counter,defaultdict
+          from pathlib import Path
+          sys.path.insert(0,str(Path('scripts/audits').resolve()))
+          import recheck_p2_audit_findings_20261009 as r
+          import finalize_p2_audit_recheck_20261009 as f
+          prev=Path(os.environ['RUNNER_TEMP'])/'prior-final'
+          out=Path(os.environ['RUNNER_TEMP'])/'chart-proof'
+          original=r.records(prev/'page_inventory.csv')
+          proof=r.records(out/'supplemental_chart_verification.csv')
+          mapping={p['page']:p for p in proof}
+          assert len(mapping)==len(proof)
+          for row in original:
+              extra=mapping.get(row['page'])
+              if not extra:continue
+              assert row['sha256']==extra['sha256']
+              row['numeric_checks']=str(int(row['numeric_checks'])+int(extra['numeric_checks']))
+              row['failed_checks']=str(int(row['failed_checks'])+int(extra['failed_checks']))
+              old_unknown=int(row['unverified_items'])
+              row['unverified_items']=str(old_unknown-1+int(extra['unverified_items']))
+              assert int(row['unverified_items'])>=0
+              row['status']='FAIL' if int(row['failed_checks']) else 'UNVERIFIED' if int(row['unverified_items']) else 'PASS'
+              row['notes']=row['notes'].replace('UNRESOLVED_CHART_CONDITION',extra['notes'] or 'FULL_HASH_CHART_VERIFIED')
+          r.csv_write(out/'effective_page_inventory.csv',original)
+          overview={}
+          for dataset in sorted({p['dataset'] for p in original}):
+              group=[p for p in original if p['dataset']==dataset]
+              overview[dataset]={'html':len(group),'status_counts':dict(Counter(p['status'] for p in group)),
+                                'areas':{area:dict(Counter(p['status'] for p in group if f.kind(p['page'])==area)) for area in sorted({f.kind(p['page']) for p in group})}}
+          combined={'source_html':len(original),'coverage_missing':0,'coverage_duplicate':0,
+                    'page_status_counts':dict(Counter(p['status'] for p in original)),
+                    'numeric_checks':sum(int(p['numeric_checks']) for p in original),
+                    'failed_checks':sum(int(p['failed_checks']) for p in original),
+                    'datasets':overview,'source_changed':False}
+          (out/'effective_summary.json').write_text(json.dumps(combined,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('EFFECTIVE_SUMMARY',json.dumps(combined,ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-supplemental-chart-proof-${{ github.run_id }}
+          path: ${{ runner.temp }}/chart-proof/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Save checker and additional evidence only
+        working-directory: core
+        run: |
+          set -euo pipefail
+          git fetch --filter=blob:none --depth=1 origin "refs/heads/${CORE_BRANCH}"
+          BASE="$(git rev-parse FETCH_HEAD)"
+          git checkout -B supplemental-audit-save FETCH_HEAD
+          git sparse-checkout add --no-cone /docs/audits/
+          test -f docs/audits/p2_all_conditions_final_20261009/summary.json
+          test ! -e docs/audits/p2_supplemental_charts_20261009
+          git checkout "$AUDIT_CODE_SHA" -- scripts/audits/verify_p2_unlinked_charts_20261009.py tests/test_p2_unlinked_chart_verification_20261009.py
+          cp -a "$RUNNER_TEMP/chart-proof" docs/audits/p2_supplemental_charts_20261009
+          git add docs/audits/p2_supplemental_charts_20261009
+          git diff --cached --check
+          if git diff --cached --name-only | grep -Ev '^(docs/audits/p2_supplemental_charts_20261009/|scripts/audits/verify_p2_unlinked_charts_20261009\.py$|tests/test_p2_unlinked_chart_verification_20261009\.py$)'; then exit 1; fi
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$BASE" || { echo 'Branch advanced; artifacts preserved'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'audit: verify remaining chart identities and publish effective all-page coverage'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
