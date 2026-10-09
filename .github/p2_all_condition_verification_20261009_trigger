@@ -1,0 +1,9 @@
+created_at_jst: 2026-10-09
+purpose: Verify all existing P2 condition HTML, including detail and chart values
+source_core_sha: b119f3958f2bbcc315bdceadb599e9d782a1b51b
+source_data_before_audit: 4d1f7f1d1b6df5849a9be47b792af33c64c3e5b1
+existing_artifact_id: 11215122247
+private_actions: prohibited
+source_report_modification: prohibited
+p2_recomputation: prohibited
+production_deployment: prohibited
