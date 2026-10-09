@@ -1,0 +1,5 @@
+created_at_jst: 2026-10-09
+purpose: QA for deploy_local.bat default to 225 all-period selected view
+private_source_sha: be52fa0ca1b37d686d7a4229d7524796f7cde7c9
+no_private_actions: true
+no_production_deploy: true
