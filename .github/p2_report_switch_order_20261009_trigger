@@ -1,0 +1,5 @@
+created_at_jst: 2026-10-09T09:25:00+09:00
+purpose: Verify the 14-option report switch reorder and labels on research branch
+source_commit: 8fba42d59e99295c2988b32ae637422d22902a23
+private_actions: forbidden
+production_logic: unchanged
