@@ -1,0 +1,201 @@
+# Created: 2026-10-09 JST
+# Updated: 2026-10-09 JST
+# Read-only verification. Artifacts contain audit evidence, never credentials.
+name: P2 all condition verification sharded 20261009
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/p2_condition_audit_shards_20261009_trigger']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-condition-audit-shards-20261009
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 19bcd744aba4d51b5e0eddc24256e241332ac835
+  CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /docs/audits/P2_ALL_CONDITIONS_RESUME_PROTOCOL_20261009.md
+          persist-credentials: false
+      - name: Verify public execution and immutable source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then exit 1; fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Original verification and cached-calculation equivalence tests
+        working-directory: core
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          python -m py_compile scripts/audits/*.py tests/test_p2_condition_audit_shard_20261009.py
+          python -m unittest discover -s tests -p 'test_p2_all_condition_verification_20261009.py' -v
+          python -m unittest discover -s tests -p 'test_p2_condition_audit_shard_20261009.py' -v
+          git diff --exit-code
+
+  audit:
+    needs: tests
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        dataset: [nikkei_index, all_225, technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities, exclude_transportation_utilities, exclude_capital_goods_transportation_utilities]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /docs/audits/P2_ALL_CONDITIONS_RESUME_PROTOCOL_20261009.md
+          persist-credentials: true
+      - name: Public architecture gate
+        run: python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Dependencies
+        working-directory: core
+        run: pip install -r requirements.txt
+      - name: Fetch only assigned existing HTML and necessary CSV
+        working-directory: core
+        env:
+          DATASET: ${{ matrix.dataset }}
+        run: |
+          set -euo pipefail
+          python scripts/audits/run_p2_condition_audit_shard_20261009.py --dataset "$DATASET" --prepare-sparse
+          git diff --exit-code
+      - name: Reuse completed source artifact for all 225
+        if: matrix.dataset == 'all_225'
+        uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '36979444713'
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/verified225
+      - name: Verify every assigned condition page
+        working-directory: core
+        env:
+          DATASET: ${{ matrix.dataset }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ "$DATASET" = all_225 ]; then EXTRA=(--artifact-dir "$RUNNER_TEMP/verified225"); fi
+          python scripts/audits/run_p2_condition_audit_shard_20261009.py \
+            --dataset "$DATASET" --site-root preview/kabu "${EXTRA[@]}" \
+            --output-dir "$RUNNER_TEMP/p2-audit-output/$DATASET"
+          git diff --exit-code
+      - name: Save completed or partial audit evidence independently
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-condition-shard-${{ github.run_id }}-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/p2-audit-output/
+          retention-days: 30
+          compression-level: 6
+          if-no-files-found: warn
+
+  merge:
+    needs: audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /docs/audits/
+          persist-credentials: true
+      - name: Public architecture gate
+        run: python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-condition-shard-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/p2-audit-parts
+          merge-multiple: false
+      - name: Check complete nonduplicate coverage and retain real failures
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/audits/merge_p2_condition_audit_shards_20261009.py \
+            --parts-root "$RUNNER_TEMP/p2-audit-parts" \
+            --output-dir docs/audits/p2_all_conditions_sharded_20261009
+          git diff --exit-code -- preview scripts tests config
+          git diff --check
+      - name: Save only audit results in private research branch
+        working-directory: core
+        run: |
+          set -euo pipefail
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$CORE_SHA" || { echo 'Branch changed: preserve artifacts without overwriting'; exit 1; }
+          git add docs/audits/p2_all_conditions_sharded_20261009
+          git diff --cached --check
+          if git diff --cached --name-only | grep -v '^docs/audits/p2_all_conditions_sharded_20261009/'; then exit 1; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'audit: save complete sharded condition verification with failures and coverage'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
