@@ -1,0 +1,75 @@
+# Created: 2026-10-09 JST
+# No P2, feature, signal or portfolio recomputation. Read persisted review results.
+name: P2 v12 parameter identity diagnostics 20261009
+on:
+  push:
+    branches: [main]
+    paths: ['.github/p2_v12_lineage_diagnostics_20261009_trigger']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CORE_SHA: 4184756b83a90a64778efa0c7d8b6318575ce8bb
+      CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 4184756b83a90a64778efa0c7d8b6318575ce8bb
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            scripts
+            tests
+            docs/reviews
+            docs/ACTIONS_MIGRATION.md
+          persist-credentials: true
+      - name: Enforce public-only execution
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then exit 1; fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Test lineage diagnostic logic
+        working-directory: core
+        run: |
+          pip install -r requirements.txt
+          python -m py_compile scripts/reviews/p2_v12_lineage_diagnostics_20261009.py
+          python -m unittest discover -s tests -p 'test_p2_v12_lineage_diagnostics_20261009.py' -v
+      - name: Match original parameter variants and summarize saved results
+        working-directory: core
+        env:
+          KABU_READ_TOKEN: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+        run: |
+          python scripts/reviews/p2_v12_lineage_diagnostics_20261009.py \
+            --result-dir docs/reviews/p2_v12_results_20261009 \
+            --cache-dir "$RUNNER_TEMP/p2-lineage-inputs" \
+            --output-dir docs/reviews/p2_v12_lineage_20261009
+      - name: Save review diagnostics only
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git diff --name-only)"
+          test -f docs/reviews/p2_v12_lineage_20261009/diagnostic_summary.json
+          git add docs/reviews/p2_v12_lineage_20261009
+          git diff --cached --check
+          if git diff --cached --name-only | grep -v '^docs/reviews/p2_v12_lineage_20261009/'; then exit 1; fi
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$CORE_SHA" || { echo 'Branch changed; no overwrite'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'research: record parameter identity diagnostics and comparison uncertainty'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
