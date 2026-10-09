@@ -1,0 +1,129 @@
+# Created: 2026-10-09 JST
+# New evidence comparison only. No P2 recomputation or production deployment.
+name: P2 v12 condition ID evidence review 20261009
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/p2_v12_evidence_review_20261009_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-v12-evidence-review-20261009
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CORE_SHA: f4442160f19a512f663e08a67de29a421a3f2162
+      CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+      PYTHONUNBUFFERED: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - name: Checkout public execution repository
+        uses: actions/checkout@v4
+      - name: Checkout pinned private analysis code only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: f4442160f19a512f663e08a67de29a421a3f2162
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            scripts
+            tests
+            docs/reviews
+            docs/ACTIONS_MIGRATION.md
+            config
+          persist-credentials: true
+      - name: Enforce public execution and pinned private policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core status --porcelain)"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo 'Private workflow files are prohibited'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Validate new review code before data analysis
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          python -m py_compile scripts/reviews/p2_v12_evidence_review_20261009.py tests/test_p2_v12_evidence_review_20261009.py
+          python -m unittest discover -s tests -p 'test_p2_v12_evidence_review_20261009.py' -v
+      - name: Reuse existing completed 225 artifact
+        uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '36979444713'
+          name: p2-225-raw-canonical-mirror-asset-final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/p2-verified225
+      - name: Compare all published condition IDs and v12 ablations
+        working-directory: core
+        env:
+          KABU_READ_TOKEN: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/reviews/p2_v12_evidence_review_20261009.py \
+            --artifact-dir "$RUNNER_TEMP/p2-verified225" \
+            --cache-dir "$RUNNER_TEMP/p2-review-cache" \
+            --output-dir docs/reviews/p2_v12_results_20261009
+      - name: Check research output and no source modifications
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f docs/reviews/p2_v12_results_20261009/summary.json
+          python - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          p=Path('docs/reviews/p2_v12_results_20261009')
+          s=json.loads((p/'summary.json').read_text())
+          assert len(s['datasets']) == 9
+          assert s['source_group_union_matches_225'] is True
+          assert s['adoptable_conditions'] == 0
+          assert s['total_dataset_conditions'] > 0
+          assert s['unresolved_ids_total'] == 0, s['unresolved_ids_total']
+          assert s['html_mismatches_total'] == 0, s['html_mismatches_total']
+          dirty=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
+          assert not dirty, dirty
+          print({'datasets':len(s['datasets']),'condition_rows':s['total_dataset_conditions'],
+                 'logic_variants':s['logic_variants_total'],'source_unchanged':True,
+                 'same_bar_retrospective_only':True})
+          PY
+          git add docs/reviews/p2_v12_results_20261009
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          if git diff --cached --name-only | grep -v '^docs/reviews/p2_v12_results_20261009/'; then exit 1; fi
+      - name: Save completed evidence to private research branch
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$CORE_SHA" || { echo 'Branch changed; no overwrite'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'research: save preregistered v12 condition-ID and logic comparisons'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
