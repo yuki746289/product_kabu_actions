@@ -1,0 +1,147 @@
+# Created: 2026-10-09 JST
+# Updated: 2026-10-09 JST
+# Save-only recovery. Prior verification is complete; do not recompute it.
+name: P2 save completed audit evidence 20261009
+on:
+  push:
+    branches: [main]
+    paths: ['.github/p2_audit_save_completed_20261009_trigger']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-audit-save-completed-20261009
+  cancel-in-progress: false
+env:
+  CORE_SHA: 8401a7ed80bc721b9041a58ac6c17402bab77dc4
+  PREVIOUS_CODE_SHA: a0144042e812478cc1ce106480d583215c1459b7
+  CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+jobs:
+  save_proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ${{ env.CORE_SHA }}
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /docs/audits/
+          persist-credentials: true
+      - name: Enforce public execution and read-only source scope
+        run: |
+          set -euo pipefail
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          test -z "$(git -C core status --porcelain)"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then exit 1; fi
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '37914960843'
+          name: p2-saved-final-proof-37914960843
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/final-proof
+      - uses: actions/download-artifact@v4
+        with:
+          repository: yuki746289/product_kabu_actions
+          run-id: '37914960843'
+          name: p2-saved-supplemental-proof-37914960843
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/supplemental-proof
+      - name: Restore exactly the tested auxiliary code without changing existing modules
+        working-directory: core
+        run: |
+          set -euo pipefail
+          git fetch --filter=blob:none --depth=1 origin "$PREVIOUS_CODE_SHA"
+          python - <<'PY'
+          from pathlib import Path
+          import os,subprocess
+          old=os.environ['PREVIOUS_CODE_SHA']
+          names=['scripts/audits/'+n+'.py' for n in ('recheck_p2_audit_findings_20261009','finalize_p2_audit_recheck_20261009','verify_p2_unlinked_charts_20261009','resume_p2_condition_pages_20261009','combine_p2_page_checkpoints_20261009')]
+          names+=['tests/test_p2_'+n+'_20261009.py' for n in ('audit_findings_recheck','unlinked_chart_verification','resume_page_checkpoints')]
+          for name in names:
+              p=Path(name);data=subprocess.check_output(['git','show',old+':'+name])
+              assert not p.exists(), ('Unexpected existing helper',name)
+              p.write_bytes(data)
+          assert not subprocess.check_output(['git','diff','--name-only',old,'HEAD','--','preview/kabu'],text=True).strip()
+          PY
+          python scripts/audits/p2_audit_summary_schema_20261009.py --patch-finalizer scripts/audits/finalize_p2_audit_recheck_20261009.py
+          python -m py_compile scripts/audits/*.py
+          python -m unittest discover -s tests -p test_p2_audit_summary_schema_20261009.py -v
+      - name: Validate saved records, add supplemental page statuses and preserve original evidence
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from collections import Counter
+          import csv,json,os,shutil,subprocess
+          def load(path):
+              with path.open(encoding='utf-8',newline='') as f:return list(csv.DictReader(f))
+          def write(path,rows):
+              fields=list(dict.fromkeys(k for row in rows for k in row))
+              with path.open('w',encoding='utf-8',newline='') as f:
+                  w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
+          base=Path(os.environ['RUNNER_TEMP'])/'final-proof'
+          extra=Path(os.environ['RUNNER_TEMP'])/'supplemental-proof'
+          a=json.loads((base/'summary.json').read_text());b=json.loads((extra/'summary.json').read_text())
+          assert a['execution_status']==b['execution_status']=='COMPLETED'
+          pages=load(base/'page_inventory.csv');added=load(extra/'supplemental_chart_verification.csv')
+          failures=load(base/'failures.csv');extra_failures=load(extra/'failures.csv')
+          expected={p.removeprefix('preview/kabu/') for p in subprocess.check_output(['git','ls-tree','-r','--name-only','HEAD','preview/kabu'],text=True).splitlines() if p.endswith('.html')}
+          assert len(pages)==len({r['page'] for r in pages})==len(expected)
+          assert {r['page'] for r in pages}==expected
+          assert len(pages)==a['coverage']['html']
+          assert len(failures)==a['failed_checks']==sum(int(r['failed_checks']) for r in pages)
+          assert len(added)==len({r['page'] for r in added})==b['input_pending_charts']
+          assert len(extra_failures)==b['additional_failed_checks']
+          assert {r['page'] for r in added}=={r['page'] for r in pages if 'UNRESOLVED_CHART_CONDITION' in r['notes']}
+          by_page={r['page']:dict(r,evidence_stage='base') for r in pages}
+          for row in added:
+              old=by_page[row['page']]
+              assert old['sha256']==row['sha256'] and old['dataset']==row['dataset']
+              assert old['status']=='UNVERIFIED' and int(old['numeric_checks'])==0 and int(old['failed_checks'])==0
+              assert old['notes']=='UNRESOLVED_CHART_CONDITION'
+              by_page[row['page']]={**old,**row,'evidence_stage':'supplemental'}
+          final=list(by_page.values())
+          totals=Counter(r['status'] for r in final)
+          numeric=sum(int(r['numeric_checks']) for r in final)
+          assert numeric==a['numeric_checks']+b['additional_numeric_checks']
+          assert sum(int(r['failed_checks']) for r in final)==len(failures)+len(extra_failures)
+          per=[]
+          for d in a['datasets']:
+              rows=[r for r in final if r['dataset']==d['dataset']]
+              per.append({'dataset':d['dataset'],'html':len(rows),'source_available':d['source_available'],'status_counts':dict(Counter(r['status'] for r in rows))})
+          meaningful={r['page'] for r in failures if r['finding_class']!='EMPTY_ACTIVE_MONTH_VALUE_CONVENTION'}|{r['page'] for r in extra_failures}
+          result={'execution_status':'COMPLETED_WITH_EXPLICIT_UNVERIFIED_SCOPE','data_status':'FAIL' if failures or extra_failures else 'UNVERIFIED','source_report_sha':a['source_report_sha'],'coverage':{'html':len(final),'missing_html':0,'duplicate_html':0},'page_status_counts':dict(totals),'numeric_checks':numeric,'failed_checks':len(failures)+len(extra_failures),'material_mismatch_pages':len(meaningful),'display_convention_only_pages':totals.get('FAIL',0)-len(meaningful),'legacy_nikkei_copied_tables':a['nikkei_copied_table_matches'],'datasets':per,'limits':a['limitations'],'numerical_audit_run':37914960843,'save_run':os.environ['GITHUB_RUN_ID'],'base_evidence_unchanged':True,'source_html_csv_p2_unchanged':True}
+          targets=[Path('docs/audits/p2_all_conditions_final_20261009'),Path('docs/audits/p2_supplemental_charts_20261009')]
+          assert all(not p.exists() for p in targets)
+          shutil.copytree(base,targets[0]);shutil.copytree(extra,targets[1])
+          write(targets[0]/'page_inventory_completed.csv',final)
+          (targets[0]/'summary_completed.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+          print(json.dumps(result,ensure_ascii=False))
+          PY
+      - name: Commit verified evidence and audit helper files only
+        working-directory: core
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- preview/kabu data config
+          git add scripts/audits/recheck_p2_audit_findings_20261009.py scripts/audits/finalize_p2_audit_recheck_20261009.py scripts/audits/verify_p2_unlinked_charts_20261009.py scripts/audits/resume_p2_condition_pages_20261009.py scripts/audits/combine_p2_page_checkpoints_20261009.py tests/test_p2_audit_findings_recheck_20261009.py tests/test_p2_unlinked_chart_verification_20261009.py tests/test_p2_resume_page_checkpoints_20261009.py docs/audits/p2_all_conditions_final_20261009 docs/audits/p2_supplemental_charts_20261009
+          git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --cached --check
+          if git diff --cached --name-only | grep -Ev '^(docs/audits/(p2_all_conditions_final_20261009|p2_supplemental_charts_20261009)/|scripts/audits/(recheck_p2_audit_findings_20261009|finalize_p2_audit_recheck_20261009|verify_p2_unlinked_charts_20261009|resume_p2_condition_pages_20261009|combine_p2_page_checkpoints_20261009)\.py$|tests/test_p2_(audit_findings_recheck|unlinked_chart_verification|resume_page_checkpoints)_20261009\.py$)'; then exit 1; fi
+          REMOTE="$(git ls-remote origin "refs/heads/${CORE_BRANCH}" | cut -f1)"
+          test "$REMOTE" = "$CORE_SHA" || { echo 'Branch advanced; no overwrite'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'audit: save completed all-condition reconciliation with explicit failures and unverified scope'
+          git push origin "HEAD:refs/heads/${CORE_BRANCH}"
