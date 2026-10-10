@@ -1,6 +1,6 @@
 # Created: 2026-10-09 JST
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
-name: P2 OR detail chart deterministic shard validation
+name: P2 OR detail chart shards 1 to 8
 
 on:
   push:
@@ -78,19 +78,21 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_p2_or_detail_chart_shard_20261010.py' -v
           python -m unittest discover -s tests -p 'test_p2_or_detail_chart_saved_signals_20261010.py' -v
-      - name: Render first 4 historical OR details and matching existing charts
+      - name: Audit technology OR detail/chart shards 1 through 8 without recomputing shard 0
         shell: bash
         working-directory: core
         run: |
           set -euo pipefail
           python scripts/migrate_p2_html_templates_20261009.py --repo-root . --output-root build/or_detail_shard/extracted > /dev/null
           python scripts/prepare_p2_template_stage_20261009.py --repo-root . --extraction build/or_detail_shard/extracted --destination build/or_detail_shard/isolated > /dev/null
-          python scripts/verify_p2_or_detail_chart_shard_20261010.py \
-            --site-root preview/kabu \
-            --renderer-root build/or_detail_shard/isolated \
-            --dataset technology \
-            --shard-index 0 --shard-size 4 \
-            --output-dir build/or_detail_shard/technology_0
+          for i in $(seq 1 8); do
+            python scripts/verify_p2_or_detail_chart_shard_20261010.py \
+              --site-root preview/kabu \
+              --renderer-root build/or_detail_shard/isolated \
+              --dataset technology \
+              --shard-index "$i" --shard-size 4 \
+              --output-dir "build/or_detail_shard/technology_${i}"
+          done
       - name: Verify source data and working-tree remain unchanged
         if: always()
         shell: bash
@@ -105,6 +107,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: p2-or-detail-shard-audit
-          path: core/build/or_detail_shard/technology_0/or_detail_chart_shard_audit.json
+          path: core/build/or_detail_shard/technology_*/or_detail_chart_shard_audit.json
           if-no-files-found: warn
           retention-days: 7
