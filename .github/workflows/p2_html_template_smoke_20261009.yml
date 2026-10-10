@@ -1,6 +1,6 @@
 # Created: 2026-10-09 JST
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
-name: P2 HTML shared engine six-sector OR validation
+name: P2 HTML common engine six-sector regression
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      CORE_SHA: 6130532d283f815b80625adb13bac38bf041ec8f
+      CORE_SHA: 4cca6b20efb27cf40de1f9c67dc22efb45c676d1
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
       PYTHONUNBUFFERED: '1'
       OPENBLAS_NUM_THREADS: '1'
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 6130532d283f815b80625adb13bac38bf041ec8f
+          ref: 4cca6b20efb27cf40de1f9c67dc22efb45c676d1
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -r requirements.txt
-      - name: Validate shared HTML engine and 2 saved datasets
+      - name: Verify all six sector condition details via shared HTML engine
         shell: bash
         working-directory: core
         run: |
@@ -116,6 +116,18 @@ jobs:
             core/build/p2_html_shared_smoke/*/financials_audit/summary.json
             core/build/p2_html_shared_smoke/*/technology/unified_build_audit.json
             core/build/p2_html_shared_smoke/*/financials/unified_build_audit.json
+            core/build/p2_html_shared_smoke/*/consumer_goods/build_manifest.json
+            core/build/p2_html_shared_smoke/*/consumer_goods_audit/summary.json
+            core/build/p2_html_shared_smoke/*/consumer_goods/unified_build_audit.json
+            core/build/p2_html_shared_smoke/*/materials/build_manifest.json
+            core/build/p2_html_shared_smoke/*/materials_audit/summary.json
+            core/build/p2_html_shared_smoke/*/materials/unified_build_audit.json
+            core/build/p2_html_shared_smoke/*/capital_goods_others/build_manifest.json
+            core/build/p2_html_shared_smoke/*/capital_goods_others_audit/summary.json
+            core/build/p2_html_shared_smoke/*/capital_goods_others/unified_build_audit.json
+            core/build/p2_html_shared_smoke/*/transportation_utilities/build_manifest.json
+            core/build/p2_html_shared_smoke/*/transportation_utilities_audit/summary.json
+            core/build/p2_html_shared_smoke/*/transportation_utilities/unified_build_audit.json
             core/build/or_lists_*/technology/or_listing_audit.json
             core/build/or_lists_*/financials/or_listing_audit.json
             core/build/or_lists_*/technology/unified_build_audit.json
