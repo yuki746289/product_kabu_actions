@@ -1,8 +1,30 @@
 # Created: 2026-10-09 JST
+# Updated: 2026-10-10 JST (approved one-time consumer shard0 bootstrap)
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
-name: P2 financials OR detail chart full shards
+name: P2 sector OR detail chart isolated audit
 
 on:
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: Approved unverified sector
+        type: choice
+        required: true
+        options:
+          - consumer_goods
+          - materials
+          - capital_goods_others
+          - transportation_utilities
+      shard_start:
+        description: First shard index (0..36)
+        type: string
+        required: true
+        default: '0'
+      shard_end:
+        description: Last shard index (0..36)
+        type: string
+        required: true
+        default: '0'
   push:
     branches: [main]
     paths:
@@ -18,11 +40,16 @@ concurrency:
 
 jobs:
   check_and_generate:
+    # One-time push bootstrap permitted only by the exact approved commit message.
+    if: "${{ github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'ci: approved consumer shard0 bootstrap' }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
       CORE_SHA: 74ac448a807258fddd32f20edbc1fa6f55ae258b
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+      DATASET: "${{ github.event_name == 'workflow_dispatch' && inputs.dataset || 'consumer_goods' }}"
+      FIRST_SHARD: "${{ github.event_name == 'workflow_dispatch' && inputs.shard_start || '0' }}"
+      LAST_SHARD: "${{ github.event_name == 'workflow_dispatch' && inputs.shard_end || '0' }}"
       PYTHONUNBUFFERED: '1'
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '1'
@@ -44,10 +71,22 @@ jobs:
             /tests/
             /requirements.txt
             /docs/ACTIONS_MIGRATION.md
-            /preview/kabu/analysis/225_group_all_period/financials/signal_level_features.csv
-            /preview/kabu/analysis/225_group_all_period/financials/condition_detail_manifest.csv
-            /preview/kabu/analysis/225_group_all_period/financials/analysis/or_details/
-            /preview/kabu/analysis/225_group_all_period/financials/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/materials/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/materials/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/materials/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/materials/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/analysis/or_charts/
           persist-credentials: false
       - name: Verify Public Actions architecture and pinned core
         shell: bash
@@ -78,20 +117,29 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_p2_or_detail_chart_shard_20261010.py' -v
           python -m unittest discover -s tests -p 'test_p2_or_detail_chart_saved_signals_20261010.py' -v
-      - name: Audit all financials OR detail/chart shards 0 through 36
+      - name: Audit selected sector with deterministic existing-HTML comparison
         shell: bash
         working-directory: core
         run: |
           set -euo pipefail
+          case "$DATASET" in
+            consumer_goods|materials|capital_goods_others|transportation_utilities) ;;
+            *) echo "::error::Unapproved sector: $DATASET"; exit 2 ;;
+          esac
+          [[ "$FIRST_SHARD" =~ ^(0|[1-9][0-9]*)$ ]]
+          [[ "$LAST_SHARD" =~ ^(0|[1-9][0-9]*)$ ]]
+          test "$FIRST_SHARD" -ge 0
+          test "$LAST_SHARD" -le 36
+          test "$FIRST_SHARD" -le "$LAST_SHARD"
           python scripts/migrate_p2_html_templates_20261009.py --repo-root . --output-root build/or_detail_shard/extracted > /dev/null
           python scripts/prepare_p2_template_stage_20261009.py --repo-root . --extraction build/or_detail_shard/extracted --destination build/or_detail_shard/isolated > /dev/null
-          for i in $(seq 0 36); do
+          for i in $(seq "$FIRST_SHARD" "$LAST_SHARD"); do
             python scripts/verify_p2_or_detail_chart_shard_20261010.py \
               --site-root preview/kabu \
               --renderer-root build/or_detail_shard/isolated \
-              --dataset financials \
+              --dataset "$DATASET" \
               --shard-index "$i" --shard-size 4 \
-              --output-dir "build/or_detail_shard/financials_${i}"
+              --output-dir "build/or_detail_shard/${DATASET}_${i}"
           done
       - name: Verify source data and working-tree remain unchanged
         if: always()
@@ -107,6 +155,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: p2-or-detail-shard-audit
-          path: core/build/or_detail_shard/technology_*/or_detail_chart_shard_audit.json
-          if-no-files-found: warn
+          path: core/build/or_detail_shard/*/or_detail_chart_shard_audit.json
+          if-no-files-found: error
           retention-days: 7
