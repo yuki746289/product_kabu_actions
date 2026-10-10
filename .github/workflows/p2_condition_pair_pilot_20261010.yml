@@ -1,10 +1,14 @@
 # Created: 2026-10-10 JST
 # Approved scope: technology S:fan=CONVERGED, 1 detail + 1 chart. No deployment.
-# Updated: 2026-10-10 JST - manual dispatch only after approved one-time bootstrap.
+# Updated: 2026-10-10 JST - approved scoped one-time legacy renderer pilot bootstrap.
 name: P2 S condition pair read-only byte audit
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/p2_condition_pair_pilot_20261010.yml
 
 permissions:
   contents: read
@@ -21,6 +25,7 @@ jobs:
     env:
       CORE_SHA: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+      LEGACY_RENDER_SHA: 3dfb14cd0f05125c4bfce81d710db0ced073b7c3
       PYTHONUNBUFFERED: '1'
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '1'
@@ -47,6 +52,21 @@ jobs:
             /preview/kabu/analysis/225_group_all_period/technology/condition_detail_manifest.csv
             /preview/kabu/analysis/225_group_all_period/technology/conditions/s-a7c0898c14b3170f.html
             /preview/kabu/analysis/225_group_all_period/technology/conditions/charts/s-a7c0898c14b3170f.html
+          persist-credentials: false
+      - name: Checkout immutable Oct-03 HTML renderer sources only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 3dfb14cd0f05125c4bfce81d710db0ced073b7c3
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: legacy
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/p2_monthly_chart.py
+            /scripts/refine_p2_report_information_architecture.py
+            /scripts/postprocess_p2_accuracy_highlight.py
           persist-credentials: false
       - name: Verify Public-only architecture and pinned private SHA
         shell: bash
@@ -81,8 +101,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/migrate_p2_html_templates_20261009.py --repo-root . --output-root build/s_pair_extract > /dev/null
-          python scripts/prepare_p2_template_stage_20261009.py --repo-root . --extraction build/s_pair_extract --destination build/s_pair_stage > /dev/null
+          # All files here are temporary and untracked: the pinned current core is immutable.
+          test "$(git -C ../legacy rev-parse HEAD)" = "$LEGACY_RENDER_SHA"
+          mkdir -p build/s_pair_legacy_source
+          cp -a scripts build/s_pair_legacy_source/
+          for item in \
+            "p2_monthly_chart.py:e304d81b17ba73ce98628f7021b8faf219e3a80b" \
+            "refine_p2_report_information_architecture.py:f0d915dba0fa9ca479651bbe13e5ee583c57b234" \
+            "postprocess_p2_accuracy_highlight.py:77ffb7a0c13e5e754696b23979ce88ba3a330ddb"; do
+            name="${item%%:*}"
+            blob="${item#*:}"
+            test "$(git -C ../legacy hash-object "scripts/$name")" = "$blob"
+            cp "../legacy/scripts/$name" "build/s_pair_legacy_source/scripts/$name"
+          done
+          printf '{"legacy_renderer_sha":"%s","current_core_sha":"%s","page_scope":"technology S detail/chart only","preserved_source":true}\n' "$LEGACY_RENDER_SHA" "$CORE_SHA" > build/s_pair_legacy_source/legacy_renderer_provenance.json
+          python scripts/migrate_p2_html_templates_20261009.py --repo-root build/s_pair_legacy_source --output-root build/s_pair_extract > /dev/null
+          python scripts/prepare_p2_template_stage_20261009.py --repo-root build/s_pair_legacy_source --extraction build/s_pair_extract --destination build/s_pair_stage > /dev/null
       - name: Generate only approved technology S detail and chart
         working-directory: core
         shell: bash
@@ -109,7 +143,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: p2-s-condition-pair-audit
-          path: core/build/s_pair_audit/p2_condition_pair_byte_audit.json
+          path: |
+            core/build/s_pair_audit/p2_condition_pair_byte_audit.json
+            core/build/s_pair_legacy_source/legacy_renderer_provenance.json
           if-no-files-found: error
           retention-days: 7
       - name: Upload failure diagnostic if generated
@@ -119,6 +155,7 @@ jobs:
           name: p2-s-condition-pair-failure-diagnostic
           path: |
             core/build/s_pair_audit/p2_condition_pair_byte_audit.json
+            core/build/s_pair_legacy_source/legacy_renderer_provenance.json
             core/build/s_pair_html/build_manifest.json
             core/build/s_pair_html/unified_build_audit.json
           if-no-files-found: warn
