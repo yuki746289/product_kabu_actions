@@ -1,0 +1,99 @@
+# Created: 2026-10-10 JST
+# Read-only P2 v12 HTML inventory and two-population template regression.
+name: P2 HTML template phase2 inventory and two populations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2_html_template_phase2_20261010.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-html-template-phase2-20261010
+  cancel-in-progress: false
+
+jobs:
+  inventory_and_validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      CORE_SHA: b465dc19835bb352467343d1d748e4ef727068c0
+      PYTHONUNBUFFERED: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - name: Checkout Public Actions
+        uses: actions/checkout@v4
+      - name: Checkout pinned private P2 core (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: b465dc19835bb352467343d1d748e4ef727068c0
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/
+            /preview/kabu/analysis/225_group_all_period/materials/
+          persist-credentials: false
+      - name: Verify Public architecture and pinned private SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo "::error::Private repository contains forbidden Actions workflow"
+            exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install tested research dependencies
+        shell: bash
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+      - name: Inventory 20244 old URLs and run 2 dataset numerical audits
+        shell: bash
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/p2_html_template_phase2_20261010.py --repo-root . --output-dir build/p2_template_phase2_${{ github.run_id }}
+      - name: Verify versioned source files are unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save audit results only (no HTML or private data)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-html-template-phase2-evidence
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            core/build/p2_template_phase2_*/phase2_summary.json
+            core/build/p2_template_phase2_*/inventory/inventory.json
+            core/build/p2_template_phase2_*/audited/*/summary.json
+            core/build/p2_template_phase2_*/audited/*/pages.csv
+            core/build/p2_template_phase2_*/audited/*/failures.csv
+            core/build/p2_template_phase2_*/generated/*/build_manifest.json
