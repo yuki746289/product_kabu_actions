@@ -2,6 +2,7 @@
 # Approved: autonomous byte-audit of only unverified shards 4..110.
 # All previously certified 228 HTML pages are excluded forever.
 # Private permanent JSON evidence; STOP on any FAIL, no production deployment.
+# Initial one-time push completed; all further runs are validated workflow_dispatch.
 name: P2 Conditions automatic private-evidence audit
 
 on:
@@ -12,10 +13,6 @@ on:
         required: true
         type: string
         default: "[4]"
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/p2_condition_autorun_20261010.yml
 
 permissions:
   contents: read
