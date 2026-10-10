@@ -1,14 +1,10 @@
 # Created: 2026-10-10 JST
 # Approved scope: technology P/T representative: 2 detail + 2 chart. No deployment.
-# Updated: 2026-10-10 JST - one-time authorized technology P/T pilot.
+# Updated: 2026-10-10 JST - technology P/T PASS; manual-only.
 name: P2 Technology PT condition representative audit
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/p2_condition_pt_pilot_20261010.yml
 
 permissions:
   contents: read
