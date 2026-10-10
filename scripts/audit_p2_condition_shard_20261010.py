@@ -61,7 +61,7 @@ def canonical_rows(manifest: Path) -> list[dict[str, str]]:
     expected_types = {"S": "single", "P": "pair", "T": "triple"}
     for row in rows:
         key = row["condition_key"]
-        if (not re.fullmatch(r"[SPT]:[A-Za-z0-9_=&.-]+", key)
+        if (not re.fullmatch(r"[SPT]:[A-Za-z0-9_=&.|+-]+", key)
                 or row["slug"] != condition_slug(key)
                 or row["condition_type"] != expected_types[key[0]]):
             raise ValueError(f"invalid canonical slug/key/type: {key}")
