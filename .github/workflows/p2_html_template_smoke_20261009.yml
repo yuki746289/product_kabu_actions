@@ -1,6 +1,6 @@
 # Created: 2026-10-09 JST
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
-name: P2 HTML shared engine smoke
+name: P2 HTML shared engine six-sector OR validation
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      CORE_SHA: 5c15657c8c74619b1eb9c458cd83bce8cb80c230
+      CORE_SHA: 6130532d283f815b80625adb13bac38bf041ec8f
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
       PYTHONUNBUFFERED: '1'
       OPENBLAS_NUM_THREADS: '1'
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 5c15657c8c74619b1eb9c458cd83bce8cb80c230
+          ref: 6130532d283f815b80625adb13bac38bf041ec8f
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
@@ -46,6 +46,10 @@ jobs:
             /docs/ACTIONS_MIGRATION.md
             /preview/kabu/analysis/225_group_all_period/technology/
             /preview/kabu/analysis/225_group_all_period/financials/
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/
+            /preview/kabu/analysis/225_group_all_period/materials/
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/
             /preview/kabu/analysis/225_indicator_stageb/index.html
             /preview/kabu/report_225_all_period.html
           persist-credentials: false
@@ -77,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/run_p2_html_shared_smoke_20261010.py --repo-root .
-      - name: Verify OR2 and OR3 listings through common CLI for technology and financials
+      - name: Verify all six group OR2/OR3 listing HTML bytes with one CLI
         shell: bash
         working-directory: core
         run: |
@@ -86,6 +90,10 @@ jobs:
           test -n "$STAGE"
           python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset technology --family or_lists --output-dir build/or_lists_${{ github.run_id }}/technology
           python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset financials --family or_lists --output-dir build/or_lists_${{ github.run_id }}/financials
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset consumer_goods --family or_lists --output-dir build/or_lists_${{ github.run_id }}/consumer_goods
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset materials --family or_lists --output-dir build/or_lists_${{ github.run_id }}/materials
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset capital_goods_others --family or_lists --output-dir build/or_lists_${{ github.run_id }}/capital_goods_others
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset transportation_utilities --family or_lists --output-dir build/or_lists_${{ github.run_id }}/transportation_utilities
       - name: Verify source data and working-tree remain unchanged
         if: always()
         shell: bash
@@ -112,5 +120,13 @@ jobs:
             core/build/or_lists_*/financials/or_listing_audit.json
             core/build/or_lists_*/technology/unified_build_audit.json
             core/build/or_lists_*/financials/unified_build_audit.json
+            core/build/or_lists_*/consumer_goods/or_listing_audit.json
+            core/build/or_lists_*/consumer_goods/unified_build_audit.json
+            core/build/or_lists_*/materials/or_listing_audit.json
+            core/build/or_lists_*/materials/unified_build_audit.json
+            core/build/or_lists_*/capital_goods_others/or_listing_audit.json
+            core/build/or_lists_*/capital_goods_others/unified_build_audit.json
+            core/build/or_lists_*/transportation_utilities/or_listing_audit.json
+            core/build/or_lists_*/transportation_utilities/unified_build_audit.json
           if-no-files-found: warn
           retention-days: 7
