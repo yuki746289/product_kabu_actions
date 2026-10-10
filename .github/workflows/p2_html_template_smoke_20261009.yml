@@ -1,6 +1,6 @@
 # Created: 2026-10-09 JST
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
-name: P2 HTML common engine six-sector regression
+name: P2 OR detail and chart identity inventory
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      CORE_SHA: 4cca6b20efb27cf40de1f9c67dc22efb45c676d1
+      CORE_SHA: b6a3e9dd6fb12c257cb13abd957f854c104e62e6
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
       PYTHONUNBUFFERED: '1'
       OPENBLAS_NUM_THREADS: '1'
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 4cca6b20efb27cf40de1f9c67dc22efb45c676d1
+          ref: b6a3e9dd6fb12c257cb13abd957f854c104e62e6
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
@@ -75,25 +75,15 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -r requirements.txt
-      - name: Verify all six sector condition details via shared HTML engine
+      - name: Verify OR detail identity and chart preservation contracts
         shell: bash
         working-directory: core
         run: |
           set -euo pipefail
-          python scripts/run_p2_html_shared_smoke_20261010.py --repo-root .
-      - name: Verify all six group OR2/OR3 listing HTML bytes with one CLI
-        shell: bash
-        working-directory: core
-        run: |
-          set -euo pipefail
-          STAGE="$(find build/p2_html_shared_smoke -type d -name isolated -print -quit)"
-          test -n "$STAGE"
-          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset technology --family or_lists --output-dir build/or_lists_${{ github.run_id }}/technology
-          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset financials --family or_lists --output-dir build/or_lists_${{ github.run_id }}/financials
-          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset consumer_goods --family or_lists --output-dir build/or_lists_${{ github.run_id }}/consumer_goods
-          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset materials --family or_lists --output-dir build/or_lists_${{ github.run_id }}/materials
-          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset capital_goods_others --family or_lists --output-dir build/or_lists_${{ github.run_id }}/capital_goods_others
-          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset transportation_utilities --family or_lists --output-dir build/or_lists_${{ github.run_id }}/transportation_utilities
+          python -m unittest discover -s tests -p 'test_p2_or_detail_inventory_20261010.py' -v
+          python scripts/audit_p2_or_detail_inventory_20261010.py \
+            --site-root preview/kabu \
+            --output-dir build/or_detail_inventory_${{ github.run_id }}
       - name: Verify source data and working-tree remain unchanged
         if: always()
         shell: bash
@@ -107,38 +97,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p2-shared-engine-smoke-evidence
+          name: p2-or-detail-identity-inventory-evidence
           path: |
-            core/build/p2_html_shared_smoke/*/shared_smoke_summary.json
-            core/build/p2_html_shared_smoke/*/technology/build_manifest.json
-            core/build/p2_html_shared_smoke/*/financials/build_manifest.json
-            core/build/p2_html_shared_smoke/*/technology_audit/summary.json
-            core/build/p2_html_shared_smoke/*/financials_audit/summary.json
-            core/build/p2_html_shared_smoke/*/technology/unified_build_audit.json
-            core/build/p2_html_shared_smoke/*/financials/unified_build_audit.json
-            core/build/p2_html_shared_smoke/*/consumer_goods/build_manifest.json
-            core/build/p2_html_shared_smoke/*/consumer_goods_audit/summary.json
-            core/build/p2_html_shared_smoke/*/consumer_goods/unified_build_audit.json
-            core/build/p2_html_shared_smoke/*/materials/build_manifest.json
-            core/build/p2_html_shared_smoke/*/materials_audit/summary.json
-            core/build/p2_html_shared_smoke/*/materials/unified_build_audit.json
-            core/build/p2_html_shared_smoke/*/capital_goods_others/build_manifest.json
-            core/build/p2_html_shared_smoke/*/capital_goods_others_audit/summary.json
-            core/build/p2_html_shared_smoke/*/capital_goods_others/unified_build_audit.json
-            core/build/p2_html_shared_smoke/*/transportation_utilities/build_manifest.json
-            core/build/p2_html_shared_smoke/*/transportation_utilities_audit/summary.json
-            core/build/p2_html_shared_smoke/*/transportation_utilities/unified_build_audit.json
-            core/build/or_lists_*/technology/or_listing_audit.json
-            core/build/or_lists_*/financials/or_listing_audit.json
-            core/build/or_lists_*/technology/unified_build_audit.json
-            core/build/or_lists_*/financials/unified_build_audit.json
-            core/build/or_lists_*/consumer_goods/or_listing_audit.json
-            core/build/or_lists_*/consumer_goods/unified_build_audit.json
-            core/build/or_lists_*/materials/or_listing_audit.json
-            core/build/or_lists_*/materials/unified_build_audit.json
-            core/build/or_lists_*/capital_goods_others/or_listing_audit.json
-            core/build/or_lists_*/capital_goods_others/unified_build_audit.json
-            core/build/or_lists_*/transportation_utilities/or_listing_audit.json
-            core/build/or_lists_*/transportation_utilities/unified_build_audit.json
+            core/build/or_detail_inventory_*/or_detail_inventory_summary.json
           if-no-files-found: warn
           retention-days: 7
