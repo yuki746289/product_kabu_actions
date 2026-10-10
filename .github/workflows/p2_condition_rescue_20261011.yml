@@ -1,0 +1,144 @@
+# Created: 2026-10-11 JST
+# Single-event recovery of completed HTML byte comparisons, not a generator rerun.
+# One-time bootstrap trigger is a unique marker path, removed after the first run.
+name: P2 Restore stalled shard audit evidence (run 38060362009)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - bootstrap/p2_condition_rescue_38060362009.trigger
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: p2-conditions-auto-audit-20261010
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout public audit controller
+        uses: actions/checkout@v4
+      - name: Checkout separate private audit ledger (no production files)
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: audit/p2-condition-html-autovalidate-20261010
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: evidence
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/audits/p2_condition_auto/
+          persist-credentials: true
+      - name: Assert exact failed source Run and its single artifact-upload failure
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/38060362009" --jq '.conclusion')" = "failure"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/jobs/114237258909" --jq '.conclusion')" = "failure"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/jobs/114237258909" --jq '[.steps[] | select(.conclusion == "failure") | .name] | join(",")')" = "Upload complete successful shard audit JSON"
+          python scripts/p2_condition_autorun_controller_20261010.py selftest
+          python scripts/p2_condition_autorun_controller_20261010.py preflight \
+            --ledger evidence/docs/audits/p2_condition_auto/ledger.json \
+            --shards '[8,9,10]'
+      - name: Retrieve 18 original archived shard audits from failed Run, no HTML regeneration
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 38060362009
+          repository: yuki746289/product_kabu_actions
+          github-token: ${{ github.token }}
+          pattern: p2-conditions-*-shard-*
+          path: artifacts
+          merge-multiple: false
+      - name: Verify the original failed upload was diagnostics-only and safely normalize
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import pathlib
+          import sys
+          sys.path.insert(0, "scripts")
+          from p2_condition_autorun_controller_20261010 import validate_artifact, SECTORS
+          root = pathlib.Path("artifacts")
+          expected = {
+              f"p2-conditions-{dataset}-shard-{number}-PASS"
+              for dataset in SECTORS for number in (8, 9, 10)
+          }
+          fail = "p2-conditions-technology-shard-10-FAIL"
+          actual = {d.name for d in root.iterdir() if d.is_dir()}
+          assert len(actual) == 18
+          assert actual == (expected - {fail[:-5] + "-PASS"}) | {fail}, (actual, expected)
+          summary, pairs, paths = validate_artifact(root / fail, "technology", 10)
+          assert len(pairs) == 4 and summary["matched_pages"] == 8
+          for dataset in SECTORS:
+              for number in (8, 9, 10):
+                  folder = root / f"p2-conditions-{dataset}-shard-{number}-PASS"
+                  if dataset == "technology" and number == 10:
+                      continue
+                  validate_artifact(folder, dataset, number)
+          (root / fail).rename(root / "p2-conditions-technology-shard-10-PASS")
+          print("RECOVERY_GATE_PASS: exactly 18 complete audit bundles; 144/144 HTML bytes match")
+          PY
+      - name: Independently validate 144 pages and advance only the private audit ledger
+        id: evaluate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_condition_autorun_controller_20261010.py finalize \
+            --evidence-root evidence --download-root artifacts \
+            --shards '[8,9,10]' --github-output "$GITHUB_OUTPUT"
+      - name: Record exceptional recovered upload in permanent private evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, pathlib
+          p=pathlib.Path("evidence/docs/audits/p2_condition_auto/waves/shards_008_010.json")
+          v=json.loads(p.read_text())
+          assert v["status"] == "PASS_BYTES" and v["matched_pages"] == 144 and v["job_count"] == 18
+          v["recovered_from"] = {
+              "run_id": 38060362009,
+              "job_id": 114237258909,
+              "failure_type": "actions/upload-artifact@v4 Upload progress stalled",
+              "original_artifact": "p2-conditions-technology-shard-10-FAIL",
+              "original_artifact_id": 11673995339,
+              "original_artifact_sha256": "d68be48cd4e0cac4ce6669443bb7032d0bd31895921f40b13795e8a80d1aec92",
+              "html_generated_again": False,
+              "all_18_archives_verified": True
+          }
+          p.write_text(json.dumps(v,indent=2,ensure_ascii=False,sort_keys=True)+"\n")
+          PY
+      - name: Permanently save all 18 shard audit JSON bundles to private evidence branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C evidence config user.name "github-actions[bot]"
+          git -C evidence config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C evidence add docs/audits/p2_condition_auto/
+          test -n "$(git -C evidence diff --cached --name-only)"
+          git -C evidence commit -m "audit(p2): recover run 38060362009 byte-PASS shards 8-10 without regeneration"
+          git -C evidence push origin HEAD:audit/p2-condition-html-autovalidate-20261010
+      - name: Dispatch only new shards 11 through 13 after private push succeeds
+        if: ${{ steps.evaluate.outputs.should_continue == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT: ${{ steps.evaluate.outputs.next_shards }}
+        run: |
+          set -euo pipefail
+          test "$NEXT" = '[11,12,13]'
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/p2_condition_autorun_20261010.yml/dispatches" \
+            -f ref=main -f "inputs[shards]=$NEXT"
+          echo "Resumed at $NEXT after permanent 144-page evidence save" >> "$GITHUB_STEP_SUMMARY"
