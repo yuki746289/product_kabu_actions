@@ -1,14 +1,10 @@
 # Created: 2026-10-10 JST
 # Approved scope: five remaining sectors, S/P/T 15 condition pairs, 30 HTML pages. No deployment.
-# Updated: 2026-10-10 JST - one-time approved representative audit.
+# Updated: 2026-10-10 JST - five-sector SPT 30 pages PASS; manual dispatch only.
 name: P2 Five sector SPT representatives audit
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/p2_condition_sector_representatives_20261010.yml
 
 permissions:
   contents: read
