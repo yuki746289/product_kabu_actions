@@ -1,6 +1,6 @@
 # Created: 2026-10-10 JST
 # Read-only P2 OR summary recreation. Never re-run OR analysis or change private artifacts.
-name: P2 OR summary saved CSV byte fidelity
+name: P2 OR summaries all six sectors saved CSV validation
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      CORE_SHA: 1207e40634ee815ee8c259fe39ec4412dcb2b4c6
+      CORE_SHA: 40732368a40035b6f30480f69f29ff4748022cee
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '1'
       PYTHONUNBUFFERED: '1'
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 1207e40634ee815ee8c259fe39ec4412dcb2b4c6
+          ref: 40732368a40035b6f30480f69f29ff4748022cee
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
@@ -51,6 +51,51 @@ jobs:
             /preview/kabu/analysis/225_group_all_period/technology/analysis/or_combinations.html
             /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/
             /preview/kabu/analysis/225_group_all_period/technology/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/financials/or_pairwise_all.csv
+            /preview/kabu/analysis/225_group_all_period/financials/or_pairwise_unique.csv
+            /preview/kabu/analysis/225_group_all_period/financials/or_triple_all.csv
+            /preview/kabu/analysis/225_group_all_period/financials/or_triple_unique.csv
+            /preview/kabu/analysis/225_group_all_period/financials/or_candidate_summary.csv
+            /preview/kabu/analysis/225_group_all_period/financials/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/financials/analysis/or_combinations.html
+            /preview/kabu/analysis/225_group_all_period/financials/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/financials/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/or_pairwise_all.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/or_pairwise_unique.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/or_triple_all.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/or_triple_unique.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/or_candidate_summary.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/analysis/or_combinations.html
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/materials/or_pairwise_all.csv
+            /preview/kabu/analysis/225_group_all_period/materials/or_pairwise_unique.csv
+            /preview/kabu/analysis/225_group_all_period/materials/or_triple_all.csv
+            /preview/kabu/analysis/225_group_all_period/materials/or_triple_unique.csv
+            /preview/kabu/analysis/225_group_all_period/materials/or_candidate_summary.csv
+            /preview/kabu/analysis/225_group_all_period/materials/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/materials/analysis/or_combinations.html
+            /preview/kabu/analysis/225_group_all_period/materials/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/materials/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/or_pairwise_all.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/or_pairwise_unique.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/or_triple_all.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/or_triple_unique.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/or_candidate_summary.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/analysis/or_combinations.html
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/or_pairwise_all.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/or_pairwise_unique.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/or_triple_all.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/or_triple_unique.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/or_candidate_summary.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/analysis/or_combinations.html
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/analysis/or_charts/
           persist-credentials: false
       - name: Enforce public-only SHA-pinned architecture
         shell: bash
@@ -84,6 +129,16 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/verify_p2_or_summary_saved_csv_20261010.py --source-root preview/kabu/analysis/225_group_all_period/technology --renderer-root build/or_summary_trial/isolated --output-dir build/or_summary_trial/technology
+      - name: Verify five additional OR summaries through one saved-CSV renderer
+        shell: bash
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root build/or_summary_trial/isolated --dataset financials --family or_summary --allow-experimental --output-dir build/or_summary_trial/financials
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root build/or_summary_trial/isolated --dataset consumer_goods --family or_summary --allow-experimental --output-dir build/or_summary_trial/consumer_goods
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root build/or_summary_trial/isolated --dataset materials --family or_summary --allow-experimental --output-dir build/or_summary_trial/materials
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root build/or_summary_trial/isolated --dataset capital_goods_others --family or_summary --allow-experimental --output-dir build/or_summary_trial/capital_goods_others
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root build/or_summary_trial/isolated --dataset transportation_utilities --family or_summary --allow-experimental --output-dir build/or_summary_trial/transportation_utilities
       - name: Verify no tracked file modified
         if: always()
         shell: bash
@@ -99,4 +154,15 @@ jobs:
           name: p2-or-summary-saved-csv-audit
           retention-days: 7
           if-no-files-found: warn
-          path: core/build/or_summary_trial/technology/or_summary_audit.json
+          path: |
+            core/build/or_summary_trial/technology/or_summary_audit.json
+            core/build/or_summary_trial/financials/or_summary_audit.json
+            core/build/or_summary_trial/financials/unified_build_audit.json
+            core/build/or_summary_trial/consumer_goods/or_summary_audit.json
+            core/build/or_summary_trial/consumer_goods/unified_build_audit.json
+            core/build/or_summary_trial/materials/or_summary_audit.json
+            core/build/or_summary_trial/materials/unified_build_audit.json
+            core/build/or_summary_trial/capital_goods_others/or_summary_audit.json
+            core/build/or_summary_trial/capital_goods_others/unified_build_audit.json
+            core/build/or_summary_trial/transportation_utilities/or_summary_audit.json
+            core/build/or_summary_trial/transportation_utilities/unified_build_audit.json
