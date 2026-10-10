@@ -77,6 +77,15 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/run_p2_html_shared_smoke_20261010.py --repo-root .
+      - name: Verify OR2 and OR3 listings through common CLI for technology and financials
+        shell: bash
+        working-directory: core
+        run: |
+          set -euo pipefail
+          STAGE="$(find build/p2_html_shared_smoke -type d -name isolated -print -quit)"
+          test -n "$STAGE"
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset technology --family or_lists --output-dir build/or_lists_${{ github.run_id }}/technology
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root "$STAGE" --dataset financials --family or_lists --output-dir build/or_lists_${{ github.run_id }}/financials
       - name: Verify source data and working-tree remain unchanged
         if: always()
         shell: bash
@@ -99,5 +108,9 @@ jobs:
             core/build/p2_html_shared_smoke/*/financials_audit/summary.json
             core/build/p2_html_shared_smoke/*/technology/unified_build_audit.json
             core/build/p2_html_shared_smoke/*/financials/unified_build_audit.json
+            core/build/or_lists_*/technology/or_listing_audit.json
+            core/build/or_lists_*/financials/or_listing_audit.json
+            core/build/or_lists_*/technology/unified_build_audit.json
+            core/build/or_lists_*/financials/unified_build_audit.json
           if-no-files-found: warn
           retention-days: 7
