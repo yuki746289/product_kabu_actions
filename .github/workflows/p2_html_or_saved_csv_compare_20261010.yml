@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      CORE_SHA: ce6a490ddd8645001869add1d32a0dbc32e2b646
+      CORE_SHA: 931a1a3397e7402e34c8797438f8fbd2eca21f4d
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '1'
       PYTHONUNBUFFERED: '1'
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: ce6a490ddd8645001869add1d32a0dbc32e2b646
+          ref: 931a1a3397e7402e34c8797438f8fbd2eca21f4d
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
@@ -73,6 +73,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_p2_template*.py' -v
           python -m unittest discover -s tests -p 'test_p2_summary_url_stability_20261009.py' -v
           python -m unittest discover -s tests -p 'test_p2_overview_dynamic_data_20261009.py' -v
+          python -m unittest discover -s tests -p 'test_p2_or_render_link_diff_20261010.py' -v
           python scripts/migrate_p2_html_templates_20261009.py --repo-root . --output-root build/or_trial/extracted > build_or_extract_log.json
           python scripts/prepare_p2_template_stage_20261009.py --repo-root . --extraction build/or_trial/extracted --destination build/or_trial/isolated
       - name: Verify persisted OR2 and OR3 against old HTML and actual links
