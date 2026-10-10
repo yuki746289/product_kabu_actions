@@ -1,5 +1,5 @@
 # Created: 2026-10-09 JST
-# Updated: 2026-10-10 JST (approved capital-goods full-shard continuation)
+# Updated: 2026-10-10 JST (approved transportation-utilities full-shard continuation)
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
 name: P2 sector OR detail chart isolated audit
 
@@ -41,13 +41,13 @@ concurrency:
 jobs:
   check_and_generate:
     # One-time push bootstrap permitted only by the exact approved commit message.
-    if: "${{ github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'ci: approved capital goods shards 0-36' }}"
+    if: "${{ github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'ci: approved transport utilities shards 0-36' }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
       CORE_SHA: 74ac448a807258fddd32f20edbc1fa6f55ae258b
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
-      DATASET: "${{ github.event_name == 'workflow_dispatch' && inputs.dataset || 'capital_goods_others' }}"
+      DATASET: "${{ github.event_name == 'workflow_dispatch' && inputs.dataset || 'transportation_utilities' }}"
       FIRST_SHARD: "${{ github.event_name == 'workflow_dispatch' && inputs.shard_start || '0' }}"
       LAST_SHARD: "${{ github.event_name == 'workflow_dispatch' && inputs.shard_end || '36' }}"
       PYTHONUNBUFFERED: '1'
