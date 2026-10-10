@@ -1,14 +1,10 @@
 # Created: 2026-10-11 JST
 # Single-event recovery of completed HTML byte comparisons, not a generator rerun.
-# One-time bootstrap trigger is a unique marker path, removed after the first run.
+# One-time bootstrap succeeded; restored to manual-only, no reruns expected.
 name: P2 Restore stalled shard audit evidence (run 38060362009)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - bootstrap/p2_condition_rescue_38060362009.trigger
 
 permissions:
   contents: read
