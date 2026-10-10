@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      CORE_SHA: c84e3e77f4bcc0d9fa162df0d8aaf9ddbf156d71
+      CORE_SHA: 3fcef48aed56ac03c084be3a9e94bb134df685b7
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '1'
       PYTHONUNBUFFERED: '1'
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: c84e3e77f4bcc0d9fa162df0d8aaf9ddbf156d71
+          ref: 3fcef48aed56ac03c084be3a9e94bb134df685b7
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
@@ -44,6 +44,7 @@ jobs:
             /docs/ACTIONS_MIGRATION.md
             /preview/kabu/analysis/225_group_all_period/technology/or_pairwise_unique.csv
             /preview/kabu/analysis/225_group_all_period/technology/or_triple_unique.csv
+            /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
             /preview/kabu/analysis/225_group_all_period/technology/analysis/or_pairwise_all.html
             /preview/kabu/analysis/225_group_all_period/technology/analysis/or_triple_all.html
             /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/
