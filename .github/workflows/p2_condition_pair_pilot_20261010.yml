@@ -1,13 +1,10 @@
 # Created: 2026-10-10 JST
 # Approved scope: technology S:fan=CONVERGED, 1 detail + 1 chart. No deployment.
+# Updated: 2026-10-10 JST - manual dispatch only after approved one-time bootstrap.
 name: P2 S condition pair read-only byte audit
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/p2_condition_pair_pilot_20261010.yml'
 
 permissions:
   contents: read
@@ -19,7 +16,6 @@ concurrency:
 
 jobs:
   pilot:
-    if: "${{ github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'ci: approved S-condition pair pilot bootstrap' }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
