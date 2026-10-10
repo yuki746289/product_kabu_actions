@@ -1,0 +1,170 @@
+# Created: 2026-10-10 JST
+# Approved scope: technology P/T representative: 2 detail + 2 chart. No deployment.
+# Updated: 2026-10-10 JST - one-time authorized technology P/T pilot.
+name: P2 Technology PT condition representative audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/p2_condition_pt_pilot_20261010.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-condition-technology-pt-pilot-20261010
+  cancel-in-progress: false
+
+jobs:
+  pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CORE_SHA: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
+      CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
+      LEGACY_RENDER_SHA: 3dfb14cd0f05125c4bfce81d710db0ced073b7c3
+      PYTHONUNBUFFERED: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      PYTHONPATH: scripts
+    steps:
+      - name: Checkout public Actions repository
+        uses: actions/checkout@v4
+      - name: Checkout immutable private core (technology PT inputs only)
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/technology/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/technology/conditions/p-6aec83150eec9a88.html
+            /preview/kabu/analysis/225_group_all_period/technology/conditions/charts/p-6aec83150eec9a88.html
+            /preview/kabu/analysis/225_group_all_period/technology/conditions/t-2a923d7b3e9a62a5.html
+            /preview/kabu/analysis/225_group_all_period/technology/conditions/charts/t-2a923d7b3e9a62a5.html
+          persist-credentials: false
+      - name: Checkout immutable Oct-03 HTML renderer sources only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 3dfb14cd0f05125c4bfce81d710db0ced073b7c3
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: legacy
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/p2_monthly_chart.py
+            /scripts/refine_p2_report_information_architecture.py
+            /scripts/postprocess_p2_accuracy_highlight.py
+          persist-credentials: false
+      - name: Verify Public-only architecture and pinned private SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo "::error::Private repository contains forbidden workflow"
+            exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install locked-range dependencies
+        shell: bash
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+      - name: Audit-gate synthetic unit tests
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_p2_condition_pair_byte_audit_20261010.py' -v
+      - name: Prepare isolated legacy-template stage
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          # All files here are temporary and untracked: the pinned current core is immutable.
+          test "$(git -C ../legacy rev-parse HEAD)" = "$LEGACY_RENDER_SHA"
+          mkdir -p build/pt_pair_legacy_source
+          cp -a scripts build/pt_pair_legacy_source/
+          for item in \
+            "p2_monthly_chart.py:e304d81b17ba73ce98628f7021b8faf219e3a80b" \
+            "refine_p2_report_information_architecture.py:f0d915dba0fa9ca479651bbe13e5ee583c57b234" \
+            "postprocess_p2_accuracy_highlight.py:77ffb7a0c13e5e754696b23979ce88ba3a330ddb"; do
+            name="${item%%:*}"
+            blob="${item#*:}"
+            test "$(git -C ../legacy hash-object "scripts/$name")" = "$blob"
+            cp "../legacy/scripts/$name" "build/pt_pair_legacy_source/scripts/$name"
+          done
+          printf '{"legacy_renderer_sha":"%s","current_core_sha":"%s","page_scope":"technology P/T detail/chart only","preserved_source":true}\n' "$LEGACY_RENDER_SHA" "$CORE_SHA" > build/pt_pair_legacy_source/legacy_renderer_provenance.json
+          python scripts/migrate_p2_html_templates_20261009.py --repo-root build/pt_pair_legacy_source --output-root build/pt_pair_extract > /dev/null
+          python scripts/prepare_p2_template_stage_20261009.py --repo-root build/pt_pair_legacy_source --extraction build/pt_pair_extract --destination build/pt_pair_stage > /dev/null
+      - name: Generate and byte-audit technology P condition only
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root build/pt_pair_stage --dataset technology --family conditions --condition-id P2C-6AEC83150EEC --output-dir build/pt_pair_P_html
+          python scripts/verify_p2_condition_pair_byte_audit_20261010.py --repo-root . --site-root preview/kabu --build-root build/pt_pair_P_html --output-dir build/pt_pair_P_audit --dataset technology --condition-key 'P:fan=CONVERGED&ema=STRONG_CONTINUING'
+      - name: Generate and byte-audit technology T condition only
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_html_build.py --repo-root . --site-root preview/kabu --stage-root build/pt_pair_stage --dataset technology --family conditions --condition-id P2C-2A923D7B3E9A --output-dir build/pt_pair_T_html
+          python scripts/verify_p2_condition_pair_byte_audit_20261010.py --repo-root . --site-root preview/kabu --build-root build/pt_pair_T_html --output-dir build/pt_pair_T_audit --dataset technology --condition-key 'T:fan=CONVERGED&ema=DECELERATING&daily_rci14_position=LOW'
+      - name: Verify source and tracked outputs remain unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+          echo "Read-only source contract: PASS"
+      - name: Upload mandatory successful pair audit JSON
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-technology-pt-condition-pair-audit
+          path: |
+            core/build/pt_pair_P_audit/p2_condition_pair_byte_audit.json
+            core/build/pt_pair_T_audit/p2_condition_pair_byte_audit.json
+            core/build/pt_pair_legacy_source/legacy_renderer_provenance.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload failure diagnostic if generated
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-technology-pt-condition-failure-diagnostic
+          path: |
+            core/build/pt_pair_P_audit/p2_condition_pair_byte_audit.json
+            core/build/pt_pair_T_audit/p2_condition_pair_byte_audit.json
+            core/build/pt_pair_legacy_source/legacy_renderer_provenance.json
+            core/build/pt_pair_P_html/build_manifest.json
+            core/build/pt_pair_T_html/build_manifest.json
+            core/build/pt_pair_P_html/unified_build_audit.json
+            core/build/pt_pair_T_html/unified_build_audit.json
+          if-no-files-found: warn
+          retention-days: 7
