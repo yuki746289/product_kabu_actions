@@ -1,6 +1,6 @@
 # Created: 2026-10-09 JST
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
-name: P2 HTML template smoke 20261009
+name: P2 HTML shared engine smoke
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      CORE_SHA: bf927a391ebf93da446610e82cc34f73fde27b88
+      CORE_SHA: 5c15657c8c74619b1eb9c458cd83bce8cb80c230
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
       PYTHONUNBUFFERED: '1'
       OPENBLAS_NUM_THREADS: '1'
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: bf927a391ebf93da446610e82cc34f73fde27b88
+          ref: 5c15657c8c74619b1eb9c458cd83bce8cb80c230
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
@@ -44,6 +44,7 @@ jobs:
             /tests/
             /requirements.txt
             /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/
             /preview/kabu/analysis/225_group_all_period/financials/
             /preview/kabu/analysis/225_indicator_stageb/index.html
             /preview/kabu/report_225_all_period.html
@@ -70,12 +71,12 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -r requirements.txt
-      - name: Execute 20 unit tests and 2-page financials smoke
+      - name: Validate shared HTML engine and 2 saved datasets
         shell: bash
         working-directory: core
         run: |
           set -euo pipefail
-          python scripts/run_p2_html_template_smoke_20261009.py --repo-root .
+          python scripts/run_p2_html_shared_smoke_20261010.py --repo-root .
       - name: Verify source data and working-tree remain unchanged
         if: always()
         shell: bash
@@ -89,12 +90,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p2-template-smoke-evidence
+          name: p2-shared-engine-smoke-evidence
           path: |
-            core/build/p2_html_smoke/*/smoke_summary.json
-            core/build/p2_html_smoke/*/generated/build_manifest.json
-            core/build/p2_html_smoke/*/audited/summary.json
-            core/build/p2_html_smoke/*/audited/pages.csv
-            core/build/p2_html_smoke/*/audited/failures.csv
+            core/build/p2_html_shared_smoke/*/shared_smoke_summary.json
+            core/build/p2_html_shared_smoke/*/technology/build_manifest.json
+            core/build/p2_html_shared_smoke/*/financials/build_manifest.json
+            core/build/p2_html_shared_smoke/*/technology_audit/summary.json
+            core/build/p2_html_shared_smoke/*/financials_audit/summary.json
+            core/build/p2_html_shared_smoke/*/technology/unified_build_audit.json
+            core/build/p2_html_shared_smoke/*/financials/unified_build_audit.json
           if-no-files-found: warn
           retention-days: 7
