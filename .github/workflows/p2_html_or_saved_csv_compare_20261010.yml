@@ -1,0 +1,99 @@
+# Created: 2026-10-10 10:25 JST
+# Read-only regression: saved OR2/OR3 CSV -> shared HTML template -> compare legacy output.
+name: P2 HTML OR saved CSV rendering comparison 20261010
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/p2_html_or_saved_csv_compare_20261010.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-html-or-saved-csv-20261010
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CORE_SHA: ce6a490ddd8645001869add1d32a0dbc32e2b646
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout Public Actions repository
+        uses: actions/checkout@v4
+      - name: Checkout pinned private core read-only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: ce6a490ddd8645001869add1d32a0dbc32e2b646
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/or_pairwise_unique.csv
+            /preview/kabu/analysis/225_group_all_period/technology/or_triple_unique.csv
+            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_pairwise_all.html
+            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_triple_all.html
+            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_charts/
+          persist-credentials: false
+      - name: Verify approved Public runner and immutable core
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then exit 1; fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install research test dependencies
+        working-directory: core
+        run: python -m pip install -r requirements.txt
+      - name: Confirm shared template tests and stage renderer
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_p2_template*.py' -v
+          python -m unittest discover -s tests -p 'test_p2_summary_url_stability_20261009.py' -v
+          python -m unittest discover -s tests -p 'test_p2_overview_dynamic_data_20261009.py' -v
+          python scripts/migrate_p2_html_templates_20261009.py --repo-root . --output-root build/or_trial/extracted > build_or_extract_log.json
+          python scripts/prepare_p2_template_stage_20261009.py --repo-root . --extraction build/or_trial/extracted --destination build/or_trial/isolated
+      - name: Verify persisted OR2 and OR3 against old HTML and actual links
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_p2_or_saved_csv_render_20261010.py --dataset technology --site-root preview/kabu --renderer-root build/or_trial/isolated --output-dir build/or_trial/technology
+      - name: Check no tracked source or dataset changes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload JSON audit only; do not distribute generated HTML or CSV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-or-listing-csv-comparison
+          retention-days: 7
+          if-no-files-found: warn
+          path: core/build/or_trial/technology/or_listing_audit.json
