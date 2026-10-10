@@ -1,16 +1,12 @@
 # Created: 2026-10-10 JST
 # Approved scope: remaining 5,328 condition/detail HTML pages in disjoint shards.
-# Shards 0,1,2 certified PASS and excluded; next only shard 3; manual-only.
+# Shards 0,1,2,3 certified PASS and excluded; next only shard 4; manual-only.
 # No deployment, data mutation, or successful-page reruns.
-# Updated: 2026-10-10 JST - authorized one-time shard-3 bootstrap, restore dispatch-only after run.
+# Updated: 2026-10-10 JST - shard 3 certified PASS; restored manual-only.
 name: P2 Conditions remaining deterministic shard byte audit
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/p2_condition_shard_audit_20261010.yml
 
 permissions:
   contents: read
@@ -30,7 +26,7 @@ jobs:
       max-parallel: 2
       matrix:
         dataset: [technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
-        shard: [3]
+        shard: [4]
     env:
       CORE_SHA: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
