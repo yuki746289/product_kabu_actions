@@ -1,6 +1,6 @@
 # Created: 2026-10-09 JST
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
-name: P2 OR detail chart shards 9 to 36
+name: P2 financials OR detail chart full shards
 
 on:
   push:
@@ -44,10 +44,10 @@ jobs:
             /tests/
             /requirements.txt
             /docs/ACTIONS_MIGRATION.md
-            /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
-            /preview/kabu/analysis/225_group_all_period/technology/condition_detail_manifest.csv
-            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/
-            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_charts/
+            /preview/kabu/analysis/225_group_all_period/financials/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/financials/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/financials/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/financials/analysis/or_charts/
           persist-credentials: false
       - name: Verify Public Actions architecture and pinned core
         shell: bash
@@ -78,20 +78,20 @@ jobs:
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_p2_or_detail_chart_shard_20261010.py' -v
           python -m unittest discover -s tests -p 'test_p2_or_detail_chart_saved_signals_20261010.py' -v
-      - name: Audit remaining technology OR detail/chart shards 9 through 36
+      - name: Audit all financials OR detail/chart shards 0 through 36
         shell: bash
         working-directory: core
         run: |
           set -euo pipefail
           python scripts/migrate_p2_html_templates_20261009.py --repo-root . --output-root build/or_detail_shard/extracted > /dev/null
           python scripts/prepare_p2_template_stage_20261009.py --repo-root . --extraction build/or_detail_shard/extracted --destination build/or_detail_shard/isolated > /dev/null
-          for i in $(seq 9 36); do
+          for i in $(seq 0 36); do
             python scripts/verify_p2_or_detail_chart_shard_20261010.py \
               --site-root preview/kabu \
               --renderer-root build/or_detail_shard/isolated \
-              --dataset technology \
+              --dataset financials \
               --shard-index "$i" --shard-size 4 \
-              --output-dir "build/or_detail_shard/technology_${i}"
+              --output-dir "build/or_detail_shard/financials_${i}"
           done
       - name: Verify source data and working-tree remain unchanged
         if: always()
