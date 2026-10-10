@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      CORE_SHA: 0f2fefac918ffe936c7ecab7ebdb5792fc75f076
+      CORE_SHA: 159d274678a33f9b5e51156978272627d1bfea61
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
       PYTHONUNBUFFERED: '1'
       OPENBLAS_NUM_THREADS: '1'
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 0f2fefac918ffe936c7ecab7ebdb5792fc75f076
+          ref: 159d274678a33f9b5e51156978272627d1bfea61
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
