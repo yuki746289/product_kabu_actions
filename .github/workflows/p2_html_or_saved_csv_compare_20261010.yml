@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
-      CORE_SHA: 2dcaf2727c049d39819eb0e35dcb0e64e58554ae
+      CORE_SHA: c84e3e77f4bcc0d9fa162df0d8aaf9ddbf156d71
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '1'
       PYTHONUNBUFFERED: '1'
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 2dcaf2727c049d39819eb0e35dcb0e64e58554ae
+          ref: c84e3e77f4bcc0d9fa162df0d8aaf9ddbf156d71
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
