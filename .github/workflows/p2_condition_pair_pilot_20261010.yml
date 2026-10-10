@@ -1,14 +1,10 @@
 # Created: 2026-10-10 JST
 # Approved scope: technology S:fan=CONVERGED, 1 detail + 1 chart. No deployment.
-# Updated: 2026-10-10 JST - approved scoped one-time legacy renderer pilot bootstrap.
+# Updated: 2026-10-10 JST - legacy renderer pair PASS; workflow_dispatch only.
 name: P2 S condition pair read-only byte audit
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/p2_condition_pair_pilot_20261010.yml
 
 permissions:
   contents: read
