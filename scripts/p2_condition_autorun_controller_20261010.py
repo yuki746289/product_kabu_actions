@@ -90,7 +90,8 @@ def validate_pair(record: dict, dataset: str, key: str, expected: dict) -> None:
             or record.get("condition_key") != key
             or record.get("condition_id") != expected.get("id")
             or record.get("slug") != expected.get("slug")
-            or record.get("canonical_manifest_count") != expected.get("canonical_count")
+            or type(record.get("canonical_manifest_count")) is not int
+            or record["canonical_manifest_count"] < 0
             or record.get("matched_pages") != 2
             or record.get("checked_detail_pages") != 1
             or record.get("checked_chart_pages") != 1
@@ -156,6 +157,8 @@ def validate_artifact(artifact_dir: Path, dataset: str, shard: int) -> tuple[dic
         key = c["key"]
         pair = keyed[key]
         validate_pair(pair, dataset, key, c)
+        if pair["rows"] != c.get("pages") or pair["source_csv_sha256"] != c.get("source_csv_sha256"):
+            raise ValueError("pair audit differs from independently persisted shard summary")
         for row in pair["rows"]:
             if row["path"] in seen:
                 raise ValueError("duplicate HTML filename in shard")
