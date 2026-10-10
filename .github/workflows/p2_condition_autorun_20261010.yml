@@ -207,10 +207,23 @@ jobs:
           test -z "$(git -C core diff --cached --name-only)"
           echo "Read-only source contract: PASS"
       - name: Upload complete successful shard audit JSON
+        id: upload_primary
         if: success()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: p2-conditions-${{ matrix.dataset }}-shard-${{ matrix.shard }}-PASS
+          path: |
+            core/build/condition_shard_${{ matrix.shard }}_audit/shard_audit.json
+            core/build/condition_shard_${{ matrix.shard }}_audit/**/p2_condition_pair_byte_audit.json
+            core/build/shard_legacy_source/legacy_renderer_provenance.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retry transient artifact upload failure (no HTML rerender)
+        if: ${{ steps.upload_primary.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-conditions-${{ matrix.dataset }}-shard-${{ matrix.shard }}-PASS-RETRY
           path: |
             core/build/condition_shard_${{ matrix.shard }}_audit/shard_audit.json
             core/build/condition_shard_${{ matrix.shard }}_audit/**/p2_condition_pair_byte_audit.json
@@ -257,9 +270,22 @@ jobs:
       - name: Download every successful shard JSON from this exact run
         uses: actions/download-artifact@v4
         with:
-          pattern: p2-conditions-*-shard-*-PASS
+          pattern: p2-conditions-*-shard-*-PASS*
           path: artifacts
           merge-multiple: false
+      - name: Normalize retry artifact names with duplicate prevention
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for retry in artifacts/*-PASS-RETRY; do
+            primary="${retry%-RETRY}"
+            if test -e "$primary"; then
+              echo "::error::Duplicate primary and retry artifacts; refusing to certify"
+              exit 1
+            fi
+            mv "$retry" "$primary"
+          done
       - name: Independently validate all pages and advance private ledger
         id: evaluate
         shell: bash
