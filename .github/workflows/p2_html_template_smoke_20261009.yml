@@ -1,6 +1,6 @@
 # Created: 2026-10-09 JST
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
-name: P2 six-sector OR2 saved-signal byte comparison
+name: P2 OR detail chart deterministic shard validation
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      CORE_SHA: db17214df4f86bc0f690bbcb9a46ddcc3d0aa56c
+      CORE_SHA: 74ac448a807258fddd32f20edbc1fa6f55ae258b
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
       PYTHONUNBUFFERED: '1'
       OPENBLAS_NUM_THREADS: '1'
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: db17214df4f86bc0f690bbcb9a46ddcc3d0aa56c
+          ref: 74ac448a807258fddd32f20edbc1fa6f55ae258b
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
@@ -46,31 +46,8 @@ jobs:
             /docs/ACTIONS_MIGRATION.md
             /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
             /preview/kabu/analysis/225_group_all_period/technology/condition_detail_manifest.csv
-            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/or-03cae38f783506d9.html
-            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_charts/or-03cae38f783506d9.html
-            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_charts/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/or-10180c55393093e3.html
-            /preview/kabu/analysis/225_group_all_period/financials/signal_level_features.csv
-            /preview/kabu/analysis/225_group_all_period/financials/condition_detail_manifest.csv
-            /preview/kabu/analysis/225_group_all_period/financials/analysis/or_details/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/financials/analysis/or_charts/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/consumer_goods/signal_level_features.csv
-            /preview/kabu/analysis/225_group_all_period/consumer_goods/condition_detail_manifest.csv
-            /preview/kabu/analysis/225_group_all_period/consumer_goods/analysis/or_details/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/consumer_goods/analysis/or_charts/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/materials/signal_level_features.csv
-            /preview/kabu/analysis/225_group_all_period/materials/condition_detail_manifest.csv
-            /preview/kabu/analysis/225_group_all_period/materials/analysis/or_details/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/materials/analysis/or_charts/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/capital_goods_others/signal_level_features.csv
-            /preview/kabu/analysis/225_group_all_period/capital_goods_others/condition_detail_manifest.csv
-            /preview/kabu/analysis/225_group_all_period/capital_goods_others/analysis/or_details/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/capital_goods_others/analysis/or_charts/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
-            /preview/kabu/analysis/225_group_all_period/transportation_utilities/condition_detail_manifest.csv
-            /preview/kabu/analysis/225_group_all_period/transportation_utilities/analysis/or_details/or-1a25b402644cb9f6.html
-            /preview/kabu/analysis/225_group_all_period/transportation_utilities/analysis/or_charts/or-1a25b402644cb9f6.html
+            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/
+            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_charts/
           persist-credentials: false
       - name: Verify Public Actions architecture and pinned core
         shell: bash
@@ -94,48 +71,26 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -r requirements.txt
-      - name: Verify saved-signal OR display input contracts
+      - name: Verify deterministic bounded OR shard selection and source contracts
         shell: bash
         working-directory: core
         run: |
           set -euo pipefail
+          python -m unittest discover -s tests -p 'test_p2_or_detail_chart_shard_20261010.py' -v
           python -m unittest discover -s tests -p 'test_p2_or_detail_chart_saved_signals_20261010.py' -v
-          python -m unittest discover -s tests -p 'test_p2_html_numbered_modules_20261010.py' -v
-      - name: Extract isolated historic renderer and compare a real detail/chart pair
+      - name: Render first 4 historical OR details and matching existing charts
         shell: bash
         working-directory: core
         run: |
           set -euo pipefail
-          python scripts/migrate_p2_html_templates_20261009.py --repo-root . --output-root build/or_detail_pilot/extracted > /dev/null
-          python scripts/prepare_p2_template_stage_20261009.py --repo-root . --extraction build/or_detail_pilot/extracted --destination build/or_detail_pilot/isolated > /dev/null
-          python scripts/verify_p2_or_detail_chart_saved_signals_20261010.py \
+          python scripts/migrate_p2_html_templates_20261009.py --repo-root . --output-root build/or_detail_shard/extracted > /dev/null
+          python scripts/prepare_p2_template_stage_20261009.py --repo-root . --extraction build/or_detail_shard/extracted --destination build/or_detail_shard/isolated > /dev/null
+          python scripts/verify_p2_or_detail_chart_shard_20261010.py \
             --site-root preview/kabu \
-            --renderer-root build/or_detail_pilot/isolated \
-            --dataset technology --chart-index 0 \
-            --output-dir build/or_detail_pilot/technology_sample
-          python scripts/verify_p2_or_detail_chart_saved_signals_20261010.py \
-            --site-root preview/kabu \
-            --renderer-root build/or_detail_pilot/isolated \
+            --renderer-root build/or_detail_shard/isolated \
             --dataset technology \
-            --sample-name or-1a25b402644cb9f6.html \
-            --expected-kind or2 --expected-chart present \
-            --output-dir build/or_detail_pilot/technology_or2_pair
-          python scripts/verify_p2_or_detail_chart_saved_signals_20261010.py \
-            --site-root preview/kabu \
-            --renderer-root build/or_detail_pilot/isolated \
-            --dataset technology \
-            --sample-name or-10180c55393093e3.html \
-            --expected-chart absent \
-            --output-dir build/or_detail_pilot/technology_detail_no_chart
-          for ds in financials consumer_goods materials capital_goods_others transportation_utilities; do
-            python scripts/verify_p2_or_detail_chart_saved_signals_20261010.py \
-              --site-root preview/kabu \
-              --renderer-root build/or_detail_pilot/isolated \
-              --dataset "$ds" \
-              --sample-name or-1a25b402644cb9f6.html \
-              --expected-kind or2 --expected-chart present \
-              --output-dir "build/or_detail_pilot/${ds}_or2"
-          done
+            --shard-index 0 --shard-size 4 \
+            --output-dir build/or_detail_shard/technology_0
       - name: Verify source data and working-tree remain unchanged
         if: always()
         shell: bash
@@ -149,7 +104,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: p2-or-detail-chart-pilot-audit
-          path: core/build/or_detail_pilot/*/or_detail_chart_pilot_audit.json
+          name: p2-or-detail-shard-audit
+          path: core/build/or_detail_shard/technology_0/or_detail_chart_shard_audit.json
           if-no-files-found: warn
           retention-days: 7
