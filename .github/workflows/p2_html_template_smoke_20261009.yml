@@ -1,6 +1,6 @@
 # Created: 2026-10-09 JST
 # Read-only smoke of P2 v12 HTML template generator. No deployment or research-data commits.
-name: P2 OR detail and chart saved-signal HTML byte pilot
+name: P2 OR2 and chartless saved-signal pilot
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      CORE_SHA: 159d274678a33f9b5e51156978272627d1bfea61
+      CORE_SHA: 73cafafa502d4bb319f436c205bcd23076b48e75
       CORE_BRANCH: research/p2-nikkei-complete-baseline-20260915
       PYTHONUNBUFFERED: '1'
       OPENBLAS_NUM_THREADS: '1'
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yuki746289/product_kabu
-          ref: 159d274678a33f9b5e51156978272627d1bfea61
+          ref: 73cafafa502d4bb319f436c205bcd23076b48e75
           token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
           path: core
           fetch-depth: 1
@@ -48,6 +48,9 @@ jobs:
             /preview/kabu/analysis/225_group_all_period/technology/condition_detail_manifest.csv
             /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/or-03cae38f783506d9.html
             /preview/kabu/analysis/225_group_all_period/technology/analysis/or_charts/or-03cae38f783506d9.html
+            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/or-1a25b402644cb9f6.html
+            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_charts/or-1a25b402644cb9f6.html
+            /preview/kabu/analysis/225_group_all_period/technology/analysis/or_details/or-10180c55393093e3.html
           persist-credentials: false
       - name: Verify Public Actions architecture and pinned core
         shell: bash
@@ -90,6 +93,20 @@ jobs:
             --renderer-root build/or_detail_pilot/isolated \
             --dataset technology --chart-index 0 \
             --output-dir build/or_detail_pilot/technology_sample
+          python scripts/verify_p2_or_detail_chart_saved_signals_20261010.py \
+            --site-root preview/kabu \
+            --renderer-root build/or_detail_pilot/isolated \
+            --dataset technology \
+            --sample-name or-1a25b402644cb9f6.html \
+            --expected-kind or2 --expected-chart present \
+            --output-dir build/or_detail_pilot/technology_or2_pair
+          python scripts/verify_p2_or_detail_chart_saved_signals_20261010.py \
+            --site-root preview/kabu \
+            --renderer-root build/or_detail_pilot/isolated \
+            --dataset technology \
+            --sample-name or-10180c55393093e3.html \
+            --expected-chart absent \
+            --output-dir build/or_detail_pilot/technology_detail_no_chart
       - name: Verify source data and working-tree remain unchanged
         if: always()
         shell: bash
@@ -104,6 +121,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: p2-or-detail-chart-pilot-audit
-          path: core/build/or_detail_pilot/technology_sample/or_detail_chart_pilot_audit.json
+          path: |
+            core/build/or_detail_pilot/technology_sample/or_detail_chart_pilot_audit.json
+            core/build/or_detail_pilot/technology_or2_pair/or_detail_chart_pilot_audit.json
+            core/build/or_detail_pilot/technology_detail_no_chart/or_detail_chart_pilot_audit.json
           if-no-files-found: warn
           retention-days: 7
