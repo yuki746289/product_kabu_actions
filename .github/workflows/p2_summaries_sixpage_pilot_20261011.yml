@@ -1,0 +1,125 @@
+# Created: 2026-10-11 JST
+# Exact technology six-page (single/pair/triple index+group) pilot only.
+# No production changes or rechecks of successful 5,364 conditions pages.
+name: P2 Summaries 6-page technology byte pilot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/p2_summaries_sixpage_pilot_20261011.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-summary-6page-tech-pilot-20261011
+  cancel-in-progress: false
+
+jobs:
+  pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CORE_SHA: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
+      LEGACY_RENDER_SHA: 3dfb14cd0f05125c4bfce81d710db0ced073b7c3
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      PYTHONUNBUFFERED: '1'
+
+    steps:
+      - name: Checkout Public-only Actions code
+        uses: actions/checkout@v4
+      - name: Checkout immutable private saved candidates and six canonical old HTML files
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_pairwise_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_triple_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/summaries/single_features.html
+            /preview/kabu/analysis/225_group_all_period/technology/summaries/single-024fd29f8cb77a.html
+            /preview/kabu/analysis/225_group_all_period/technology/summaries/pair_features.html
+            /preview/kabu/analysis/225_group_all_period/technology/summaries/pair-0283227d107664.html
+            /preview/kabu/analysis/225_group_all_period/technology/summaries/triple_features.html
+            /preview/kabu/analysis/225_group_all_period/technology/summaries/triple-00093b4b282e31.html
+          persist-credentials: false
+      - name: Checkout October-03 immutable postprocessor
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 3dfb14cd0f05125c4bfce81d710db0ced073b7c3
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: legacy
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/postprocess_p2_accuracy_highlight.py
+          persist-credentials: false
+      - name: Verify Public Actions and pinned private core
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test "$(git -C legacy rev-parse HEAD)" = "$LEGACY_RENDER_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::private workflow found'
+            exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install locked-range dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Prepare source-identical isolated renderer stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p core/build/summary_stage
+          cp -a core/scripts core/build/summary_stage/scripts
+          test "$(git -C legacy hash-object scripts/postprocess_p2_accuracy_highlight.py)" = "77ffb7a0c13e5e754696b23979ce88ba3a330ddb"
+          cp legacy/scripts/postprocess_p2_accuracy_highlight.py core/build/summary_stage/scripts/postprocess_p2_accuracy_highlight.py
+          echo 'Source renderer staged separately; immutable private source retained'
+      - name: Regenerate all 712 summary inventory files in build only; byte-compare exactly six representatives
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_summary_pilot_20261011.py --core core --stage core/build/summary_stage --dataset technology --out core/build/summary_sixpage_pilot
+      - name: Verify original Private sources and pages were not touched
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+          echo 'Immutable canonical sources and six old HTML pages: PASS'
+      - name: Preserve full six-page audit on either PASS or FAIL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-summary-technology-sixpage-audit
+          path: |
+            core/build/summary_sixpage_pilot/summary_pilot_audit.json
+          if-no-files-found: warn
+          retention-days: 7
