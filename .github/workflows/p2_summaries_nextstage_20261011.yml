@@ -1,0 +1,304 @@
+# Created: 2026-10-11 JST
+# Explicitly scoped one-shot PASS -> next, FAIL -> stop; no deployment.
+# Do not rerun completed 6-sector candidate HTML audit run 38125393303.
+name: P2 summaries independent canary URL audit and staging
+
+on:
+  push:
+    branches:
+      - audit/p2-summary-nextstage-20261011
+    paths:
+      - .github/workflows/p2_summaries_nextstage_20261011.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-summary-nextstage-20261011
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 0e2d5722d6764102adfe6995b793f533b60b1532
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  predecessor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Ensure prior success and all six saved JSON artifacts exist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          run=38125393303
+          test "$(gh api repos/yuki746289/product_kabu_actions/actions/runs/$run --jq .conclusion)" = success
+          gh api "repos/yuki746289/product_kabu_actions/actions/runs/$run/artifacts?per_page=100" > prior.json
+          test "$(jq '[.artifacts[] | select(.expired == false and (.name | startswith("p2-summary-candidate-")))] | length' prior.json)" -eq 6
+          echo 'All six prior audit JSON artifacts exist; prior PASS not recomputed.'
+
+  technology_gate:
+    needs: predecessor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout Public audit scripts
+        uses: actions/checkout@v4
+      - name: Checkout immutable Private signals and candidate data
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0e2d5722d6764102adfe6995b793f533b60b1532
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /preview/kabu/analysis/225_group_all_period/technology/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_pairwise_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_triple_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
+          persist-credentials: false
+      - name: Verify immutable core and public-only runner before work
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::Private workflows forbidden'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install locked-range Private runtime requirements
+        run: python -m pip install -r core/requirements.txt
+      - name: Syntax check without touching tracked source
+        run: |
+          python -m py_compile scripts/p2_summary_nextstage_gate_20261011.py
+          python -m py_compile scripts/p2_summary_archive_stage_20261011.py
+      - name: Independent saved-signal canary plus URL inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_summary_nextstage_gate_20261011.py \
+            --core core --sector "technology" \
+            --expected-core-sha "$CORE_SHA" \
+            --output "core/build/url_gate_technology"
+      - name: Verify pinned source and no tracked file was modified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Store canary and URL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-nextstage-gate-technology
+          path: |
+            core/build/url_gate_technology/nextstage_audit.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  remaining_gates:
+    needs: technology_gate
+    if: ${{ needs.technology_gate.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        sector: [financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout Public audit scripts
+        uses: actions/checkout@v4
+      - name: Checkout immutable Private signals and candidate data
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0e2d5722d6764102adfe6995b793f533b60b1532
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_pairwise_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_triple_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/signal_level_features.csv
+          persist-credentials: false
+      - name: Verify immutable core and public-only runner before work
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::Private workflows forbidden'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install locked-range Private runtime requirements
+        run: python -m pip install -r core/requirements.txt
+      - name: Syntax check without touching tracked source
+        run: |
+          python -m py_compile scripts/p2_summary_nextstage_gate_20261011.py
+          python -m py_compile scripts/p2_summary_archive_stage_20261011.py
+      - name: Independent saved-signal canary plus URL inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_summary_nextstage_gate_20261011.py \
+            --core core --sector "${{ matrix.sector }}" \
+            --expected-core-sha "$CORE_SHA" \
+            --output "core/build/url_gate_${{ matrix.sector }}"
+      - name: Verify pinned source and no tracked file was modified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Store canary and URL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-nextstage-gate-${{ matrix.sector }}
+          path: |
+            core/build/url_gate_${{ matrix.sector }}/nextstage_audit.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  staged_html:
+    needs: [technology_gate, remaining_gates]
+    if: ${{ needs.technology_gate.result == 'success' && needs.remaining_gates.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        sector: [technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout Public audit scripts
+        uses: actions/checkout@v4
+      - name: Checkout immutable Private candidate metadata
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0e2d5722d6764102adfe6995b793f533b60b1532
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_pairwise_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_triple_candidates.csv
+          persist-credentials: false
+      - name: Verify immutable core and public-only runner before work
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::Private workflows forbidden'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install locked-range Private runtime requirements
+        run: python -m pip install -r core/requirements.txt
+      - name: Syntax check without touching tracked source
+        run: |
+          python -m py_compile scripts/p2_summary_nextstage_gate_20261011.py
+          python -m py_compile scripts/p2_summary_archive_stage_20261011.py
+      - name: Download successful same-workflow gate for this sector
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-nextstage-gate-${{ matrix.sector }}
+          path: core/build/read_gate_${{ matrix.sector }}
+      - name: Render archived candidate HTML exclusively under build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p core/build/summary_stage
+          cp -a core/scripts core/build/summary_stage/scripts
+          python scripts/p2_summary_archive_stage_20261011.py \
+            --core core --stage core/build/summary_stage \
+            --sector "${{ matrix.sector }}" --expected-core-sha "$CORE_SHA" \
+            --gate "core/build/read_gate_${{ matrix.sector }}/nextstage_audit.json" \
+            --out "core/build/summary_release_${{ matrix.sector }}"
+      - name: Verify pinned source and no tracked file was modified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Store ZIP and manifest evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-staged-html-${{ matrix.sector }}
+          path: |
+            core/build/summary_release_${{ matrix.sector }}/p2_candidate_summaries_${{ matrix.sector }}.zip
+            core/build/summary_release_${{ matrix.sector }}/staging_report.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  release_gate:
+    needs: staged_html
+    if: ${{ needs.staged_html.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Confirm six staged ZIP artifacts exist and require manual deploy approval
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo 'All six staging jobs successful; no deploy permissions or steps exist.'
+          echo 'Independent validation is limited to three materialized daily-RCI conditions per sector.'
+          echo 'Old-only URLs are excluded from new staging ZIP; HTTP 404/410 policy is not decided.'
+          echo 'DEPLOYMENT_ALLOWED=false'
