@@ -1,14 +1,11 @@
 # Created: 2026-10-11 JST
 # Exact technology six-page (single/pair/triple index+group) pilot only.
+# Run 38111319834 stopped by summary inventory gate (593 vs 712); manual-only.
 # No production changes or rechecks of successful 5,364 conditions pages.
 name: P2 Summaries 6-page technology byte pilot
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/p2_summaries_sixpage_pilot_20261011.yml
 
 permissions:
   contents: read
