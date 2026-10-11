@@ -1,0 +1,116 @@
+# Created: 2026-10-11 JST
+# QA of immutable artifacts from SUCCESS run 38127100421.
+# Never rebuild old HTML, saved signals or previously successful ZIP output.
+# Public runner only, no commit/push of private data and no production deploy.
+name: P2 summary artifacts one-shot static predeploy QA
+
+on:
+  push:
+    branches:
+      - audit/p2-summary-nextstage-20261011
+    paths:
+      - .github/workflows/p2_summary_artifact_qa_20261011.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-summary-artifact-static-qa-20261011
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 0e2d5722d6764102adfe6995b793f533b60b1532
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  qa:
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        sector: [technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Public QA scripts checkout
+        uses: actions/checkout@v4
+      - name: Immutable Private manifest and no private Actions
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0e2d5722d6764102adfe6995b793f533b60b1532
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/condition_detail_manifest.csv
+          persist-credentials: false
+      - name: Verify public-only immutable architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::Private workflow found'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Fetch successful unchanged staged ZIP artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-staged-html-${{ matrix.sector }}
+          run-id: 38127100421
+          github-token: ${{ github.token }}
+          path: core/build/immutable_zip_${{ matrix.sector }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install only pandas; JS syntax uses Node installed on runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pandas>=2,<3'
+          node --version
+          python -m py_compile scripts/p2_summary_artifact_qa_20261011.py
+      - name: Validate all HTML, summary/condition links and representative JS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_summary_artifact_qa_20261011.py \
+            --core core --sector "${{ matrix.sector }}" \
+            --expected-sha "$CORE_SHA" \
+            --archive "core/build/immutable_zip_${{ matrix.sector }}/p2_candidate_summaries_${{ matrix.sector }}.zip" \
+            --report "core/build/immutable_zip_${{ matrix.sector }}/staging_report.json" \
+            --out "core/build/static_qa_${{ matrix.sector }}"
+      - name: Source SHA and tracked diff remain untouched
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+      - name: Store small QA JSON; do not duplicate existing ZIP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-artifact-static-qa-${{ matrix.sector }}
+          path: core/build/static_qa_${{ matrix.sector }}/artifact_static_qa.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  manual_deploy_gate:
+    needs: qa
+    if: ${{ needs.qa.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Predeployment static checks passed; production deliberately not modified
+        run: |
+          echo 'PASS: archive content and representative JS syntax smoke-tested.'
+          echo 'Not checked: real browser and Apache routing, including removed legacy URLs.'
+          echo 'Stop before production deployment. Separate explicit permission required.'
