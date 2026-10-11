@@ -1,12 +1,8 @@
 # Created: 2026-10-11 JST
-# One-time user-approved read-only diagnosis; excludes HTML rendering or deployment.
+# Read-only summary inventory diagnosis, completed Run 38113431086; manual-only.
 name: P2 summary missing 119 group forensic inventory
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/p2_summary_inventory_diagnostic_20261011.yml
 
 permissions:
   contents: read
