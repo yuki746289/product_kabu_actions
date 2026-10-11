@@ -1,0 +1,190 @@
+# Created: 2026-10-11 JST
+# Candidate-only research audit. Public runner exclusively. One trigger on this
+# isolated branch; technological pilot PASS gates remaining five sectors.
+# No source CSV/HTML update, no Production P2 v12 computation and no deploy.
+name: P2 summary candidate-only six-sector fail-closed audit
+
+on:
+  push:
+    branches:
+      - audit/p2-summaries-candidate-autopilot-20261011
+    paths:
+      - .github/workflows/p2_summaries_candidate_autopilot_20261011.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-summaries-candidate-once-20261011
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 0e2d5722d6764102adfe6995b793f533b60b1532
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  technology_pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout Public-only workflow and validator
+        uses: actions/checkout@v4
+      - name: Checkout pinned read-only Private core for technology
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0e2d5722d6764102adfe6995b793f533b60b1532
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/technology/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_pairwise_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_triple_candidates.csv
+          persist-credentials: false
+      - name: Enforce approval boundary and immutable Public-only architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::Private core contains workflows'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install same dependencies as immutable renderer
+        run: python -m pip install -r core/requirements.txt
+      - name: Isolate renderer code; syntax check
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/p2_summaries_candidate_pipeline_20261011.py
+          mkdir -p core/build/isolated_summary_renderer
+          cp -a core/scripts core/build/isolated_summary_renderer/scripts
+      - name: Render and numerically audit candidate technology group pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_summaries_candidate_pipeline_20261011.py \
+            --core core \
+            --stage core/build/isolated_summary_renderer \
+            --dataset technology \
+            --expected-core-sha "$CORE_SHA" \
+            --out core/build/candidate_technology
+      - name: Ensure no source or tracked HTML modification
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only non-sensitive technology audit JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-summary-candidate-technology-20261011
+          path: core/build/candidate_technology/summary_candidate_audit.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  other_sectors:
+    needs: technology_pilot
+    if: ${{ needs.technology_pilot.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        sector: [financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout Public-only workflow and validator
+        uses: actions/checkout@v4
+      - name: Checkout pinned read-only Private core for this sector
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0e2d5722d6764102adfe6995b793f533b60b1532
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_pairwise_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_triple_candidates.csv
+          persist-credentials: false
+      - name: Enforce pinned core and Public-only architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::Private core contains workflows'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install immutable-core dependencies
+        run: python -m pip install -r core/requirements.txt
+      - name: Isolate renderer code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/p2_summaries_candidate_pipeline_20261011.py
+          mkdir -p core/build/isolated_summary_renderer
+          cp -a core/scripts core/build/isolated_summary_renderer/scripts
+      - name: Audit candidate-only sector, no HTML copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_summaries_candidate_pipeline_20261011.py \
+            --core core \
+            --stage core/build/isolated_summary_renderer \
+            --dataset "${{ matrix.sector }}" \
+            --expected-core-sha "$CORE_SHA" \
+            --out core/build/candidate_${{ matrix.sector }}
+      - name: Ensure no tracked source modifications
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only non-sensitive audit JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-summary-candidate-${{ matrix.sector }}-20261011
+          path: core/build/candidate_${{ matrix.sector }}/summary_candidate_audit.json
+          if-no-files-found: warn
+          retention-days: 7
