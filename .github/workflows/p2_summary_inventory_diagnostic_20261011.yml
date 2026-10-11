@@ -1,0 +1,84 @@
+# Created: 2026-10-11 JST
+# One-time user-approved read-only diagnosis; excludes HTML rendering or deployment.
+name: P2 summary missing 119 group forensic inventory
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/p2_summary_inventory_diagnostic_20261011.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-summary-inventory-readonly-20261011
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CORE_SHA: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
+    steps:
+      - name: Checkout public auditing code
+        uses: actions/checkout@v4
+      - name: Checkout only immutable Private summary source CSVs (no HTML bodies)
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_pairwise_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/advantage_triple_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/technology/all_single_categories.csv
+            /preview/kabu/analysis/225_group_all_period/technology/all_pairwise_combinations.csv
+            /preview/kabu/analysis/225_group_all_period/technology/tested_triple_combinations.csv
+          persist-credentials: false
+      - name: Enforce public-only immutable architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo "::error::Private repository contains forbidden workflow"
+            exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install only pandas dependency (no data computations)
+        run: python -m pip install 'pandas>=2,<3'
+      - name: Compare saved-candidate/full groups to 712 original summary filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_summary_inventory_diff_20261011.py --core core --dataset technology --out core/build/p2_summaries_inventory_20261011
+      - name: Confirm all original CSVs remained unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Store inventory JSON even if some input contract failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-summaries-technology-input-inventory
+          path: core/build/p2_summaries_inventory_20261011/summary_input_inventory_audit.json
+          if-no-files-found: warn
+          retention-days: 7
