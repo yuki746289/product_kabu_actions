@@ -1,14 +1,11 @@
 # Created: 2026-10-11 JST
 # Approved scope: Technology summary family only (712 pages); legacy-byte pilot.
 # No Production change, source CSV/HTML edits, or deployment.
+# 2026-10-11: pilot failed 280/712 inventory; manual-only, further runs require a new decision.
 name: P2 summary technology legacy byte audit pilot
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/p2_summary_technology_pilot_20261011.yml
 
 permissions:
   contents: read
