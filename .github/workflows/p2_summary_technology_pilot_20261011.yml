@@ -1,0 +1,159 @@
+# Created: 2026-10-11 JST
+# Approved scope: Technology summary family only (712 pages); legacy-byte pilot.
+# No Production change, source CSV/HTML edits, or deployment.
+name: P2 summary technology legacy byte audit pilot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/p2_summary_technology_pilot_20261011.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-summary-technology-pilot-20261011
+  cancel-in-progress: false
+
+jobs:
+  pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CORE_SHA: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
+      LEGACY_RENDER_SHA: 3dfb14cd0f05125c4bfce81d710db0ced073b7c3
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      PYTHONUNBUFFERED: '1'
+      PYTHONPATH: scripts
+    steps:
+      - name: Checkout Public scripts only
+        uses: actions/checkout@v4
+      - name: Checkout immutable private source and 712 legacy summary HTML pages
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: c0c69be8e28ddfa5812c1bbe4ba3d33f432fbf02
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /requirements.txt
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/technology/condition_detail_manifest.csv
+            /preview/kabu/analysis/225_group_all_period/technology/summaries/
+          persist-credentials: false
+      - name: Checkout Oct-03 renderer source modules only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 3dfb14cd0f05125c4bfce81d710db0ced073b7c3
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: legacy
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/p2_monthly_chart.py
+            /scripts/refine_p2_report_information_architecture.py
+            /scripts/postprocess_p2_accuracy_highlight.py
+          persist-credentials: false
+      - name: Check Public-only architecture and immutable code SHAs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test "$(git -C legacy rev-parse HEAD)" = "$LEGACY_RENDER_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install dependencies and run family audit tests
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python ../scripts/verify_p2_summaries_byte_audit_20261011.py --selftest
+      - name: Prepare isolated legacy P2 template stage
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/summary_pilot_legacy_source
+          cp -a scripts build/summary_pilot_legacy_source/
+          for item in \
+            "p2_monthly_chart.py:e304d81b17ba73ce98628f7021b8faf219e3a80b" \
+            "refine_p2_report_information_architecture.py:f0d915dba0fa9ca479651bbe13e5ee583c57b234" \
+            "postprocess_p2_accuracy_highlight.py:77ffb7a0c13e5e754696b23979ce88ba3a330ddb"; do
+            name="${item%%:*}"
+            blob="${item#*:}"
+            test "$(git -C ../legacy hash-object "scripts/$name")" = "$blob"
+            cp "../legacy/scripts/$name" "build/summary_pilot_legacy_source/scripts/$name"
+          done
+          python scripts/migrate_p2_html_templates_20261009.py \
+            --repo-root build/summary_pilot_legacy_source --output-root build/summary_pilot_extract > /dev/null
+          python scripts/prepare_p2_template_stage_20261009.py \
+            --repo-root build/summary_pilot_legacy_source \
+            --extraction build/summary_pilot_extract --destination build/summary_pilot_stage > /dev/null
+      - name: Render only technology summary family into fresh build directory
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python build/summary_pilot_stage/scripts/generate_p2_templated_views.py \
+            --site-root preview/kabu --dataset technology --scope summaries \
+            --output-dir build/summary_pilot_html
+      - name: Verify 712 summary pages against existing HTML SHA-256 and filenames
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ../scripts/verify_p2_summaries_byte_audit_20261011.py \
+            --repo-root . --dataset technology \
+            --output-dir build/summary_pilot_html --audit-dir build/summary_pilot_audit
+      - name: Verify tracked inputs remain unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+          echo "Unmodified Production, saved CSV, old HTML: PASS"
+      - name: Save positive byte audit
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-summary-technology-712-PASS
+          path: |
+            core/build/summary_pilot_audit/summary_audit.json
+            core/build/summary_pilot_audit/pages.json
+            core/build/summary_pilot_html/build_manifest.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Save diagnostic on mismatch or error
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-summary-technology-FAIL-diagnostic
+          path: |
+            core/build/summary_pilot_audit/
+            core/build/summary_pilot_html/build_manifest.json
+          if-no-files-found: warn
+          retention-days: 7
