@@ -1,0 +1,120 @@
+# Created: 2026-10-12 JST
+# Reuse only successful archived HTML from Run 38127100421.
+# Headless file:// browser smoke; no HTML regeneration or deployment.
+name: P2 summary retained artifact browser smoke 20261012
+
+on:
+  push:
+    branches:
+      - audit/p2-summary-browser-smoke-20261012
+    paths:
+      - .github/workflows/p2_summary_browser_smoke_20261012.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-summary-browser-once-20261012
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 0e2d5722d6764102adfe6995b793f533b60b1532
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  browser_smoke:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        sector: [technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout only Public test scripts
+        uses: actions/checkout@v4
+
+      - name: Read-only Private architecture verification
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0e2d5722d6764102adfe6995b793f533b60b1532
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+
+      - name: Validate Public-only Actions, source SHA and workflow-zero gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo "::error::Private Actions workflow found"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+
+      - name: Reuse successful staging archive; do not regenerate data
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-staged-html-${{ matrix.sector }}
+          run-id: 38127100421
+          github-token: ${{ github.token }}
+          path: core/build/original_${{ matrix.sector }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install headless browser once for this bounded sector shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'playwright>=1.54,<2'
+          python -m playwright install --with-deps chromium
+          python -m py_compile scripts/p2_summary_browser_smoke_20261012.py
+
+      - name: Check real DOM table interactions, search, paging and navigation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_summary_browser_smoke_20261012.py \
+            --sector "${{ matrix.sector }}" \
+            --artifact "core/build/original_${{ matrix.sector }}" \
+            --out "core/build/browser_${{ matrix.sector }}"
+
+      - name: Confirm Private commit and unchanged source
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+
+      - name: Preserve sector PASS or FAIL checkpoint only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-browser-smoke-${{ matrix.sector }}-20261012
+          path: core/build/browser_${{ matrix.sector }}/browser_smoke.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  manual_deploy_gate:
+    needs: browser_smoke
+    if: ${{ needs.browser_smoke.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Browser QA passed; production and Apache routing intentionally untouched
+        run: |
+          echo 'PASS: six retained summary archives rendered and interacted in headless browser.'
+          echo 'NOT VERIFIED: Apache HTTP routing and legacy orphan URL status/policy.'
+          echo 'DEPLOYMENT_ALLOWED=false; explicit approval required.'
