@@ -1,5 +1,6 @@
 # Created: 2026-10-12 JST
 # Read-only post-extraction source validation; never calculate P2 features/signals.
+# Updated: 2026-10-12 JST - recover only failed all_225; reuse 8 PASS evidence artifacts.
 name: P2 common real saved nine dataset input adapter phase7
 on:
   push:
@@ -27,48 +28,8 @@ jobs:
       max-parallel: 2
       matrix:
         include:
-          - dataset: technology
-            mode: group
-            saved_path: /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
-            evidence: p2-common-exact-six-group-identities
-            artifact: none
-            run_id: 0
-            artifact_id: 0
-          - dataset: financials
-            mode: group
-            saved_path: /preview/kabu/analysis/225_group_all_period/financials/signal_level_features.csv
-            evidence: p2-common-exact-six-group-identities
-            artifact: none
-            run_id: 0
-            artifact_id: 0
-          - dataset: consumer_goods
-            mode: group
-            saved_path: /preview/kabu/analysis/225_group_all_period/consumer_goods/signal_level_features.csv
-            evidence: p2-common-exact-six-group-identities
-            artifact: none
-            run_id: 0
-            artifact_id: 0
-          - dataset: materials
-            mode: group
-            saved_path: /preview/kabu/analysis/225_group_all_period/materials/signal_level_features.csv
-            evidence: p2-common-exact-six-group-identities
-            artifact: none
-            run_id: 0
-            artifact_id: 0
-          - dataset: capital_goods_others
-            mode: group
-            saved_path: /preview/kabu/analysis/225_group_all_period/capital_goods_others/signal_level_features.csv
-            evidence: p2-common-exact-six-group-identities
-            artifact: none
-            run_id: 0
-            artifact_id: 0
-          - dataset: transportation_utilities
-            mode: group
-            saved_path: /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
-            evidence: p2-common-exact-six-group-identities
-            artifact: none
-            run_id: 0
-            artifact_id: 0
+          # Repair only the previously failed shard; reuse original 8 passing
+          # evidence artifacts from Run 38241051400 instead of rechecking them.
           - dataset: all_225
             mode: artifact
             saved_path: /docs/ACTIONS_MIGRATION.md
@@ -76,20 +37,6 @@ jobs:
             artifact: p2-225-raw-features-20260930
             run_id: 36703088996
             artifact_id: 11093338366
-          - dataset: exclude_transportation_utilities
-            mode: artifact
-            saved_path: /docs/ACTIONS_MIGRATION.md
-            evidence: p2-common-exact-exclude_transportation_utilities-identities
-            artifact: p2-225-exclusion-no-transport-features
-            run_id: 37201518110
-            artifact_id: 11303406552
-          - dataset: exclude_capital_goods_transportation_utilities
-            mode: artifact
-            saved_path: /docs/ACTIONS_MIGRATION.md
-            evidence: p2-common-exact-exclude_capital_goods_transportation_utilities-identities
-            artifact: p2-225-exclusion-no-capital-transport-features
-            run_id: 37201520569
-            artifact_id: 11302906875
     steps:
       - uses: actions/checkout@v4
       - name: Checkout private original data fixed SHA and matching original rule
@@ -175,7 +122,7 @@ jobs:
             python scripts/p2_common_saved_adapter_realdata_20261012.py \
               --mode artifact --dataset "${{ matrix.dataset }}" \
               --data-root core_data --code-root core_code \
-              --phase4-evidence identity/audit.json \
+              --phase4-evidence identity/group.json \
               --artifact-root saved_external --artifact-run-id ${{ matrix.run_id }} \
               --artifact-id ${{ matrix.artifact_id }} \
               --out "$RUNNER_TEMP/input/${{ matrix.dataset }}/status.json"
@@ -214,7 +161,16 @@ jobs:
         run: |
           set -euo pipefail
           test "$RESULT" = success || { echo "::error::Saved adapter preflight failed"; exit 1; }
-      - uses: actions/download-artifact@v4
+      - name: Reuse eight immutable PASS artifacts from previous Run
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 38241051400
+          github-token: ${{ github.token }}
+          pattern: p2-common-verified-postextract-source-*
+          path: input_evidence
+          merge-multiple: false
+      - name: Add only newly validated all_225 input to previous eight
+        uses: actions/download-artifact@v4
         with:
           pattern: p2-common-verified-postextract-source-*
           path: input_evidence
