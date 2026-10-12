@@ -1,0 +1,258 @@
+# Created: 2026-10-12T13:08:00+09:00
+# One-shot remediation: 9 saved PASS reused; 7 fails corrected; 2 cancelled families split into 14 shards.
+name: P2 cross-links v2 canonical URLs and small-shard follow-up
+on:
+  push:
+    branches:
+      - audit/p2-cross-page-links-20261012
+    paths:
+      - .github/workflows/p2_cross_page_links_v2_20261012.yml
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-cross-links-v2-20261012
+  cancel-in-progress: false
+env:
+  CORE_SHA: d3b173fb073a5938631d9bccf57edaf0bb6a8c51
+  PYTHONUNBUFFERED: '1'
+jobs:
+  test_code:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Python syntax and URL-resolution regressions
+        run: |
+          python -m py_compile scripts/p2_cross_page_links_20261012_v2.py
+          python tests/test_p2_cross_page_links_v2_20261012.py
+  crosslinks:
+    needs: test_code
+    name: crosslinks-v2 (${{ matrix.label }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - shard: summaries
+            parts: 1
+            part: 0
+            label: summaries
+            sparse: |
+              /preview/kabu/summaries/**
+          - shard: group_technology
+            parts: 1
+            part: 0
+            label: group_technology
+            sparse: |
+              /preview/kabu/analysis/225_group_all_period/technology/**
+          - shard: group_financials
+            parts: 1
+            part: 0
+            label: group_financials
+            sparse: |
+              /preview/kabu/analysis/225_group_all_period/financials/**
+          - shard: group_consumer_goods
+            parts: 1
+            part: 0
+            label: group_consumer_goods
+            sparse: |
+              /preview/kabu/analysis/225_group_all_period/consumer_goods/**
+          - shard: group_materials
+            parts: 1
+            part: 0
+            label: group_materials
+            sparse: |
+              /preview/kabu/analysis/225_group_all_period/materials/**
+          - shard: group_capital_goods_others
+            parts: 1
+            part: 0
+            label: group_capital_goods_others
+            sparse: |
+              /preview/kabu/analysis/225_group_all_period/capital_goods_others/**
+          - shard: group_transportation_utilities
+            parts: 1
+            part: 0
+            label: group_transportation_utilities
+            sparse: |
+              /preview/kabu/analysis/225_group_all_period/transportation_utilities/**
+          - shard: 225_exclusion_all_period
+            parts: 8
+            part: 0
+            label: 225_exclusion_all_period__00
+            sparse: |
+              /preview/kabu/analysis/225_exclusion_all_period/**
+          - shard: 225_exclusion_all_period
+            parts: 8
+            part: 1
+            label: 225_exclusion_all_period__01
+            sparse: |
+              /preview/kabu/analysis/225_exclusion_all_period/**
+          - shard: 225_exclusion_all_period
+            parts: 8
+            part: 2
+            label: 225_exclusion_all_period__02
+            sparse: |
+              /preview/kabu/analysis/225_exclusion_all_period/**
+          - shard: 225_exclusion_all_period
+            parts: 8
+            part: 3
+            label: 225_exclusion_all_period__03
+            sparse: |
+              /preview/kabu/analysis/225_exclusion_all_period/**
+          - shard: 225_exclusion_all_period
+            parts: 8
+            part: 4
+            label: 225_exclusion_all_period__04
+            sparse: |
+              /preview/kabu/analysis/225_exclusion_all_period/**
+          - shard: 225_exclusion_all_period
+            parts: 8
+            part: 5
+            label: 225_exclusion_all_period__05
+            sparse: |
+              /preview/kabu/analysis/225_exclusion_all_period/**
+          - shard: 225_exclusion_all_period
+            parts: 8
+            part: 6
+            label: 225_exclusion_all_period__06
+            sparse: |
+              /preview/kabu/analysis/225_exclusion_all_period/**
+          - shard: 225_exclusion_all_period
+            parts: 8
+            part: 7
+            label: 225_exclusion_all_period__07
+            sparse: |
+              /preview/kabu/analysis/225_exclusion_all_period/**
+          - shard: 225_indicator_stageb
+            parts: 6
+            part: 0
+            label: 225_indicator_stageb__00
+            sparse: |
+              /preview/kabu/analysis/225_indicator_stageb/**
+          - shard: 225_indicator_stageb
+            parts: 6
+            part: 1
+            label: 225_indicator_stageb__01
+            sparse: |
+              /preview/kabu/analysis/225_indicator_stageb/**
+          - shard: 225_indicator_stageb
+            parts: 6
+            part: 2
+            label: 225_indicator_stageb__02
+            sparse: |
+              /preview/kabu/analysis/225_indicator_stageb/**
+          - shard: 225_indicator_stageb
+            parts: 6
+            part: 3
+            label: 225_indicator_stageb__03
+            sparse: |
+              /preview/kabu/analysis/225_indicator_stageb/**
+          - shard: 225_indicator_stageb
+            parts: 6
+            part: 4
+            label: 225_indicator_stageb__04
+            sparse: |
+              /preview/kabu/analysis/225_indicator_stageb/**
+          - shard: 225_indicator_stageb
+            parts: 6
+            part: 5
+            label: 225_indicator_stageb__05
+            sparse: |
+              /preview/kabu/analysis/225_indicator_stageb/**
+
+    steps:
+      - name: Checkout public audit code
+        uses: actions/checkout@v4
+      - name: Read-only sparse checkout at pinned private SHA
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: d3b173fb073a5938631d9bccf57edaf0bb6a8c51
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            ${{ matrix.sparse }}
+          persist-credentials: false
+      - name: Enforce public Actions architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD -- .github/workflows | grep -E '\.ya?ml$'; then
+            echo '::error::Private workflow present'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse immutable 914 retired URL inventory
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 38127100421
+          github-token: ${{ github.token }}
+          pattern: p2-nextstage-gate-*
+          merge-multiple: false
+          path: manifests
+      - name: Scan only assigned HTML JS sitemap links
+        run: |
+          python scripts/p2_cross_page_links_20261012_v2.py --mode scan \
+            --core core --manifests manifests \
+            --shard "${{ matrix.shard }}" \
+            --partition-count "${{ matrix.parts }}" \
+            --partition-index "${{ matrix.part }}" \
+            --out "audit_out/${{ matrix.label }}"
+      - name: Verify private tracked sources unmodified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Persist checkpoint if success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-crosslink-v2-${{ matrix.label }}-20261012
+          path: audit_out/${{ matrix.label }}/cross_links.json
+          if-no-files-found: warn
+          retention-days: 30
+  final_gate:
+    needs: crosslinks
+    if: ${{ needs.crosslinks.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read previous 18 saved results, reusing nine PASS
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 38198237853
+          github-token: ${{ github.token }}
+          pattern: p2-crosslink-*-20261012
+          merge-multiple: false
+          path: audit_results/old
+      - name: Load 21 new small-shard audits
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-crosslink-v2-*-20261012
+          merge-multiple: false
+          path: audit_results/new
+      - name: Require exactly 9 old PASS and 21 new PASS
+        run: |
+          python scripts/p2_cross_page_links_20261012_v2.py --mode final \
+            --folder audit_results --out final_result
+      - name: Persist final audit result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-crosslink-v2-final-gate-20261012
+          path: final_result/final_cross_link_gate.json
+          if-no-files-found: warn
+          retention-days: 30
