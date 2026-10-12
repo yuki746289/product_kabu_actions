@@ -1,0 +1,125 @@
+# Created: 2026-10-12 JST
+# One-shot UI release-gate audit, on PUBLIC Actions only; no deployment.
+# Source core and saved ZIPs are pinned. This workflow never invokes generators.
+name: P2 all-sector HTML UI release gate 20261012
+
+on:
+  push:
+    branches:
+      - audit/p2-ui-regression-release-gate-20261012
+    paths:
+      - .github/workflows/p2_ui_regression_release_gate_20261012.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-ui-regression-release-gate-20261012
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 1fa172fdeac45980f3ed10716e61adc764cebb90
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  ui_regression:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        sector: [technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Public runner tests only
+        uses: actions/checkout@v4
+      - name: Pin Private release view read-only and fetch representative template files
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 1fa172fdeac45980f3ed10716e61adc764cebb90
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/analysis/high_entry_accuracy.html
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/analysis/or_combinations.html
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/conditions/charts/p-0060dbcc46a8011f.html
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/conditions/s-0c5d25b829768750.html
+          persist-credentials: false
+
+      - name: Verify mandatory Actions architecture gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          echo "PRIVATE_CORE_SHA=$CORE_SHA"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::Private workflows not permitted'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+
+      - name: Download existing successful sector ZIP (no generation)
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-staged-html-${{ matrix.sector }}
+          run-id: 38127100421
+          github-token: ${{ github.token }}
+          path: core/build/original_${{ matrix.sector }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright Chromium and check Python syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'playwright>=1.54,<2'
+          python -m playwright install --with-deps chromium
+          python -m py_compile scripts/p2_ui_regression_release_gate_20261012.py
+
+      - name: Browser QA per sector with independent JSON checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_ui_regression_release_gate_20261012.py \
+            --core core --sector "${{ matrix.sector }}" \
+            --staging "core/build/original_${{ matrix.sector }}" \
+            --out "core/build/ui_release_gate_${{ matrix.sector }}"
+
+      - name: Confirm Private source remained unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+
+      - name: Preserve per-sector QA and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-ui-release-gate-${{ matrix.sector }}-20261012
+          path: core/build/ui_release_gate_${{ matrix.sector }}/
+          if-no-files-found: warn
+          retention-days: 30
+
+  gate_no_deploy:
+    needs: ui_regression
+    if: ${{ needs.ui_regression.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: UI regression passed; deployment still manual
+        run: |
+          echo 'PASS: six-sector browser interaction regression and responsive viewports.'
+          echo 'Previously successful numerical and static QA artifacts reused; not rerun.'
+          echo 'NO_DEPLOYMENT=true'
+          echo 'Additional rollback/complete release audit and local Windows gate remain.'
