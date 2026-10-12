@@ -57,10 +57,16 @@ class Totals:
 
 
 def finite(value: str | None) -> float | None:
+    """Normalize saved CSV boolean outcome flags before numeric reduction."""
     if value is None:
         return None
+    token = value.strip()
+    if token.lower() == "true":
+        return 1.0
+    if token.lower() == "false":
+        return 0.0
     try:
-        result = float(value.strip())
+        result = float(token)
     except (ValueError, AttributeError):
         return None
     return result if math.isfinite(result) else None
@@ -240,6 +246,19 @@ def selftest() -> None:
         {("causal_regime", "RANGE"): row}))
     assert not same_numeric(50, "")
     assert same_numeric(None, "NaN")
+    assert finite("True") == 1.0 and finite("False") == 0.0
+    assert finite(" true ") == 1.0 and finite("FALSE") == 0.0
+    assert finite("1") == 1.0 and finite("0") == 0.0
+    assert finite("") is None and finite("NaN") is None
+    checker = Totals()
+    for text in ("True", "False"):
+        checker.add({
+            **{f"moved_predicted_{h}d": text for h in HORIZONS},
+            **{f"directional_return_{h}d_pct": "2.5" for h in HORIZONS},
+        })
+    for h in HORIZONS:
+        assert checker.metric(h, "win") == 50.0
+        assert checker.metric(h, "return") == 2.5
     print("PASS: independent direct numerical reducer synthetic guard")
 
 
