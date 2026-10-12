@@ -88,13 +88,13 @@ def new_manifest(core: Path, source_sha: str) -> dict:
         if not path.is_file():
             raise FileNotFoundError("Reference CSV not checked out: " + str(path))
         columns = read_header(path)
+        signed_source_info(core, "technology", name)  # requires tracked immutable blob
         records[name] = {
-            "columns": list(columns),
             "column_count": len(columns),
             "header_sha256": hashlib.sha256(
                 json.dumps(columns, ensure_ascii=False, separators=(",", ":")).encode()
             ).hexdigest(),
-            **signed_source_info(core, "technology", name),
+            "tracked_blob": True,
         }
     return {
         "schema": 1, "status": "PASS_REFERENCE_SCHEMA_ONLY",
@@ -155,7 +155,10 @@ def inspect_dataset(core: Path, dataset: str, source_sha: str, contract: dict) -
     for name in sorted(expected_local):
         file = folder / name
         columns = read_header(file)
-        if list(columns) != contract["files"][name]["columns"]:
+        fingerprint = hashlib.sha256(
+            json.dumps(columns, ensure_ascii=False, separators=(",", ":")).encode()
+        ).hexdigest()
+        if fingerprint != contract["files"][name]["header_sha256"]:
             raise RuntimeError(f"Column order/name mismatch: {dataset}/{name}")
         object_hashes[name] = signed_source_info(core, dataset, name)
         matched.append(name)
@@ -176,7 +179,9 @@ def inspect_dataset(core: Path, dataset: str, source_sha: str, contract: dict) -
         "files_expected_local": len(expected_local),
         "ordered_headers_equal": len(matched),
         "all_saved_csv_column_headers_match": len(matched) == len(expected_local),
-        "saved_file_git_objects": object_hashes,
+        "saved_file_git_tree_fingerprint": hashlib.sha256(
+            json.dumps(object_hashes, sort_keys=True).encode()
+        ).hexdigest(),
         "semantic_status_rows": rows, "semantic_status_tickers": tickers,
         "validated_saved_signal_population": population,
         "source_signals_not_published": is_exclusion,
@@ -230,7 +235,7 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({key: value for key, value in result.items()
-                      if key not in ("files", "saved_file_git_objects")}, ensure_ascii=False))
+                      if key not in ("files",)}, ensure_ascii=False))
     return 0
 
 
