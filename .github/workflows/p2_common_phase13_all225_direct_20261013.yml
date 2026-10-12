@@ -1,0 +1,149 @@
+# Created: 2026-10-13 JST
+# Phase13 single unverified dataset, original source and semantic-base artifact only.
+name: P2 common Phase13 all225 direct saved numeric parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase13_all225_direct_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase13-all225-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate all225 source+reference invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase13_all225_direct_saved_20261013.py \
+            scripts/p2_common_phase9_direct_metric_parity_20261013.py \
+            scripts/p2_common_phase11_other_sector_direct_metrics_20261013.py
+          python scripts/p2_common_phase13_all225_direct_saved_20261013.py --selftest
+  direct_saved:
+    needs: synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned minimal Private canonical rule only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Enforce public execution and immutable Private core SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions is forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse originally certified all225 features from 20260930
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: original_features
+      - name: Reuse originally successful semantic base from 20260930
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-semantic-base
+          run-id: 36711913770
+          github-token: ${{ github.token }}
+          path: saved_semantic_base
+      - name: Reuse prior independent source SHA and identity evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: prior_source_proof
+      - name: Independently compare 84 direct categories with saved old analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f prior_source_proof/group.json
+          python scripts/p2_common_phase13_all225_direct_saved_20261013.py \
+            --source-root original_features \
+            --semantic-root saved_semantic_base \
+            --source-evidence prior_source_proof/group.json \
+            --out "$RUNNER_TEMP/p2_phase13/all225_direct.json"
+          echo "All225 original feature and semantic-base artifacts reused with no recalculation." >> "$GITHUB_STEP_SUMMARY"
+      - name: Confirm pinned Private source unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload SHA/count-only QA metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase13-all225-direct-numeric
+          path: ${{ runner.temp }}/p2_phase13/all225_direct.json
+          retention-days: 14
+          if-no-files-found: warn
+  final_gate:
+    needs: [synthetic, direct_saved]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report PASS only if both stages succeeded
+        shell: bash
+        env:
+          SELFTEST: ${{ needs.synthetic.result }}
+          NUMERIC: ${{ needs.direct_saved.result }}
+        run: |
+          set -euo pipefail
+          echo "Original all225 / semantic-base artifacts reused: synthetic=$SELFTEST, direct=$NUMERIC" >> "$GITHUB_STEP_SUMMARY"
+          echo "Full semantic/OR and HTML QA, Nikkei source recovery remain unverified." >> "$GITHUB_STEP_SUMMARY"
+          test "$SELFTEST" = success && test "$NUMERIC" = success
+      - name: Read only new numerical audit JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase13-all225-direct-numeric
+          path: evidence
+      - name: Independently certify all225 84 categories and no recompute
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=Path("evidence/all225_direct.json")
+          a=json.loads(f.read_text(encoding="utf-8"))
+          assert a["dataset"]=="all_225"
+          assert a["status"]=="PASS_PHASE13_ALL225_DIRECT_NUMERIC_PARITY_ONLY"
+          assert a["source_rows"]==181318 and a["source_tickers"]==225
+          assert a["categories_checked"]==84 and a["numeric_metrics_checked"]==1176
+          assert a["numeric_mismatches"]==0
+          assert a["existing_semantic_or_recomputed"] is False
+          assert a["historical_artifacts_regenerated"] is False
+          assert a["release_ready"] is False
+          print("PASS_PHASE13_ALL225_DIRECT_NUMERIC_PARITY_ONLY")
+          PY
+          echo "PASS_PHASE13_ALL225_84_CATEGORY_1176_NUMERIC_FIELDS; release_ready=false" >> "$GITHUB_STEP_SUMMARY"
