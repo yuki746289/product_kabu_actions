@@ -1,0 +1,150 @@
+# Created: 2026-10-12T19:19:00+09:00
+# No analysis recalculation: existing 29 saved CSVs pass through shared assembler.
+name: P2 common saved six-sector 29 CSV staging byte roundtrip phase5
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_saved_csv_roundtrip_20261012.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-saved-csv-roundtrip-20261012
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+jobs:
+  saved_roundtrip:
+    name: Saved 29 CSV roundtrip - ${{ matrix.dataset }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        dataset: [technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse checkout read-only private existing CSVs and new assembler
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/p2_html_core/
+            /scripts/assemble_p2_common_dataset_csv.py
+            /scripts/qa_p2_common_saved_csv.py
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/*.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/semantic_status.json
+          persist-credentials: false
+      - name: Assert fixed SHA, zero private workflows and Public-only architecture
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/38239501315" --jq '.conclusion')" = success
+      - name: Download successful independent group identity evidence only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: verified_identity
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install import dependency for existing private adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pandas>=2.2,<3.0'
+      - name: Stage saved CSVs through common assembler and compare all source bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_saved_csv_roundtrip_20261012.py \
+            --core core --dataset "${{ matrix.dataset }}" \
+            --identity-evidence verified_identity/group.json \
+            --stage-root "core/build/p2_common_roundtrip_${{ github.run_id }}/${{ matrix.dataset }}" \
+            --status-out "$RUNNER_TEMP/common_roundtrip/${{ matrix.dataset }}/status.json"
+          echo "Source SHA pinned to successful phase4 ID audit. 29 files staged; no semantic re-run." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify tracked private core files unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Publish small result JSON only, never raw saved CSV
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-csv-roundtrip-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/common_roundtrip/${{ matrix.dataset }}/status.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Verify all six saved CSV roundtrips, no semantic certification
+    needs: [saved_roundtrip]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all group workers PASS
+        shell: bash
+        env:
+          RESULT: ${{ needs.saved_roundtrip.result }}
+        run: |
+          set -euo pipefail
+          test "$RESULT" = success || { echo "::error::Group staging failed"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-csv-roundtrip-*
+          path: evidence
+          merge-multiple: false
+      - name: Independently verify six reports, each 29 exact saved CSVs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          docs = sorted(Path("evidence").glob("p2-common-csv-roundtrip-*/status.json"))
+          groups = {"technology", "financials", "consumer_goods", "materials",
+                    "capital_goods_others", "transportation_utilities"}
+          assert len(docs) == 6, "Six independent reports required"
+          found = set()
+          for f in docs:
+              d=json.loads(f.read_text(encoding="utf-8"))
+              assert d["status"] == "PASS_SAVED_29_CSV_ROUNDTRIP_ONLY", f
+              assert d["dataset"] in groups and d["dataset"] not in found, f
+              found.add(d["dataset"])
+              assert (d["source_files"],d["staged_files"],d["identical_csv_files"]) == (29,29,29)
+              assert d["private_core_sha"] == "52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert d["semantic_numeric_equivalence_verified"] is False
+              assert d["original_stage_producer_certificate_verified"] is False
+              assert d["release_ready"] is False and d["production_changed"] is False
+          assert found == groups
+          print("PASS_SAVED_174_CSV_BYTE_ROUNDTRIPS_ONLY")
+          PY
+          echo "174/174 saved CSVs passed staged byte parity on six datasets." >> "$GITHUB_STEP_SUMMARY"
+          echo "This does not prove new calculation results nor OR semantics; no deployment." >> "$GITHUB_STEP_SUMMARY"
