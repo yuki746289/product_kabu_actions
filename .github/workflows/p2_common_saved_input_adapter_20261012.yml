@@ -1,0 +1,72 @@
+# Created: 2026-10-12 JST
+# Public-only synthetic check of new explicit SHA-pinned dataset source registry.
+name: P2 common saved dataset adapter synthetic regression phase6
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_saved_input_adapter_20261012.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-source-adapter-20261012
+  cancel-in-progress: false
+jobs:
+  adapter_smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CORE_SHA: dbd18e8e6730c8b898057adfd89ec6735fb7b3d4
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin private research source without any data checkout
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: dbd18e8e6730c8b898057adfd89ec6735fb7b3d4
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/p2_html_core/
+            /tests/test_p2_postextract_saved_input_adapter_20261012.py
+          persist-credentials: false
+      - name: Required Public architecture and exact core SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install import-only dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pandas>=2.2,<3.0'
+      - name: Check saved input adapters reject mismatched SHA and artifact IDs
+        shell: bash
+        working-directory: core
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_p2_postextract_saved_input_adapter_20261012.py' -v
+          echo "PASS: 7 synthetic saved source adapter tests. Real dataset interface integration unverified." >> "$GITHUB_STEP_SUMMARY"
+      - name: Confirm private core unmodified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
