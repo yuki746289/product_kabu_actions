@@ -1,0 +1,110 @@
+# Created: 2026-10-12 JST
+# One-shot staging to a NEW Private release branch; never deploys localhost.
+name: P2 six-sector summary release branch staging
+on:
+  push:
+    branches: [release/p2-summary-candidate-publish-20261012]
+    paths: [.github/workflows/p2_summary_release_prepare_20261012.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-summary-release-stage-20261012
+  cancel-in-progress: false
+env:
+  CORE_SHA: 0e2d5722d6764102adfe6995b793f533b60b1532
+  RELEASE_BRANCH: release/p2-summaries-20261012
+jobs:
+  stage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned Private summaries only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0e2d5722d6764102adfe6995b793f533b60b1532
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/summaries/
+            /preview/kabu/analysis/225_group_all_period/financials/summaries/
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/summaries/
+            /preview/kabu/analysis/225_group_all_period/materials/summaries/
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/summaries/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/summaries/
+      - name: Public-only immutable input gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then exit 1; fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse prior PASS staged HTML archives (Run 38127100421)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-staged-html-*
+          run-id: 38127100421
+          github-token: ${{ github.token }}
+          path: artifact_inputs
+          merge-multiple: false
+      - name: Reuse prior PASS old/new URL gates (Run 38127100421)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-nextstage-gate-*
+          run-id: 38127100421
+          github-token: ${{ github.token }}
+          path: artifact_inputs
+          merge-multiple: false
+      - name: Fail closed if release branch exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git -C core ls-remote --heads origin "refs/heads/$RELEASE_BRANCH" | grep -q .; then
+            echo 'Release branch already exists - no overwrite'
+            exit 1
+          fi
+      - name: Recreate only the validated candidate summary files from immutable archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/p2_summary_release_prepare_20261012.py
+          python scripts/p2_summary_release_prepare_20261012.py \
+            --repo core --artifacts artifact_inputs --checkpoint p2_release_checkpoint.json
+      - name: Push exactly one staging commit to the new Private release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C core switch -c "$RELEASE_BRANCH"
+          git -C core config user.name 'github-actions[bot]'
+          git -C core config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C core add -A -- \
+            preview/kabu/analysis/225_group_all_period/technology/summaries \
+            preview/kabu/analysis/225_group_all_period/financials/summaries \
+            preview/kabu/analysis/225_group_all_period/consumer_goods/summaries \
+            preview/kabu/analysis/225_group_all_period/materials/summaries \
+            preview/kabu/analysis/225_group_all_period/capital_goods_others/summaries \
+            preview/kabu/analysis/225_group_all_period/transportation_utilities/summaries
+          test -n "$(git -C core diff --cached --name-only)"
+          if git -C core diff --cached --name-only | grep -Ev '^preview/kabu/analysis/225_group_all_period/(technology|financials|consumer_goods|materials|capital_goods_others|transportation_utilities)/summaries/[^/]+\.html$'; then
+            echo 'Forbidden non-summary change'; exit 1
+          fi
+          git -C core commit -m 'release(p2): stage verified six-sector candidate-only summary HTML'
+          echo "Fixed input: $CORE_SHA"
+          echo "Private release SHA: $(git -C core rev-parse HEAD)"
+          git -C core push origin "HEAD:refs/heads/$RELEASE_BRANCH"
+      - name: Preserve one small release checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-summary-release-checkpoint-20261012
+          path: p2_release_checkpoint.json
+          if-no-files-found: warn
+          retention-days: 30
