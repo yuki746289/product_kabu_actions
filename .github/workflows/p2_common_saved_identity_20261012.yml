@@ -1,0 +1,194 @@
+# Created: 2026-10-12T19:19:00+09:00
+# User-authorized Public Actions-only comparison of existing saved ticker/as_of keys.
+# Existing artifact and Git blobs are read-only; no semantic or HTML recompute.
+name: P2 common exact saved signal identity partition audit phase4
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_saved_identity_20261012.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-saved-identities-phase4-20261012
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  SOURCE_RUN: '36703088996'
+  SOURCE_ARTIFACT: p2-225-raw-features-20260930
+  PYTHONUNBUFFERED: '1'
+jobs:
+  group_identity:
+    name: Exact canonical 225 vs six saved sector IDs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only private core with six saved source identity CSVs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/*/signal_level_features.csv
+          persist-credentials: false
+      - name: Validate Public-only architecture and pinned source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden private workflows"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/38238875077" --jq '.conclusion')" = "success"
+          python scripts/p2_common_saved_identity_20261012.py --mode selftest
+      - name: Reuse approved 225 source artifact without re-extracting data
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: saved_source
+      - name: Compare exact ticker/as_of keys and six-way non-overlap
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_saved_identity_20261012.py \
+            --mode groups --core core --source-root saved_source \
+            --out "$RUNNER_TEMP/identity/group.json"
+          echo "Exact six-group saved ticker/as_of partition checked; no feature recomputation" >> "$GITHUB_STEP_SUMMARY"
+      - name: Ensure original private core unmodified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save only summarized SHA/count/boolean evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          path: ${{ runner.temp }}/identity/group.json
+          retention-days: 14
+          if-no-files-found: error
+
+  exclusion_identity:
+    name: Compare saved exclusion ID difference - ${{ matrix.dataset }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - dataset: exclude_transportation_utilities
+            artifact: p2-225-exclusion-no-transport-features
+            run_id: 37201518110
+          - dataset: exclude_capital_goods_transportation_utilities
+            artifact: p2-225-exclusion-no-capital-transport-features
+            run_id: 37201520569
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse private core with only exclusion component signals
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
+          persist-credentials: false
+      - name: Fail closed on incorrect runtime or private source SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden private workflows"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/38238875077" --jq '.conclusion')" = "success"
+      - name: Download same already successful 225 source artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: saved_source
+      - name: Download only this variant's successful original filtered features artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          run-id: ${{ matrix.run_id }}
+          github-token: ${{ github.token }}
+          path: saved_exclusion
+      - name: Compare saved variant to exact canonical ID-set subtraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_saved_identity_20261012.py \
+            --mode exclusion --core core --source-root saved_source \
+            --saved-exclusion-root saved_exclusion --variant "${{ matrix.dataset }}" \
+            --out "$RUNNER_TEMP/identity/${{ matrix.dataset }}/audit.json"
+          echo "Saved exclusion ${{ matrix.dataset }} matched exact source difference." >> "$GITHUB_STEP_SUMMARY"
+      - name: Ensure pinned private core unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save only SHA/count/boolean audit evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-exact-${{ matrix.dataset }}-identities
+          path: ${{ runner.temp }}/identity/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Report exact saved signal identity QA without semantic parity claims
+    needs: [group_identity, exclusion_identity]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require each independently audited saved cohort to PASS
+        shell: bash
+        env:
+          GROUP: ${{ needs.group_identity.result }}
+          EXCLUSIONS: ${{ needs.exclusion_identity.result }}
+        run: |
+          set -euo pipefail
+          echo "Saved source Run 36703088996 reused without calculation." >> "$GITHUB_STEP_SUMMARY"
+          echo "Six-group identity audit: $GROUP" >> "$GITHUB_STEP_SUMMARY"
+          echo "Two exclusion identity audits: $EXCLUSIONS" >> "$GITHUB_STEP_SUMMARY"
+          echo "Numeric semantic/OR parity, 29 CSV exact bytes, HTML and UI QA still unverified." >> "$GITHUB_STEP_SUMMARY"
+          if test "$GROUP" != success || test "$EXCLUSIONS" != success; then
+            echo "::error::Identity verification failed; stop and inspect before further work"; exit 1
+          fi
+          echo "PASS_SAVED_SIGNAL_IDS_ONLY; release_ready=false" >> "$GITHUB_STEP_SUMMARY"
