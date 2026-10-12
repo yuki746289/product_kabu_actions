@@ -1,0 +1,206 @@
+# Created: 2026-10-12T19:19:00+09:00
+# Public-only post-extraction phase 2; no saved analysis or HTML is regenerated.
+name: P2 common post-extraction saved CSV schema audit phase2
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_postextract_schema_20261012.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase2-schema-20261012
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  baseline:
+    name: Capture 29 canonical CSV column fingerprints
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only sparse private core at fixed SHA
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/p2_html_core/p02_semantic_io_contract.py
+            /preview/kabu/analysis/225_group_all_period/technology/*.csv
+          persist-credentials: false
+      - name: Enforce private checkout and public architecture rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden private workflow"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python scripts/p2_common_postextract_schema_20261012.py --mode selftest
+      - name: Read 29 CSV headers only and save reference digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_postextract_schema_20261012.py --mode reference \
+            --core core --expected-core-sha "$CORE_SHA" \
+            --output "$RUNNER_TEMP/p2_phase2_reference/reference.json"
+          echo "Immutable reference source: technology / 29 headers, no raw rows published" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate checkout unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Share SHA-only header contract as intermediate stage
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-schema-reference
+          path: ${{ runner.temp }}/p2_phase2_reference/reference.json
+          retention-days: 14
+          if-no-files-found: error
+
+  saved_dataset:
+    name: Verify saved CSV schema - ${{ matrix.dataset }}
+    needs: baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        include:
+          - dataset: technology
+            relative_dir: 225_group_all_period/technology
+          - dataset: financials
+            relative_dir: 225_group_all_period/financials
+          - dataset: consumer_goods
+            relative_dir: 225_group_all_period/consumer_goods
+          - dataset: materials
+            relative_dir: 225_group_all_period/materials
+          - dataset: capital_goods_others
+            relative_dir: 225_group_all_period/capital_goods_others
+          - dataset: transportation_utilities
+            relative_dir: 225_group_all_period/transportation_utilities
+          - dataset: exclude_transportation_utilities
+            relative_dir: 225_exclusion_all_period/exclude_transportation_utilities
+          - dataset: exclude_capital_goods_transportation_utilities
+            relative_dir: 225_exclusion_all_period/exclude_capital_goods_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only sparse saved CSV and evidence checkout
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/p2_html_core/p02_semantic_io_contract.py
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/*.csv
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory public architecture and core-SHA preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Consume independently pinned technology schema baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-schema-reference
+          path: reference
+      - name: Compare exact column names/orders and signal population if present
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_postextract_schema_20261012.py --mode dataset \
+            --core core --dataset "${{ matrix.dataset }}" \
+            --expected-core-sha "$CORE_SHA" --reference reference/reference.json \
+            --output "$RUNNER_TEMP/p2_phase2/${{ matrix.dataset }}/audit.json"
+          echo "Dataset: ${{ matrix.dataset }}; phase2 contract and stored source population checked" >> "$GITHUB_STEP_SUMMARY"
+      - name: Prove no source or deployed HTML were modified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload metadata only (never raw private CSVs)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-schema-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/p2_phase2/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Verify eight independent saved schema audits
+    needs: [baseline, saved_dataset]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect completed individual results
+        if: ${{ needs.baseline.result == 'success' && needs.saved_dataset.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-schema-*
+          path: evidence
+          merge-multiple: false
+      - name: Verify explicit phase-2 scope, no release certification
+        shell: bash
+        env:
+          BASELINE: ${{ needs.baseline.result }}
+          SCHEMA: ${{ needs.saved_dataset.result }}
+        run: |
+          set -euo pipefail
+          echo "Reference: $BASELINE, saved datasets: $SCHEMA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Private core SHA: $CORE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Phase2 is non-release. Exclusion saved signal sources and ^N225/225 adapters unresolved." >> "$GITHUB_STEP_SUMMARY"
+          echo "Independent numeric equivalence, full HTML and final QA remain unverified." >> "$GITHUB_STEP_SUMMARY"
+          if test "$BASELINE" != success || test "$SCHEMA" != success; then
+            echo "::error::Phase2 failed. Stop; no unverified continuation."; exit 1
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          items = list(Path("evidence").glob("p2-common-schema-*/audit.json"))
+          assert len(items) == 8, f"Expected 8 distinct saved data audits, got {len(items)}"
+          seen = set()
+          for f in items:
+              j = json.loads(f.read_text(encoding="utf-8"))
+              assert j["dataset"] not in seen
+              seen.add(j["dataset"])
+              assert j["source_core_sha"] == "52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert j["status"].startswith("PASS_SAVED_SCHEMA_")
+              assert not j["numeric_equivalence_verified"]
+              assert not j["production_changed"]
+              assert not j["release_ready"]
+          print("PASS_PHASE2_SAVED_SCHEMA_ONLY; 8 dataset contracts verified")
+          PY
