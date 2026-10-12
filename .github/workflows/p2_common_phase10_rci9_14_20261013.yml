@@ -1,0 +1,115 @@
+# Created: 2026-10-13 JST
+# User-approved incremental Phase10 pilot. Previous PASS 32 categories excluded.
+name: P2 common Phase10 RCI9 RCI14 incremental numeric QA
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase10_rci9_14_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase10-incremental-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and check only added daily-RCI category auditor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase9_direct_metric_parity_20261013.py \
+            scripts/p2_common_phase10_unverified_daily_rci_single_20261013.py
+          python scripts/p2_common_phase10_unverified_daily_rci_single_20261013.py --selftest
+  increment:
+    needs: synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout three pinned Private files, read-only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/technology/all_single_categories.csv
+            /preview/kabu/analysis/225_group_all_period/technology/semantic_status.json
+          persist-credentials: false
+      - name: Enforce Architecture public-only and pinned SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions is prohibited"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse Phase4 independently certified SHA evidence only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_pin
+      - name: Independently evaluate new daily RCI9 and RCI14 categories
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f source_pin/group.json
+          python scripts/p2_common_phase10_unverified_daily_rci_single_20261013.py \
+            --core core --phase4 source_pin/group.json \
+            --out "$RUNNER_TEMP/p2_phase10/technology_new_only.json"
+          echo "New daily RCI9 and RCI14 52 rows compared to saved results." >> "$GITHUB_STEP_SUMMARY"
+          echo "No old Phase9 32-category audit or other successful artifact rerun." >> "$GITHUB_STEP_SUMMARY"
+      - name: Confirm saved Private core is unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save metadata and SHA only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase10-technology-new-rci9-14-52-categories
+          path: ${{ runner.temp }}/p2_phase10/technology_new_only.json
+          retention-days: 14
+          if-no-files-found: warn
+  final_gate:
+    needs: [synthetic, increment]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail closed until both verified steps succeed
+        shell: bash
+        env:
+          SYNTHETIC: ${{ needs.synthetic.result }}
+          INCREMENT: ${{ needs.increment.result }}
+        run: |
+          set -euo pipefail
+          echo "Source SHA $CORE_SHA; Phase10 synthetic: $SYNTHETIC; increment: $INCREMENT" >> "$GITHUB_STEP_SUMMARY"
+          echo "No full semantic/OR numerical certification, HTML QA or deployment" >> "$GITHUB_STEP_SUMMARY"
+          if test "$SYNTHETIC" != success || test "$INCREMENT" != success; then
+            echo "::error::Phase10 unsafe to expand: failure in incremental QA"
+            exit 1
+          fi
+          echo "PASS_PHASE10_INCREMENTAL_DAILY_RCI9_RCI14_NUMERIC_ONLY" >> "$GITHUB_STEP_SUMMARY"
