@@ -1,0 +1,151 @@
+# Created: 2026-10-13 JST
+# Phase11: unverified five sectors only, no historic analysis/artifact recompute.
+name: P2 common Phase11 five-sector direct numeric parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase11_five_sectors_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase11-new-sectors-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate auditor and regression guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase9_direct_metric_parity_20261013.py \
+            scripts/p2_common_phase11_other_sector_direct_metrics_20261013.py
+          python scripts/p2_common_phase11_other_sector_direct_metrics_20261013.py --selftest
+  saved_numeric:
+    needs: synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        include:
+          - dataset: financials
+          - dataset: consumer_goods
+          - dataset: materials
+          - dataset: capital_goods_others
+          - dataset: transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only three saved Private files for this new sector
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/all_single_categories.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/semantic_status.json
+          persist-credentials: false
+      - name: Public-only architecture and pinned Private source gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Download immutable Phase4 source-digest proof only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_pin
+      - name: Independently compare 84 saved direct-category records
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f source_pin/group.json
+          python scripts/p2_common_phase11_other_sector_direct_metrics_20261013.py \
+            --dataset "${{ matrix.dataset }}" --core core --phase4 source_pin/group.json \
+            --out "$RUNNER_TEMP/p2_phase11/${{ matrix.dataset }}/audit.json"
+          echo "Dataset ${{ matrix.dataset }}: 84 direct categories audited, no semantic regeneration" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate original Private saved source unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload audit-only metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase11-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/p2_phase11/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: warn
+  final_gate:
+    needs: [synthetic, saved_numeric]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all five new sectors success
+        shell: bash
+        env:
+          TEST: ${{ needs.synthetic.result }}
+          MATRIX: ${{ needs.saved_numeric.result }}
+        run: |
+          set -euo pipefail
+          echo "Five-sector direct-category pilot: synthetic=$TEST, datasets=$MATRIX" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source $CORE_SHA; no Production, semantic, OR, original artifact or HTML regenerated" >> "$GITHUB_STEP_SUMMARY"
+          test "$TEST" = success && test "$MATRIX" = success
+      - name: Download only this Run's five new audit JSONs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase11-*
+          path: evidence
+          merge-multiple: false
+      - name: Validate exact dataset scope and aggregate numerical checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          reports = sorted(Path("evidence").glob("p2-common-phase11-*/audit.json"))
+          assert len(reports) == 5, f"Expected five new sector reports, got {len(reports)}"
+          expected = {"financials", "consumer_goods", "materials", "capital_goods_others", "transportation_utilities"}
+          seen = set()
+          for p in reports:
+              x = json.loads(p.read_text(encoding="utf-8"))
+              seen.add(x["dataset"])
+              assert x["status"] == "PASS_PHASE11_DIRECT_CATEGORY_NUMERIC_PARITY_ONLY"
+              assert x["independently_checked_categories"] == 84
+              assert x["independently_checked_numeric_fields"] == 1176
+              assert x["mismatches"] == 0
+              assert x["technology_previous_success_reexecuted"] is False
+              assert x["original_saved_artifacts_recomputed"] is False
+              assert x["release_ready"] is False
+          assert seen == expected
+          print("PASS_PHASE11_420_NEW_CATEGORY_ROWS_5880_NUMERIC_FIELDS")
+          PY
+          echo "Phase11: 420 new categories, 5880 directly audited numeric fields. Full semantic/OR and HTML QA remain." >> "$GITHUB_STEP_SUMMARY"
