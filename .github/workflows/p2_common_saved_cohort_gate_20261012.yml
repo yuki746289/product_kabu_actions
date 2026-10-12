@@ -1,0 +1,93 @@
+# Created: 2026-10-12T19:19:00+09:00
+# Evidence-only consistency check; uses already successful phase2 audit JSON.
+name: P2 common saved cohort counts and source artifact lineage gate
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_saved_cohort_gate_20261012.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-saved-cohort-20261012
+  cancel-in-progress: false
+jobs:
+  verify_saved_cohorts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+      PHASE2_RUN: '38238371163'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned minimal private core read-only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Public-only architecture, source SHA and previous phase gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PHASE2_RUN" --jq '.conclusion')" = "success"
+          python scripts/p2_common_saved_cohort_gate_20261012.py --selftest
+      - name: Reuse eight existing phase2 audit JSONs, no analysis rerun
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 38238371163
+          github-token: ${{ github.token }}
+          pattern: p2-common-schema-*
+          path: evidence
+          merge-multiple: false
+      - name: Verify retained saved 225 input artifact references
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/saved_run_metadata"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/36703088996/artifacts?per_page=100" \
+            > "$RUNNER_TEMP/saved_run_metadata/36703088996.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/36979444713/artifacts?per_page=100" \
+            > "$RUNNER_TEMP/saved_run_metadata/36979444713.json"
+      - name: Independently check six-sector totals and exclusion complements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_saved_cohort_gate_20261012.py \
+            --phase2-evidence evidence \
+            --saved-run-metadata "$RUNNER_TEMP/saved_run_metadata" \
+            --out "$RUNNER_TEMP/cohort_counts/audit.json"
+          echo "Source artifact lookup and saved aggregate checks complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "Not certified: raw CSV SHA, per-signal membership, numerical parity, full HTML QA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify original private repo unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save aggregate-only evidence, no private rows
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-cohort-aggregate-gate-20261012
+          retention-days: 14
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/cohort_counts/audit.json
