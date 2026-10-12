@@ -1,0 +1,175 @@
+# Created: 2026-10-12T18:12:00+09:00
+# User approved Public Actions-only autonomous QA; never regenerate historic outputs.
+name: P2 common post-extraction continuous verification phase1
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_postextract_autorun_20261012.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-postextract-audit-phase1-20261012
+  cancel-in-progress: false
+jobs:
+  test_common_code:
+    name: Synthetic code and provenance tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+      PYTHONUNBUFFERED: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned private source, read-only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/
+            /tests/
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+          persist-credentials: false
+      - name: Enforce public only architecture and core SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python scripts/p2_common_postextract_inventory_20261012.py --selftest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install research dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compile only affected scripts
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/assemble_p2_common_dataset_csv.py \
+            scripts/audit_p2_dataset_io_contract.py \
+            scripts/build_p2_225_or_bundle.py \
+            scripts/build_p2_225_semantic_bundle.py \
+            scripts/plan_p2_common_postextract.py \
+            scripts/qa_p2_common_saved_csv.py \
+            scripts/p2_html_core/p02_semantic_io_contract.py \
+            scripts/p2_html_core/p03_common_analysis_plan.py
+      - name: Run all four targeted synthetic suites
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_p2_dataset_io_contract_20261012.py' -v
+          python -m unittest discover -s tests -p 'test_p2_common_postextract_20261012.py' -v
+          python -m unittest discover -s tests -p 'test_p2_common_saved_csv_qa_20261012.py' -v
+          python -m unittest discover -s tests -p 'test_p2_semantic_or_provenance_20261012.py' -v
+      - name: Ensure checkout files were not modified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+
+  inventory_existing_saved_results:
+    name: Check ten stored dataset file inventories
+    needs: test_common_code
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout only private code and rule, no large data
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/p2_html_core/
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+          persist-credentials: false
+      - name: Required public architecture check
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Read saved status and 29-file contract; no calculations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_postextract_inventory_20261012.py \
+            --core core --expected-core-sha "$CORE_SHA" \
+            --output "$RUNNER_TEMP/phase1_inventory.json"
+          echo "Saved data names inventoried; numerical and HTML QA remain unverified." >> "$GITHUB_STEP_SUMMARY"
+      - name: Ensure private checkout unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save status JSON only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-postextract-phase1-inventory
+          path: ${{ runner.temp }}/phase1_inventory.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  final_gate:
+    name: Mark phase1 results, never approve release
+    needs: [test_common_code, inventory_existing_saved_results]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Summarize PASS and blockers
+        shell: bash
+        env:
+          UNIT: ${{ needs.test_common_code.result }}
+          INVENTORY: ${{ needs.inventory_existing_saved_results.result }}
+        run: |
+          set -euo pipefail
+          echo "Core SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8" >> "$GITHUB_STEP_SUMMARY"
+          echo "Code unit tests: $UNIT; inventory: $INVENTORY" >> "$GITHUB_STEP_SUMMARY"
+          echo "release_ready=false; numeric, CSV bytes and full HTML QA remain unfinished" >> "$GITHUB_STEP_SUMMARY"
+          echo "No Production P2 v12, CSV, HTML, artifact or release changed" >> "$GITHUB_STEP_SUMMARY"
+          if test "$UNIT" != success || test "$INVENTORY" != success; then
+            echo "::error::Phase1 failed. No automatic unverified next run."; exit 1
+          fi
+          echo "PASS_PHASE1_ONLY, next engineering/QA phase required" >> "$GITHUB_STEP_SUMMARY"
