@@ -177,7 +177,7 @@ def scan(args):
         # Canonicalize each actual hyperlink from its source directory.
         # Unescape one layer of JSON/JS quote escaping to include hyperlinks
         # serialized into inline JS table rows.
-        normalized = html.unescape(source.replace(r'\\"', '"').replace(r"\\'", "'"))
+        normalized = html.unescape(source.replace(r'\"', '"').replace(r"\'", "'"))
         attrs = [m.group(2) for m in ATTR.finditer(normalized)]
         attrs.extend(m.group(2) for m in JS_LOCATION.finditer(normalized))
         if p.lower().endswith(".xml"):
