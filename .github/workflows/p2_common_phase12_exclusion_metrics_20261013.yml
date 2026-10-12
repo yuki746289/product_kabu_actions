@@ -1,0 +1,165 @@
+# Created: 2026-10-13 JST
+# Phase12 only: reused already successful exclusion feature artifacts and SHA proofs.
+name: P2 common Phase12 two exclusion direct numeric parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase12_exclusion_metrics_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase12-exclusion-direct-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate independent code and exclusion identity scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase9_direct_metric_parity_20261013.py \
+            scripts/p2_common_phase11_other_sector_direct_metrics_20261013.py \
+            scripts/p2_common_phase12_exclusion_direct_metrics_20261013.py
+          python scripts/p2_common_phase12_exclusion_direct_metrics_20261013.py --selftest
+  excluded:
+    needs: synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        include:
+          - dataset: exclude_transportation_utilities
+            run_id: 37201518110
+            artifact: p2-225-exclusion-no-transport-features
+            proof: p2-common-exact-exclude_transportation_utilities-identities
+          - dataset: exclude_capital_goods_transportation_utilities
+            run_id: 37201520569
+            artifact: p2-225-exclusion-no-capital-transport-features
+            proof: p2-common-exact-exclude_capital_goods_transportation_utilities-identities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse checkout of immutable private exclusion reference files
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_exclusion_all_period/${{ matrix.dataset }}/all_single_categories.csv
+            /preview/kabu/analysis/225_exclusion_all_period/${{ matrix.dataset }}/semantic_status.json
+          persist-credentials: false
+      - name: Enforce Public-only runner, source SHA and private workflow ban
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Download retained filtered feature input, never rebuild
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          run-id: ${{ matrix.run_id }}
+          github-token: ${{ github.token }}
+          path: saved_source
+      - name: Download immutable Phase4 independent exclusion identity SHA evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof }}
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: proof
+      - name: Independently verify 84 direct saved-category results
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f proof/audit.json
+          python scripts/p2_common_phase12_exclusion_direct_metrics_20261013.py \
+            --dataset "${{ matrix.dataset }}" \
+            --core core --saved-root saved_source --proof proof/audit.json \
+            --out "$RUNNER_TEMP/p2_phase12/${{ matrix.dataset }}/audit.json"
+          echo "Saved original artifact used; no new filtering, semantic, OR or HTML generation" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify pinned private source remains unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save only narrow numeric QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase12-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/p2_phase12/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: warn
+  final_gate:
+    needs: [synthetic, excluded]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Only continue on both PASS verified exclusion jobs
+        shell: bash
+        env:
+          SYNTHETIC: ${{ needs.synthetic.result }}
+          EXCLUDED: ${{ needs.excluded.result }}
+        run: |
+          set -euo pipefail
+          echo "Phase12: selftest=$SYNTHETIC, two exclusions=$EXCLUDED" >> "$GITHUB_STEP_SUMMARY"
+          echo "Fixed Private source: $CORE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          if test "$SYNTHETIC" != success || test "$EXCLUDED" != success; then
+            echo "::error::Unexpected numerical inconsistency; no extended run"
+            exit 1
+          fi
+      - name: Download exactly this run's two evidence files
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase12-*
+          path: evidence
+          merge-multiple: false
+      - name: Independently assert 168 categories 2352 metric checks and no release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files = list(Path("evidence").glob("p2-common-phase12-*/audit.json"))
+          assert len(files) == 2, len(files)
+          data = [json.loads(x.read_text(encoding="utf-8")) for x in files]
+          assert {x["dataset"] for x in data} == {
+              "exclude_transportation_utilities",
+              "exclude_capital_goods_transportation_utilities",
+          }
+          assert all(x["status"] == "PASS_PHASE12_EXCLUSION_DIRECT_NUMERIC_PARITY_ONLY"
+                     and x["categories_verified"] == 84
+                     and x["numeric_fields_verified"] == 1176
+                     and x["numeric_mismatches"] == 0
+                     and x["all_prior_successes_reused"] is True
+                     and x["semantic_or_recomputed"] is False
+                     and x["release_ready"] is False
+                     for x in data)
+          print("PASS_PHASE12_EXCLUSIONS_168_CATEGORIES_2352_FIELDS")
+          PY
+          echo "Phase12 limited PASS: 168 categories, 2352 numerical fields. Full semantic/OR/HTML QA outstanding." >> "$GITHUB_STEP_SUMMARY"
