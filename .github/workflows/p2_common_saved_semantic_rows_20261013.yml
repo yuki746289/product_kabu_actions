@@ -1,0 +1,216 @@
+# Created: 2026-10-13T02:08:00+09:00
+# User-approved Phase8 only: no feature, P2, semantic, OR or HTML reprocessing.
+name: P2 common saved semantic row count audit phase8
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_saved_semantic_rows_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-saved-rows-phase8-20261013
+  cancel-in-progress: false
+env:
+  SOURCE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  CODE_SHA: 510acb7afbd8cdd66576380c39f4b5593d0f7505
+  PYTHONUNBUFFERED: '1'
+jobs:
+  isolated_tests:
+    name: Seven synthetic row-count QA tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned research audit code only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 510acb7afbd8cdd66576380c39f4b5593d0f7505
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: audit_code
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/audit_p2_common_saved_semantic_rows_20261013.py
+            /tests/test_p2_common_saved_semantic_rows_20261013.py
+          persist-credentials: false
+      - name: Public architecture and immutable audit code gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C audit_code rev-parse HEAD)" = "$CODE_SHA"
+          if git -C audit_code ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden Private workflow"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir audit_code --expected-core-sha "$CODE_SHA"
+      - name: Seven isolated synthetic unit tests (no dataset calculation)
+        shell: bash
+        working-directory: audit_code
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/audit_p2_common_saved_semantic_rows_20261013.py \
+            tests/test_p2_common_saved_semantic_rows_20261013.py
+          python -m unittest discover -s tests \
+            -p 'test_p2_common_saved_semantic_rows_20261013.py' -v
+      - name: Verify audit-code checkout remained unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C audit_code rev-parse HEAD)" = "$CODE_SHA"
+          test -z "$(git -C audit_code diff --name-only)"
+          test -z "$(git -C audit_code diff --cached --name-only)"
+
+  saved_rows:
+    name: Compare 17 saved CSV counts - ${{ matrix.dataset }}
+    needs: isolated_tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        include:
+          - dataset: technology
+            saved_dir: 225_group_all_period/technology
+          - dataset: financials
+            saved_dir: 225_group_all_period/financials
+          - dataset: consumer_goods
+            saved_dir: 225_group_all_period/consumer_goods
+          - dataset: materials
+            saved_dir: 225_group_all_period/materials
+          - dataset: capital_goods_others
+            saved_dir: 225_group_all_period/capital_goods_others
+          - dataset: transportation_utilities
+            saved_dir: 225_group_all_period/transportation_utilities
+          - dataset: exclude_transportation_utilities
+            saved_dir: 225_exclusion_all_period/exclude_transportation_utilities
+          - dataset: exclude_capital_goods_transportation_utilities
+            saved_dir: 225_exclusion_all_period/exclude_capital_goods_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout immutable saved dataset only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/${{ matrix.saved_dir }}/*.csv
+            /preview/kabu/analysis/${{ matrix.saved_dir }}/semantic_status.json
+          persist-credentials: false
+      - name: Checkout exact pinned research audit code only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 510acb7afbd8cdd66576380c39f4b5593d0f7505
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: audit_code
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/audit_p2_common_saved_semantic_rows_20261013.py
+          persist-credentials: false
+      - name: Mandatory gate before reading any saved CSV
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git -C audit_code rev-parse HEAD)" = "$CODE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden Private workflow"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$SOURCE_SHA"
+          python scripts/check_actions_architecture.py --core-dir audit_code --expected-core-sha "$CODE_SHA"
+      - name: Read saved CSV row counts and compare to existing status only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python audit_code/scripts/audit_p2_common_saved_semantic_rows_20261013.py \
+            --core core --dataset '${{ matrix.dataset }}' \
+            --source-sha "$SOURCE_SHA" \
+            --out "$RUNNER_TEMP/phase8/${{ matrix.dataset }}/audit.json"
+          echo "Read-only saved count comparison: ${{ matrix.dataset }}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Prove no tracked source or original outputs changed
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git -C audit_code rev-parse HEAD)" = "$CODE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+          test -z "$(git -C audit_code diff --name-only)"
+          test -z "$(git -C audit_code diff --cached --name-only)"
+      - name: Save compact numeric counters, never source CSV
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase8-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/phase8/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Validate all eight saved row count summaries only
+    needs: [isolated_tests, saved_rows]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all isolated test and saved data shards to succeed
+        shell: bash
+        env:
+          UNIT: ${{ needs.isolated_tests.result }}
+          DATASETS: ${{ needs.saved_rows.result }}
+        run: |
+          set -euo pipefail
+          echo "Synthetic tests: $UNIT, eight saved datasets: $DATASETS" >> "$GITHUB_STEP_SUMMARY"
+          echo "Raw data pinned SHA: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Research code pinned SHA: $CODE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "No recalculation; numeric semantic/OR equivalence and HTML QA not certified." >> "$GITHUB_STEP_SUMMARY"
+          test "$UNIT" = success && test "$DATASETS" = success
+      - name: Reuse exactly this run's 8 saved QA artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase8-*
+          path: reports
+          merge-multiple: false
+      - name: Independently verify 8 unique PASS reports and 17 counters each
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files = sorted(Path("reports").glob("p2-common-phase8-*/audit.json"))
+          assert len(files) == 8, f"Expected eight reports, got {len(files)}"
+          seen = set()
+          for file in files:
+              d = json.loads(file.read_text(encoding="utf-8"))
+              assert d["dataset"] not in seen
+              seen.add(d["dataset"])
+              assert d["source_sha"] == "52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert d["status"] == "PASS_SAVED_SEMANTIC_ROW_COUNT_CONSISTENCY_ONLY"
+              assert d["files_checked"] == d["files_required"] == 17
+              assert d["problems"] == []
+              assert all(p["pass"] for p in d["checks"])
+              assert d["analysis_recomputed"] is False
+              assert d["numerical_formula_equivalence_verified"] is False
+              assert d["release_ready"] is False
+              assert d["production_changed"] is False
+          print("PASS_PHASE8_SAVED_136_CSV_ROW_COUNTS_ONLY")
+          PY
+          echo "PASS_PHASE8_SAVED_136_CSV_ROW_COUNTS_ONLY; release_ready=false" >> "$GITHUB_STEP_SUMMARY"
