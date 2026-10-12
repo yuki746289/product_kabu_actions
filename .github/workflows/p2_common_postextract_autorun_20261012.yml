@@ -116,6 +116,14 @@ jobs:
             /scripts/p2_html_core/
             /docs/ACTIONS_MIGRATION.md
             /requirements.txt
+            /preview/kabu/analysis/225_group_all_period/technology/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/financials/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/materials/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/semantic_status.json
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/semantic_status.json
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/semantic_status.json
           persist-credentials: false
       - name: Required public architecture check
         shell: bash
@@ -127,6 +135,15 @@ jobs:
             echo "::error::Private workflow detected"; exit 1
           fi
           python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Set up Python for read-only inventory
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install inventory import dependency only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pandas>=2.2,<3.0'
       - name: Read saved status and 29-file contract; no calculations
         shell: bash
         run: |
