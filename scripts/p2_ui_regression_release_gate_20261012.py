@@ -101,7 +101,7 @@ def check_summary(page, root: Path, errors: list[str], out: Path) -> list[dict]:
         group = page.locator("#bd tr td:first-child a").first
         require(group.count() == 1, kind + " detail link missing")
         href = group.get_attribute("href")
-        require(bool(re.fullmatch(rf"{kind}-[a-f0-9]{{14}}\\.html", href or "")),
+        require(bool(re.fullmatch(rf"{kind}-[a-f0-9]{{14}}\.html", href or "")),
                 kind + " invalid group href: " + str(href))
         group.click(timeout=10000)
         page.wait_for_function("() => !!document.querySelector('#bd tr')", timeout=15000)
