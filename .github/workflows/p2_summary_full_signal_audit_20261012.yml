@@ -1,0 +1,115 @@
+# Created: 2026-10-12 JST
+# Public-only, one-shot, bounded numeric audits of existing saved P2 signals.
+# No CSV/HTML/artifact re-generation, private workflows, or deployment.
+name: P2 6-sector 3-family full saved-signal candidate audit
+
+on:
+  push:
+    branches:
+      - audit/p2-summary-full-numeric-20261012
+    paths:
+      - .github/workflows/p2_summary_full_signal_audit_20261012.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-summary-full-numeric-once-20261012
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 0e2d5722d6764102adfe6995b793f533b60b1532
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  numeric:
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        sector: [technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+        kind: [single, pair, triple]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout public audit code
+        uses: actions/checkout@v4
+      - name: Checkout pinned Private saved source only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 0e2d5722d6764102adfe6995b793f533b60b1532
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/semantic_status.json
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/advantage_${{ matrix.kind == 'pair' && 'pairwise' || matrix.kind == 'triple' && 'triple' || 'single' }}_candidates.csv
+          persist-credentials: false
+      - name: Verify public-only architecture, fixed core and zero private workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::private workflow found'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned-range scientific stack and preflight compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+          python -m py_compile scripts/p2_summary_full_signal_audit_20261012.py
+      - name: Verify all saved candidate rows in this shard independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=core/scripts python scripts/p2_summary_full_signal_audit_20261012.py \
+            --core core \
+            --sector "${{ matrix.sector }}" \
+            --kind "${{ matrix.kind }}" \
+            --out "core/build/full_numeric_${{ matrix.sector }}_${{ matrix.kind }}"
+      - name: Assert immutable private core remained unmodified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only new small per-shard audit JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-fullnumeric-${{ matrix.sector }}-${{ matrix.kind }}-20261012
+          path: core/build/full_numeric_${{ matrix.sector }}_${{ matrix.kind }}/full_signal_audit.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  complete_gate:
+    needs: numeric
+    if: ${{ needs.numeric.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Declare only saved-signal numeric audit complete; do not deploy
+        run: |
+          echo 'All 18 independent candidate numeric audit shards PASS.'
+          echo 'This does not validate source market prices or original P2 v12 signals.'
+          echo 'DEPLOYMENT_ALLOWED=false'
