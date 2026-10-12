@@ -6,6 +6,7 @@ on:
     branches: [automation/p2-common-postextract-20261012]
     paths:
       - '.github/workflows/p2_common_phase9_direct_metric_pilot_20261013.yml'
+      - 'scripts/p2_common_phase9_direct_metric_parity_20261013.py'
 permissions:
   contents: read
   actions: read
