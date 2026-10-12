@@ -1,0 +1,120 @@
+# Created: 2026-10-13T02:18:00+09:00
+# Single-dataset independent numerical pilot ONLY, not semantic/OR regeneration.
+name: P2 common phase9 direct saved numeric parity pilot
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase9_direct_metric_pilot_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase9-direct-pilot-20261013
+  cancel-in-progress: false
+env:
+  PINNED_CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  selftest:
+    name: Independent reducer synthetic failure and success tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile independent public audit script and selftest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/p2_common_phase9_direct_metric_parity_20261013.py
+          python scripts/p2_common_phase9_direct_metric_parity_20261013.py --selftest
+
+  technology_pilot:
+    name: Independent direct-category parity on pinned saved technology
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout only three immutable private saved source files
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/technology/all_single_categories.csv
+            /preview/kabu/analysis/225_group_all_period/technology/semantic_status.json
+          persist-credentials: false
+      - name: Enforce public runner, pinned core and private workflow ban
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$PINNED_CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$PINNED_CORE_SHA"
+      - name: Fetch previously certified Phase4 source SHA evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: reference_pin
+      - name: Compare independent direct-category counts, win and returns
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f reference_pin/group.json
+          python scripts/p2_common_phase9_direct_metric_parity_20261013.py \
+            --core core --phase4 reference_pin/group.json \
+            --out "$RUNNER_TEMP/p2_common_phase9/technology_pilot.json"
+          echo "Direct-category statistical reductions were independently checked." >> "$GITHUB_STEP_SUMMARY"
+          echo "No common full semantic/OR jobs or historic artifact regeneration." >> "$GITHUB_STEP_SUMMARY"
+      - name: Confirm original Git source, data and status never changed
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$PINNED_CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save only small provenance/count PASS evidence; no private CSVs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase9-technology-direct-numeric-pilot
+          path: ${{ runner.temp }}/p2_common_phase9/technology_pilot.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  final_gate:
+    name: Fail closed on numerical mismatch, no release certification
+    needs: [selftest, technology_pilot]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify strict scope and prerequisites
+        shell: bash
+        env:
+          SYNTHETIC: ${{ needs.selftest.result }}
+          PILOT: ${{ needs.technology_pilot.result }}
+        run: |
+          set -euo pipefail
+          echo "Private immutable source: $PINNED_CORE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Synthetic reducer test: $SYNTHETIC; saved pilot: $PILOT" >> "$GITHUB_STEP_SUMMARY"
+          echo "This is not full semantic/OR equivalence, full 29CSV equality or HTML QA." >> "$GITHUB_STEP_SUMMARY"
+          echo "Production P2 v12, saved data, artifacts, main and release were not touched." >> "$GITHUB_STEP_SUMMARY"
+          if test "$SYNTHETIC" != success || test "$PILOT" != success; then
+            echo "::error::Phase9 direct numerical pilot failed; stop before any larger run"
+            exit 1
+          fi
+          echo "PASS_PHASE9_DIRECT_NUMERIC_PILOT_ONLY / RELEASE_READY=false" >> "$GITHUB_STEP_SUMMARY"
