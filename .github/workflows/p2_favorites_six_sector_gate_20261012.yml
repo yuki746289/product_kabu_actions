@@ -1,0 +1,90 @@
+# Created: 2026-10-12 JST
+name: P2 favorites six-sector final interaction gate 20261012
+
+on:
+  push:
+    branches:
+      - audit/p2-ui-regression-release-gate-20261012
+    paths:
+      - .github/workflows/p2_favorites_six_sector_gate_20261012.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p2-favorites-final-gate-20261012
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 1fa172fdeac45980f3ed10716e61adc764cebb90
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  favorites:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        sector: [technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 1fa172fdeac45980f3ed10716e61adc764cebb90
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/analysis/high_entry_accuracy.html
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.sector }}/conditions/index.html
+          persist-credentials: false
+      - name: Verify mandatory Public-only architecture gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test -f core/docs/ACTIONS_MIGRATION.md
+          echo "PRIVATE_CORE_SHA=$CORE_SHA"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo 'Private workflow present; stop'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare headless Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'playwright>=1.54,<2'
+          python -m playwright install --with-deps chromium
+          python -m py_compile scripts/p2_favorite_gate_20261012.py
+      - name: Check favorite controls on two canonical templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_favorite_gate_20261012.py \
+            --core core --sector "${{ matrix.sector }}" \
+            --out "core/build/favorite_${{ matrix.sector }}"
+      - name: Source remains unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+      - name: Save PASS or FAIL checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-favorite-gate-${{ matrix.sector }}-20261012
+          path: core/build/favorite_${{ matrix.sector }}/favorites.json
+          if-no-files-found: warn
+          retention-days: 30
