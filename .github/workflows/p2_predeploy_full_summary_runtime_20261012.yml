@@ -1,0 +1,119 @@
+# Created: 2026-10-12 JST
+# New one-shot public-runner gate. Reuse immutable SUCCESS artifacts; NO deploy.
+name: P2 3370-page immutable predeploy runtime gate
+
+on:
+  push:
+    branches:
+      - audit/p2-predeploy-runtime-final-20261012
+    paths:
+      - .github/workflows/p2_predeploy_full_summary_runtime_20261012.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: p2-3370-runtime-20261012
+  cancel-in-progress: false
+
+env:
+  CORE_SHA: 1fa172fdeac45980f3ed10716e61adc764cebb90
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  final_runtime:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        sector: [technology, financials, consumer_goods, materials, capital_goods_others, transportation_utilities]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Public regression tools checkout
+        uses: actions/checkout@v4
+      - name: Private fixed release checkout read-only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 1fa172fdeac45980f3ed10716e61adc764cebb90
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Validate hard policy before any analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD | grep -E '^\.github/workflows/.*\.ya?ml$'; then
+            echo '::error::Private workflows prohibited'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Retrieve exact successful staged HTML ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-staged-html-${{ matrix.sector }}
+          run-id: 38127100421
+          github-token: ${{ github.token }}
+          path: core/build/saved_stage_${{ matrix.sector }}
+      - name: Retrieve approved legacy URL inventory audit
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-nextstage-gate-${{ matrix.sector }}
+          run-id: 38127100421
+          github-token: ${{ github.token }}
+          path: core/build/saved_gate_${{ matrix.sector }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright Chromium, verify test script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'playwright>=1.54,<2'
+          python -m playwright install --with-deps chromium
+          python -m py_compile scripts/p2_predeploy_full_summary_runtime_20261012.py
+      - name: Validate all sector HTML pages in Chromium and exact git blob hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_predeploy_full_summary_runtime_20261012.py \
+            --core core --sector "${{ matrix.sector }}" \
+            --stage "core/build/saved_stage_${{ matrix.sector }}" \
+            --url-gate "core/build/saved_gate_${{ matrix.sector }}/nextstage_audit.json" \
+            --out "core/build/final_runtime_${{ matrix.sector }}"
+      - name: Assert fixed private state unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save small audit JSON and resume checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-final-runtime-${{ matrix.sector }}-20261012
+          path: core/build/final_runtime_${{ matrix.sector }}/predeploy_final.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  final_gate:
+    needs: final_runtime
+    if: ${{ needs.final_runtime.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: All sector shards PASS; no production deploy
+        run: |
+          echo 'All 3,370 staged HTML files passed exact merged-Git-byte and Chromium runtime gates.'
+          echo 'Deployment step is not present; requires release note and manual Windows operation.'
+          echo 'PRODUCTION_DEPLOYED=false'
