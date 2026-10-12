@@ -1,0 +1,248 @@
+# Created: 2026-10-12 JST
+# Read-only post-extraction source validation; never calculate P2 features/signals.
+name: P2 common real saved nine dataset input adapter phase7
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_saved_adapter_realdata_20261012.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-saved-nine-input-20261012
+  cancel-in-progress: false
+env:
+  DATA_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  CODE_SHA: dbd18e8e6730c8b898057adfd89ec6735fb7b3d4
+  PYTHONUNBUFFERED: '1'
+jobs:
+  saved_input:
+    name: Saved pinned input - ${{ matrix.dataset }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - dataset: technology
+            mode: group
+            saved_path: /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
+            evidence: p2-common-exact-six-group-identities
+            artifact: none
+            run_id: 0
+            artifact_id: 0
+          - dataset: financials
+            mode: group
+            saved_path: /preview/kabu/analysis/225_group_all_period/financials/signal_level_features.csv
+            evidence: p2-common-exact-six-group-identities
+            artifact: none
+            run_id: 0
+            artifact_id: 0
+          - dataset: consumer_goods
+            mode: group
+            saved_path: /preview/kabu/analysis/225_group_all_period/consumer_goods/signal_level_features.csv
+            evidence: p2-common-exact-six-group-identities
+            artifact: none
+            run_id: 0
+            artifact_id: 0
+          - dataset: materials
+            mode: group
+            saved_path: /preview/kabu/analysis/225_group_all_period/materials/signal_level_features.csv
+            evidence: p2-common-exact-six-group-identities
+            artifact: none
+            run_id: 0
+            artifact_id: 0
+          - dataset: capital_goods_others
+            mode: group
+            saved_path: /preview/kabu/analysis/225_group_all_period/capital_goods_others/signal_level_features.csv
+            evidence: p2-common-exact-six-group-identities
+            artifact: none
+            run_id: 0
+            artifact_id: 0
+          - dataset: transportation_utilities
+            mode: group
+            saved_path: /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
+            evidence: p2-common-exact-six-group-identities
+            artifact: none
+            run_id: 0
+            artifact_id: 0
+          - dataset: all_225
+            mode: artifact
+            saved_path: /docs/ACTIONS_MIGRATION.md
+            evidence: p2-common-exact-six-group-identities
+            artifact: p2-225-raw-features-20260930
+            run_id: 36703088996
+            artifact_id: 11093338366
+          - dataset: exclude_transportation_utilities
+            mode: artifact
+            saved_path: /docs/ACTIONS_MIGRATION.md
+            evidence: p2-common-exact-exclude_transportation_utilities-identities
+            artifact: p2-225-exclusion-no-transport-features
+            run_id: 37201518110
+            artifact_id: 11303406552
+          - dataset: exclude_capital_goods_transportation_utilities
+            mode: artifact
+            saved_path: /docs/ACTIONS_MIGRATION.md
+            evidence: p2-common-exact-exclude_capital_goods_transportation_utilities-identities
+            artifact: p2-225-exclusion-no-capital-transport-features
+            run_id: 37201520569
+            artifact_id: 11302906875
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout private original data fixed SHA and matching original rule
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core_data
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            ${{ matrix.saved_path }}
+          persist-credentials: false
+      - name: Checkout new research adapter from exact private code commit
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: dbd18e8e6730c8b898057adfd89ec6735fb7b3d4
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core_code
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/p2_html_core/
+          persist-credentials: false
+      - name: Mandatory source SHA and Public-only architecture gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core_data rev-parse HEAD)" = "$DATA_SHA"
+          test "$(git -C core_code rev-parse HEAD)" = "$CODE_SHA"
+          for tree in core_data core_code; do
+            if git -C "$tree" ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+              echo "::error::Private workflow in $tree"; exit 1
+            fi
+            python scripts/check_actions_architecture.py --core-dir "$tree" \
+              --expected-core-sha "$(git -C "$tree" rev-parse HEAD)"
+          done
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/38239501315" --jq '.conclusion')" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/38240692763" --jq '.conclusion')" = success
+      - name: Consume exact independently audited phase4 provenance
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          name: ${{ matrix.evidence }}
+          path: identity
+      - name: Download only saved source artifact for external input datasets
+        if: ${{ matrix.mode == 'artifact' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          run-id: ${{ matrix.run_id }}
+          github-token: ${{ github.token }}
+          path: saved_external
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install isolated data-loader import dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pandas>=2.2,<3.0'
+      - name: Validate the saved source as a nine-dataset uniform P2 input
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "${{ matrix.mode }}" = group; then
+            python scripts/p2_common_saved_adapter_realdata_20261012.py \
+              --mode group --dataset "${{ matrix.dataset }}" \
+              --data-root core_data --code-root core_code \
+              --phase4-evidence identity/group.json \
+              --out "$RUNNER_TEMP/input/${{ matrix.dataset }}/status.json"
+          else
+            python scripts/p2_common_saved_adapter_realdata_20261012.py \
+              --mode artifact --dataset "${{ matrix.dataset }}" \
+              --data-root core_data --code-root core_code \
+              --phase4-evidence identity/audit.json \
+              --artifact-root saved_external --artifact-run-id ${{ matrix.run_id }} \
+              --artifact-id ${{ matrix.artifact_id }} \
+              --out "$RUNNER_TEMP/input/${{ matrix.dataset }}/status.json"
+          fi
+          echo "Pinned saved feature input interface: ${{ matrix.dataset }} PASS" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify both original source worktrees remain unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core_data rev-parse HEAD)" = "$DATA_SHA"
+          test "$(git -C core_code rev-parse HEAD)" = "$CODE_SHA"
+          for tree in core_data core_code; do
+            test -z "$(git -C "$tree" diff --name-only)"
+            test -z "$(git -C "$tree" diff --cached --name-only)"
+          done
+      - name: Publish only saved source SHA/count audit JSON
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-verified-postextract-source-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/input/${{ matrix.dataset }}/status.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Nine actual saved input preflight gate
+    needs: [saved_input]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Reject any failed saved dataset source
+        shell: bash
+        env:
+          RESULT: ${{ needs.saved_input.result }}
+        run: |
+          set -euo pipefail
+          test "$RESULT" = success || { echo "::error::Saved adapter preflight failed"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-verified-postextract-source-*
+          path: input_evidence
+          merge-multiple: false
+      - name: Independently certify only pinned input interface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          names = {"technology","financials","consumer_goods","materials","capital_goods_others",
+                   "transportation_utilities","all_225","exclude_transportation_utilities",
+                   "exclude_capital_goods_transportation_utilities"}
+          reports=list(Path("input_evidence").glob("p2-common-verified-postextract-source-*/status.json"))
+          assert len(reports)==9, f"Expected 9 passing source input reports, got {len(reports)}"
+          done=set()
+          for f in reports:
+              d=json.loads(f.read_text(encoding="utf-8"))
+              assert d["dataset"] in names and d["dataset"] not in done
+              done.add(d["dataset"])
+              assert d["status"]=="PASS_PINNED_POSTEXTRACT_SAVED_INPUT_ONLY"
+              assert d["columns_checked"] and d["row_count_checked"] and d["ticker_count_checked"]
+              assert d["source_signals_recomputed"] is False
+              assert d["semantic_numeric_parity_verified"] is False
+              assert d["release_ready"] is False
+          assert done==names
+          print("PASS_NINE_SAVED_DATASET_INPUT_INTERFACES_ONLY")
+          PY
+          echo "9/9 saved input interface checks complete. Nikkei ^N225 remains source-unresolved." >> "$GITHUB_STEP_SUMMARY"
+          echo "Semantic/OR numeric parity, 29 CSV output parity for all 10, full HTML and UI QA remain open." >> "$GITHUB_STEP_SUMMARY"
