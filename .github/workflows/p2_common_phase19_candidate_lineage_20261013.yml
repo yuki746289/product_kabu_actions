@@ -1,0 +1,240 @@
+# Created: 2026-10-13 JST
+# Phase19: full 9-dataset saved OR candidate summary -> unique-OR provenance.
+# Original Phase17 SHA evidence reused; zero historic calculations rerun.
+name: P2 common Phase19 full saved OR candidate source lineage
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase19_candidate_lineage_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase19-candidate-lineage-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  selftest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and assert independent source-linkage guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase17_full_saved_or_dedupe_20261013.py scripts/p2_common_phase19_or_candidate_lineage_20261013.py
+          python scripts/p2_common_phase19_or_candidate_lineage_20261013.py --selftest
+
+  all225_pilot:
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned private original migration rule checkout
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Public-only private-SHA and no-workflow mandatory gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow found"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse saved all225 OR aggregate artifact (never rebuild)
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-or
+          run-id: 36714890471
+          github-token: ${{ github.token }}
+          path: original_or
+      - name: Reuse prior completed all225 OR dedupe SHA evidence only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase17-all225-or-dedupe-evidence
+          run-id: 38337566711
+          github-token: ${{ github.token }}
+          path: prior_dedupe
+      - name: Independently compare all existing candidate rows to pinned unique OR source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase19_or_candidate_lineage_20261013.py \
+            --dataset all_225 --core core --reference original_or \
+            --phase17 prior_dedupe/audit.json \
+            --out "$RUNNER_TEMP/p2_phase19/all225/audit.json"
+          echo "all225 OR candidates linked to saved SHA-certified unique OR. No OR recalc." >> "$GITHUB_STEP_SUMMARY"
+      - name: Confirm private original unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Preserve summary only, no private CSV data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase19-all225-candidate-lineage
+          path: ${{ runner.temp }}/p2_phase19/all225/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  remaining_eight:
+    name: Original saved OR candidate source QA - ${{ matrix.dataset }}
+    needs: all225_pilot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - dataset: technology
+            rel: 225_group_all_period/technology
+          - dataset: financials
+            rel: 225_group_all_period/financials
+          - dataset: consumer_goods
+            rel: 225_group_all_period/consumer_goods
+          - dataset: materials
+            rel: 225_group_all_period/materials
+          - dataset: capital_goods_others
+            rel: 225_group_all_period/capital_goods_others
+          - dataset: transportation_utilities
+            rel: 225_group_all_period/transportation_utilities
+          - dataset: exclude_transportation_utilities
+            rel: 225_exclusion_all_period/exclude_transportation_utilities
+          - dataset: exclude_capital_goods_transportation_utilities
+            rel: 225_exclusion_all_period/exclude_capital_goods_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse original private candidate and unique OR snapshots
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/${{ matrix.rel }}/or_pairwise_unique.csv
+            /preview/kabu/analysis/${{ matrix.rel }}/or_triple_unique.csv
+            /preview/kabu/analysis/${{ matrix.rel }}/or_candidate_summary.csv
+            /preview/kabu/analysis/${{ matrix.rel }}/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory original Private SHA and Public-only runner check
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original prior successful complete saved OR dedupe proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase17-${{ matrix.dataset }}-or-dedupe-evidence
+          run-id: 38337566711
+          github-token: ${{ github.token }}
+          path: prior_dedupe
+      - name: Compare every candidate to the same original unique OR SHA source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase19_or_candidate_lineage_20261013.py \
+            --dataset "${{ matrix.dataset }}" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.rel }}" \
+            --phase17 prior_dedupe/audit.json \
+            --out "$RUNNER_TEMP/p2_phase19/${{ matrix.dataset }}/audit.json"
+          echo "No semantic/OR generation: ${{ matrix.dataset }} original candidate lineage QA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify original Private core remained unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only metadata, not saved OR data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase19-${{ matrix.dataset }}-candidate-lineage
+          path: ${{ runner.temp }}/p2_phase19/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    needs: [selftest, all225_pilot, remaining_eight]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all 9 original saved candidate source checks PASS
+        shell: bash
+        env:
+          TEST: ${{ needs.selftest.result }}
+          PILOT: ${{ needs.all225_pilot.result }}
+          EIGHT: ${{ needs.remaining_eight.result }}
+        run: |
+          set -euo pipefail
+          echo "Phase19 $CORE_SHA: selftest=$TEST, all225=$PILOT, other8=$EIGHT" >> "$GITHUB_STEP_SUMMARY"
+          if test "$TEST" != success || test "$PILOT" != success || test "$EIGHT" != success; then
+            echo "::error::Phase19 failed; do not continue to further QA"; exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase19-*-candidate-lineage
+          path: evidence
+          merge-multiple: false
+      - name: Independently verify all nine candidate subset SHA lineages
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=list(Path("evidence").glob("p2-common-phase19-*-candidate-lineage/audit.json"))
+          assert len(files)==9, f"Expected 9 candidate reports, got {len(files)}"
+          seen=set()
+          rows=0
+          fields=0
+          for f in files:
+              d=json.loads(f.read_text(encoding="utf-8"))
+              assert d["dataset"] not in seen
+              seen.add(d["dataset"])
+              assert d["status"]=="PASS_PHASE19_FULL_SAVED_OR_CANDIDATE_LINEAGE_ONLY"
+              assert d["original_private_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert d["lineage_mismatches"]==0
+              assert d["full_saved_candidate_rows"]==d["identities_crosslinked"]
+              assert d["old_saved_or_recalculated"] is False
+              assert d["monthly_stability_independently_recomputed"] is False
+              assert d["release_ready"] is False
+              rows+=d["full_saved_candidate_rows"]
+              fields+=d["shared_source_fields_checked"]
+          print(f"PASS_PHASE19_SAVED_OR_CANDIDATE_ORIGIN_ONLY: {rows} candidate rows, {fields} source-field equalities")
+          PY
+          echo "Phase19 only verified saved candidate-source lineage. New common OR and HTML remain unverified." >> "$GITHUB_STEP_SUMMARY"
