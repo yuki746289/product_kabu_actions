@@ -1,0 +1,168 @@
+# Created: 2026-10-13 JST
+# Phase26 canary: only three NEW monthly semantic CSV calculations.
+# No prior successful artifacts are recalculated, private CSVs never uploaded.
+name: P2 common Phase26 three monthly semantic canary numerical parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase26_monthly_canary_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase26-monthly-canary-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Validate new Phase26 bounded contract without private data
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and selftest isolated three-file auditor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase26_semantic_monthly_canary_20261013.py
+          python scripts/p2_common_phase26_semantic_monthly_canary_20261013.py --selftest
+
+  monthly_canary:
+    name: Compute three NEW monthly semantic outputs and compare old saved values
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only pinned Private core and exact saved monthly reference
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/monthly_baseline_performance.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/monthly_baseline_stability_summary.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/month_of_year_baseline_summary.csv
+          persist-credentials: false
+      - name: Assert public-only Actions, fixed private source SHA and zero private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse saved source partition identity PASS (Phase4)
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_pin
+      - name: Reuse four-file new semantic PASS (Phase20; no reexecution)
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase20-bounded-transport-semantic-numeric-evidence
+          run-id: 38371960984
+          github-token: ${{ github.token }}
+          path: phase20_pin
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned Private dependencies without modifying source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Independently compute only three new semantic monthly CSVs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f source_pin/group.json
+          test -f phase20_pin/report.json
+          python scripts/p2_common_phase26_semantic_monthly_canary_20261013.py \
+            --core core \
+            --reference core/preview/kabu/analysis/225_group_all_period/transportation_utilities \
+            --phase4 source_pin/group.json --phase20 phase20_pin/report.json \
+            --stage "core/build/p2_phase26_$GITHUB_RUN_ID/monthly" \
+            --report "$RUNNER_TEMP/p2_phase26/monthly/report.json"
+          echo "Only three new monthly semantic CSVs calculated and compared, no old artifact rerun." >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce no tracked Private data changed
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only compact evidence JSON; never Private CSVs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase26-transport-monthly-three-csv-evidence
+          path: ${{ runner.temp }}/p2_phase26/monthly/report.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Require independently compared three new monthly semantic CSVs
+    needs: [selftest, monthly_canary]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Stop unless selftest and new bounded calculation succeeded
+        shell: bash
+        env:
+          TEST: ${{ needs.selftest.result }}
+          CANARY: ${{ needs.monthly_canary.result }}
+        run: |
+          set -euo pipefail
+          echo "Phase26 new three monthly CSV canary $CORE_SHA: selftest=$TEST canary=$CANARY" >> "$GITHUB_STEP_SUMMARY"
+          test "$TEST" = success && test "$CANARY" = success
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-transport-monthly-three-csv-evidence
+          path: evidence
+      - name: Verify immutable source, column/value equality and strictly limited scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("evidence/report.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE26_MONTHLY_THREE_CSV_CANARY"
+          assert d["dataset"]=="transportation_utilities"
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["source_rows"]==14848 and d["source_tickers"]==20
+          assert d["compared_csvs"]==3 and len(d["csv_details"])==3
+          assert all(z["numerically_equal"] for z in d["csv_details"])
+          assert len({z["file"] for z in d["csv_details"]})==3
+          assert d["mismatches"]==[]
+          for k in ("previous_certified_four_csvs_recalculated",
+                    "full_semantic_bundle_generated","full_or_bundle_generated",
+                    "signals_recomputed","html_generated","production_changed",
+                    "release_ready"):
+              assert d[k] is False,k
+          print("PASS_PHASE26_MONTHLY_CANARY_THREE_NEW_CSV_ONLY")
+          PY
+          echo "Full semantic and OR numerical parity remains pending. Release blocked." >> "$GITHUB_STEP_SUMMARY"
