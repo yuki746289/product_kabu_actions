@@ -1,0 +1,316 @@
+# Created: 2026-10-13 JST
+# Phase14: fixed saved-data pair/triple numerical sample, chained only on PASS.
+# NO new P2 signals, historical semantic/OR generation, HTML or deploy.
+name: P2 common Phase14 saved pair triple independent numerical QA
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase14_pair_triple_saved_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase14-saved-pair-triple-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  synthetic:
+    name: Validate immutable sampling, input and numeric QA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate new stand-alone saved metrics auditor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          python -m py_compile scripts/p2_common_phase9_direct_metric_parity_20261013.py \
+            scripts/p2_common_phase14_saved_pair_triple_sample_20261013.py
+          python scripts/p2_common_phase14_saved_pair_triple_sample_20261013.py --selftest
+
+  all225_pilot:
+    name: Verify 24 pairs and 24 triples on original 225 saved artifacts
+    needs: synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read pinned Private canonical rule only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Architecture gate before any saved artifact use
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden private Actions files"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original 225 features, not re-extract
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: source
+      - name: Reuse successful historic pair and triple CSVs
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-structural
+          run-id: 36711913770
+          github-token: ${{ github.token }}
+          path: reference
+      - name: Download independent, original source identity and hash proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: proof
+      - name: Verify 48 direct pair/triple numeric rows against original source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f source/features.csv
+          test -f reference/structural_status.json
+          test -f proof/group.json
+          python scripts/p2_common_phase14_saved_pair_triple_sample_20261013.py \
+            --dataset all_225 --core core --source source/features.csv \
+            --reference reference --proof proof/group.json \
+            --out "$RUNNER_TEMP/p2_phase14/all225/audit.json"
+          echo "Stage all225 saved-pair/triple direct metrics PASS only." >> "$GITHUB_STEP_SUMMARY"
+      - name: Assert immutable Private source checkout
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload small audit evidence, no private raw CSVs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase14-all_225-direct-combinations
+          path: ${{ runner.temp }}/p2_phase14/all225/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  remaining_eight:
+    name: Verify 48 combinations from saved ${{ matrix.dataset }} only
+    needs: all225_pilot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - dataset: technology
+            relative_dir: 225_group_all_period/technology
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: financials
+            relative_dir: 225_group_all_period/financials
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: consumer_goods
+            relative_dir: 225_group_all_period/consumer_goods
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: materials
+            relative_dir: 225_group_all_period/materials
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: capital_goods_others
+            relative_dir: 225_group_all_period/capital_goods_others
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: transportation_utilities
+            relative_dir: 225_group_all_period/transportation_utilities
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: exclude_transportation_utilities
+            relative_dir: 225_exclusion_all_period/exclude_transportation_utilities
+            kind: artifact
+            artifact: p2-225-exclusion-no-transport-features
+            source_run: 37201518110
+            proof: p2-common-exact-exclude_transportation_utilities-identities
+            proof_file: audit.json
+          - dataset: exclude_capital_goods_transportation_utilities
+            relative_dir: 225_exclusion_all_period/exclude_capital_goods_transportation_utilities
+            kind: artifact
+            artifact: p2-225-exclusion-no-capital-transport-features
+            source_run: 37201520569
+            proof: p2-common-exact-exclude_capital_goods_transportation_utilities-identities
+            proof_file: audit.json
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only pinned status and original pair/triple references
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/all_pairwise_combinations.csv
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/tested_triple_combinations.csv
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/semantic_status.json
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/signal_level_features.csv
+          persist-credentials: false
+      - name: Required pinned core and Public-only gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden Private workflow"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse independently verified saved input proof
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof }}
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: proof
+      - name: Reuse original excluded features artifact, never filter anew
+        if: ${{ matrix.kind == 'artifact' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          run-id: ${{ matrix.source_run }}
+          github-token: ${{ github.token }}
+          path: excluded_source
+      - name: Compare saved 48 pairs/triples and 672 numerical metrics only
+        shell: bash
+        env:
+          DATASET: ${{ matrix.dataset }}
+          RELATIVE: ${{ matrix.relative_dir }}
+          KIND: ${{ matrix.kind }}
+          PROOF_FILE: ${{ matrix.proof_file }}
+        run: |
+          set -euo pipefail
+          root="core/preview/kabu/analysis/$RELATIVE"
+          if test "$KIND" = group; then
+            source_file="$root/signal_level_features.csv"
+          else
+            test "$(find excluded_source -type f -name features.csv | wc -l)" -eq 1
+            source_file="$(find excluded_source -type f -name features.csv -print -quit)"
+          fi
+          test -f "$source_file"
+          test -f "proof/$PROOF_FILE"
+          python scripts/p2_common_phase14_saved_pair_triple_sample_20261013.py \
+            --dataset "$DATASET" --core core \
+            --source "$source_file" --reference "$root" --proof "proof/$PROOF_FILE" \
+            --out "$RUNNER_TEMP/p2_phase14/$DATASET/audit.json"
+          echo "Saved $DATASET 48 new pair/triple rows independently audited." >> "$GITHUB_STEP_SUMMARY"
+      - name: Confirm private source tracking remains untouched
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload summary metadata only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase14-${{ matrix.dataset }}-direct-combinations
+          path: ${{ runner.temp }}/p2_phase14/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Independently validate 9 saved dataset QA evidence results
+    needs: [synthetic, all225_pilot, remaining_eight]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all three previous stage groups to PASS first
+        shell: bash
+        env:
+          SELF: ${{ needs.synthetic.result }}
+          PILOT: ${{ needs.all225_pilot.result }}
+          OTHERS: ${{ needs.remaining_eight.result }}
+        run: |
+          set -euo pipefail
+          echo "Synthetic=$SELF 225 pilot=$PILOT 8 others=$OTHERS" >> "$GITHUB_STEP_SUMMARY"
+          echo "No semantic, OR, Production P2 or HTML regeneration." >> "$GITHUB_STEP_SUMMARY"
+          if test "$SELF" != success || test "$PILOT" != success || test "$OTHERS" != success; then
+            echo "::error::Phase14 sample incomplete. STOP: no silent expansion."; exit 1
+          fi
+      - name: Download new QA results from this Run only
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase14-*-direct-combinations
+          path: evidence
+          merge-multiple: false
+      - name: Verify all nine checked 24 pair + 24 triple rows and SHA scopes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          reports=list(Path("evidence").glob("p2-common-phase14-*-direct-combinations/audit.json"))
+          assert len(reports)==9, f"Expected 9 immutable new evidence reports, got {len(reports)}"
+          seen=set()
+          for file in reports:
+              x=json.loads(file.read_text(encoding="utf-8"))
+              assert x["dataset"] not in seen
+              seen.add(x["dataset"])
+              assert x["source_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert x["status"]=="PASS_PHASE14_SAVED_PAIR_TRIPLE_DIRECT_NUMERIC_SAMPLE"
+              assert x["pair_conditions_checked"]==24 and x["triple_conditions_checked"]==24
+              assert x["numeric_fields_checked"]==672 and x["numeric_mismatches"]==0
+              assert x["saved_artifacts_recalculated"] is False
+              assert x["feature_or_semantic_recomputed"] is False
+              assert x["production_p2_v12_changed"] is False
+              assert x["html_qa_verified"] is False
+              assert x["release_ready"] is False
+          assert len(seen)==9
+          print("PASS_PHASE14_432_SAVED_PAIR_TRIPLE_CONDITIONS_6048_NUMERICAL_FIELDS")
+          PY
+          echo "PASS_PHASE14_PAIR_TRIPLE_SAMPLE_ONLY. Full semantic/OR and HTML QA still pending." >> "$GITHUB_STEP_SUMMARY"
