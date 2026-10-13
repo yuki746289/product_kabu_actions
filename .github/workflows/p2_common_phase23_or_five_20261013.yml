@@ -1,0 +1,187 @@
+# Created: 2026-10-13 JST
+# FIVE additional bounded real common OR calculations; no previous successful run repeated.
+name: P2 common Phase23 new OR inner producer five-sector parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase23_or_five_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase23-or-five-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  PYTHONUNBUFFERED: '1'
+jobs:
+  synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate five additional bounded producer scopes before data reads
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          python -m py_compile scripts/p2_common_phase23_new_or_five_sectors_20261013.py
+          python scripts/p2_common_phase23_new_or_five_sectors_20261013.py --selftest
+
+  sector:
+    name: New OR inner producer parity - ${{ matrix.dataset }}
+    needs: synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        dataset: [technology, financials, consumer_goods, materials, capital_goods_others]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse immutable private original source and OR reference
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/or_pairwise_all.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/or_triple_all.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory pinned Private source and public-only architecture checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse existing saved signal identity SHA proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_proof
+      - name: Reuse original successful Phase15 raw OR SHA evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase15-${{ matrix.dataset }}-or-sample
+          run-id: 38336668272
+          github-token: ${{ github.token }}
+          path: or_proof
+      - name: Reuse NEW common Phase22 successful semantic numeric proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase22-${{ matrix.dataset }}-bounded-semantic
+          run-id: 38372959381
+          github-token: ${{ github.token }}
+          path: semantic_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install original pinned Private producer dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Execute only 8+8 new OR _combo_metrics and compare original
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase23_new_or_five_sectors_20261013.py \
+            --dataset "${{ matrix.dataset }}" \
+            --core core \
+            --original "core/preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}" \
+            --source-proof source_proof/group.json \
+            --phase15 or_proof/audit.json \
+            --phase22 semantic_proof/audit.json \
+            --report "$RUNNER_TEMP/p2_phase23/${{ matrix.dataset }}/audit.json"
+          echo "Actual new common OR inner calculation; never before sampled original conditions." >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate immutable Private checkout remained unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only bounded SHA and numeric QA metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase23-${{ matrix.dataset }}-bounded-new-or
+          path: ${{ runner.temp }}/p2_phase23/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  final_gate:
+    name: Five new common OR producer 80 holdout rows limited gate
+    needs: [synthetic,sector]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all new OR computation comparisons PASS
+        shell: bash
+        env:
+          SELF: ${{ needs.synthetic.result }}
+          GROUPS: ${{ needs.sector.result }}
+        run: |
+          set -euo pipefail
+          echo "Private SHA $CORE_SHA, unit=$SELF, five sector OR=$GROUPS" >> "$GITHUB_STEP_SUMMARY"
+          if test "$SELF" != success || test "$GROUPS" != success; then
+            echo "::error::Phase23 new OR numeric parity failed; don't launch full OR"
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase23-*-bounded-new-or
+          path: evidence
+          merge-multiple: false
+      - name: Independently verify 80 new OR2/OR3 holdouts and no prior reruns
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          paths=list(Path("evidence").glob("p2-common-phase23-*-bounded-new-or/audit.json"))
+          assert len(paths)==5, paths
+          expected={"technology","financials","consumer_goods","materials","capital_goods_others"}
+          names=set()
+          checked=0
+          for path in paths:
+              x=json.loads(path.read_text(encoding="utf-8"))
+              names.add(x["dataset"])
+              assert x["status"]=="PASS_PHASE23_FIVE_SECTOR_NEW_OR_PRODUCER_NUMERIC_PARITY"
+              assert x["new_or2_conditions"]==x["new_or3_conditions"]==8
+              assert x["numeric_mismatches"]==0
+              assert x["reused_phase22_new_semantic_success"] is True
+              assert x["prior_phase21_transportation_reexecuted"] is False
+              assert x["prior_phase15_16_OR_conditions_reexecuted"] is False
+              assert x["actual_common_or_inner_producer_executed"] is True
+              assert x["full_or_bundle_generated"] is False
+              assert x["saved_artifacts_recalculated"] is False
+              assert x["release_ready"] is False
+              checked+=x["new_producer_numeric_fields_checked"]
+          assert names==expected
+          print(f"PASS_PHASE23_80_NEW_OR_CONDITIONS_{checked}_NUMERIC_FIELDS_ONLY")
+          PY
+          echo "Limited actual new OR producer parity across six sectors; full OR/29 CSV/HTML not certified." >> "$GITHUB_STEP_SUMMARY"
