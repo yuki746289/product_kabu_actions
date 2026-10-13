@@ -1,0 +1,165 @@
+# Created: 2026-10-13 JST
+# Five new common semantic INNER calculations, four CSV outputs each, no historic replays.
+name: P2 common Phase22 new semantic five-sector limited parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase22_semantic_five_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase22-new-semantic-five-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+jobs:
+  synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact five untested sectors and pinned producer functions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase20_new_semantic_bounded_20261013.py scripts/p2_common_phase22_new_semantic_five_sectors_20261013.py
+          python scripts/p2_common_phase22_new_semantic_five_sectors_20261013.py --selftest
+
+  sector:
+    name: NEW bounded common semantic equality - ${{ matrix.dataset }}
+    needs: synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        dataset: [technology, financials, consumer_goods, materials, capital_goods_others]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse immutable old reference and existing Private common producer
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/all_single_categories.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/representative_single_categories.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/candidate_registry.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/parameter_plateau.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory pinned original SHA public runner architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse successful original saved source SHA and row identity proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: verified_input
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reuse original Private constrained scientific dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Execute bounded new common semantic computation and independent old parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase22_new_semantic_five_sectors_20261013.py \
+            --dataset "${{ matrix.dataset }}" \
+            --core core \
+            --reference "core/preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}" \
+            --proof verified_input/group.json \
+            --staging "core/build/p2_phase22_$GITHUB_RUN_ID/${{ matrix.dataset }}" \
+            --report "$RUNNER_TEMP/p2_phase22/${{ matrix.dataset }}/audit.json"
+          echo "New common semantic subset ${{ matrix.dataset }}: 4 CSV numerical comparisons." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify old Private saved files not modified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save only small result JSON, not generated or old CSVs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase22-${{ matrix.dataset }}-bounded-semantic
+          path: ${{ runner.temp }}/p2_phase22/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  final_gate:
+    name: Require five disjoint new semantic sector subset reports
+    needs: [synthetic,sector]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail closed on any new semantic numerical incompatibility
+        shell: bash
+        env:
+          TEST: ${{ needs.synthetic.result }}
+          ALL: ${{ needs.sector.result }}
+        run: |
+          set -euo pipefail
+          echo "Original Private fixed SHA $CORE_SHA; synthetic=$TEST, five sectors=$ALL" >> "$GITHUB_STEP_SUMMARY"
+          test "$TEST" = success && test "$ALL" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase22-*-bounded-semantic
+          path: proof
+          merge-multiple: false
+      - name: Verify 20 newly computed CSVs numeric parity, no production claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          files=list(Path("proof").glob("p2-common-phase22-*-bounded-semantic/audit.json"))
+          assert len(files)==5, files
+          expected={"technology","financials","consumer_goods","materials","capital_goods_others"}
+          names=set()
+          for f in files:
+              report=json.loads(f.read_text(encoding="utf-8"))
+              names.add(report["dataset"])
+              assert report["status"]=="PASS_PHASE22_NEW_SECTOR_COMMON_SEMANTIC_SUBSET_PARITY"
+              assert report["expected_csvs"]==report["csvs_independently_numeric_equal"]==4
+              assert not report["mismatches"]
+              assert report["prior_transportation_phase20_reexecuted"] is False
+              assert report["previous_successful_artifacts_reexecuted"] is False
+              assert report["full_semantic_recomputed"] is False
+              assert report["release_ready"] is False
+          assert names==expected
+          print("PASS_PHASE22_5_NEW_SECTORS_20_COMMON_SEMANTIC_CSV_NUMERIC_COMPARISONS")
+          PY
+          echo "Limited new semantic subset parity across 5 additional groups; OR/full semantic/HTML still outstanding" >> "$GITHUB_STEP_SUMMARY"
