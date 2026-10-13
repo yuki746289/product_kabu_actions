@@ -1,0 +1,173 @@
+# Created: 2026-10-13 JST
+# Bounded NEW common OR producer _combo_metrics, original 16 unverified holdout conditions only.
+name: P2 common Phase21 bounded new OR calculation parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase21_or_bounded_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase21-new-or-bounded-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+jobs:
+  synthetic:
+    name: Verify new bounded OR holdout plan before any original data read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard disjoint OR2/OR3 holdout 8+8 test
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase21_new_or_bounded_20261013.py
+          python scripts/p2_common_phase21_new_or_bounded_20261013.py --selftest
+
+  bounded_producer:
+    name: Execute new OR inner producer for only 16 unverified conditions
+    needs: synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse immutable Private original transportation features and OR reference
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/or_pairwise_all.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/or_triple_all.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory Public-only, pinned SHA and Private workflow absence gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse previously successful Phase4 exact original signal identity
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_pin
+      - name: Reuse previously certified original OR raw SHA digest evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase15-transportation_utilities-or-sample
+          run-id: 38336668272
+          github-token: ${{ github.token }}
+          path: original_or_pin
+      - name: Reuse just-passed new common semantic input/output proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase20-bounded-transport-semantic-numeric-evidence
+          run-id: 38371960984
+          github-token: ${{ github.token }}
+          path: semantic_pin
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Use original Private dependency constraints for new OR helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compare NEW common OR producer on only 8+8 never-before-sampled conditions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase21_new_or_bounded_20261013.py \
+            --core core \
+            --original core/preview/kabu/analysis/225_group_all_period/transportation_utilities \
+            --source-proof source_pin/group.json \
+            --phase15 original_or_pin/audit.json \
+            --phase20 semantic_pin/report.json \
+            --report "$RUNNER_TEMP/p2_phase21/report.json"
+          echo "Actual new common OR inner producer verified on 16 new holdout conditions." >> "$GITHUB_STEP_SUMMARY"
+          echo "No full OR, full semantic, historical P2 signal or HTML generation." >> "$GITHUB_STEP_SUMMARY"
+      - name: Assert original private source was not modified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save only metadata with no saved or regenerated private CSV rows
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase21-new-transport-or-bounded-evidence
+          path: ${{ runner.temp }}/p2_phase21/report.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  final_gate:
+    name: Certify only 16 new bounded OR rows, never entire OR dataset
+    needs: [synthetic,bounded_producer]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require selftest and pinned actual new OR producer PASS
+        shell: bash
+        env:
+          TEST: ${{ needs.synthetic.result }}
+          PILOT: ${{ needs.bounded_producer.result }}
+        run: |
+          set -euo pipefail
+          echo "Private data $CORE_SHA, selftest $TEST, producer parity $PILOT" >> "$GITHUB_STEP_SUMMARY"
+          if test "$TEST" != success || test "$PILOT" != success; then
+            echo "::error::Phase21 mismatch; do not start any larger producer"
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase21-new-transport-or-bounded-evidence
+          path: evidence
+      - name: Enforce bounded held-out numeric proof and no release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path("evidence/report.json").read_text(encoding="utf-8"))
+          assert a["status"]=="PASS_PHASE21_BOUNDED_NEW_OR_PRODUCER_NUMERIC_PARITY_ONLY"
+          assert a["dataset"]=="transportation_utilities"
+          assert a["pinned_private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert a["new_or2_conditions"]==a["new_or3_conditions"]==8
+          assert a["mismatched_fields"]==0
+          assert a["previous_phase15_16_sample_conditions_reexecuted"] is False
+          assert a["actual_common_or_inner_producer_executed"] is True
+          assert a["historical_artifacts_recomputed"] is False
+          assert a["full_or_bundle_generated"] is False
+          assert a["release_ready"] is False
+          print("PASS_PHASE21_NEW_COMMON_OR_16_HELDOUT_NUMERIC_CONDITIONS_ONLY")
+          PY
+          echo "Phase21 bounded actual OR computation PASS, but NOT complete OR or full 29CSV QA." >> "$GITHUB_STEP_SUMMARY"
