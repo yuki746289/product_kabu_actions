@@ -1,5 +1,6 @@
 # Created: 2026-10-13 JST
 # Phase15 read-only OR2/OR3 union-mask numeric sample.
+# User-directed continuation: pilot all225 first; fan out eight only after PASS.
 # STOP on mismatch; never rerun completed historic semantic, OR or HTML.
 name: P2 common Phase15 saved OR2 OR3 independent numerical QA
 on:
