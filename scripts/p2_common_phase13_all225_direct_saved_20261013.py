@@ -94,13 +94,24 @@ def selftest():
             writer = csv.writer(stream)
             writer.writerow(columns)
             writer.writerow(values)
+        original_digest = base.hash_file(path)
         result, groups = calculate_with_legacy_regime_default(
             path, {("causal_regime", "UNKNOWN"),
                    ("daily_rci26_direction", "RISING")}, 1)
         assert result.n == 1
         assert groups[("causal_regime", "UNKNOWN")].n == 1
         assert groups[("daily_rci26_direction", "RISING")].metric(5, "win") == 100.0
-        assert base.hash_file(path) == base.hash_file(path)
+        assert base.hash_file(path) == original_digest
+        # A present regime must be preserved, never overwritten by UNKNOWN.
+        with path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(["causal_regime"] + columns)
+            writer.writerow(["RANGE"] + values)
+        _, present = calculate_with_legacy_regime_default(
+            path, {("causal_regime", "RANGE"),
+                   ("causal_regime", "UNKNOWN")}, 1)
+        assert present[("causal_regime", "RANGE")].n == 1
+        assert present[("causal_regime", "UNKNOWN")].n == 0
         # A different missing feature is still rejected.
         with path.open("w", encoding="utf-8", newline="") as stream:
             writer = csv.writer(stream)
