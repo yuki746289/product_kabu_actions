@@ -6,9 +6,11 @@ source signals, semantic bundles, OR, HTML or successful QA artifacts.
 """
 from __future__ import annotations
 import argparse
+import csv
 import json
 from pathlib import Path
 import sys
+import tempfile
 
 import p2_common_phase9_direct_metric_parity_20261013 as base
 from p2_common_phase11_other_sector_direct_metrics_20261013 import (
@@ -31,13 +33,87 @@ def only_one(root: Path, basename: str) -> Path:
     return found[0]
 
 
+def calculate_with_legacy_regime_default(source: Path,
+                                         keys: set[tuple[str, str]],
+                                         expected_rows: int):
+    """Read-only parity with existing semantic-base input preparation.
+
+    The original canonical prepare() supplies causal_regime='UNKNOWN' only
+    when that one column is absent. All other required columns fail closed.
+    No source CSV or generated artifact is written.
+    """
+    categories = {key: base.Totals() for key in keys}
+    full = base.Totals()
+    with source.open(newline="", encoding="utf-8-sig") as stream:
+        reader = csv.DictReader(stream)
+        header = reader.fieldnames or []
+        if not header or len(header) != len(set(header)):
+            raise ValueError("Saved source headers missing or duplicated")
+        names = set(header)
+        required = set(FEATURES) - {"causal_regime"}
+        required |= {f"moved_predicted_{h}d" for h in base.HORIZONS}
+        required |= {f"directional_return_{h}d_pct" for h in base.HORIZONS}
+        missing = required - names
+        if missing:
+            raise ValueError("Unrecognized missing saved feature columns: "
+                             + ", ".join(sorted(missing)))
+        default_regime = "causal_regime" not in names
+        for i, row in enumerate(reader, start=2):
+            if None in row or any(value is None for value in row.values()):
+                raise ValueError(f"Malformed saved feature row at {i}")
+            if default_regime:
+                row["causal_regime"] = "UNKNOWN"
+            full.add(row)
+            for feature in FEATURES:
+                key = (feature, str(row[feature]))
+                if key in categories:
+                    categories[key].add(row)
+    if full.n != expected_rows:
+        raise ValueError(f"Saved row count mismatch: {full.n} != {expected_rows}")
+    return full, categories
+
+
 def selftest():
     base.selftest()
     assert len(FEATURES) == 10
     assert EXPECTED_CATEGORY_ROWS == 84
     assert EXPECTED_ROWS == 48782+16307+33330+39007+29044+14848
     assert SOURCE_RUN_ID != SEMANTIC_RUN_ID
-    print("PASS: all225 source+semantic-base artifact identity and reducer gates")
+    # Tiny synthetic rows test the exact missing-column rule without historic
+    # semantic/OR generation or any Private input mutation.
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "features.csv"
+        mandatory = [f for f in FEATURES if f != "causal_regime"]
+        outcome = ([f"moved_predicted_{h}d" for h in base.HORIZONS] +
+                   [f"directional_return_{h}d_pct" for h in base.HORIZONS])
+        columns = mandatory + outcome
+        values = (["RISING"] * len(mandatory) +
+                  ["True"] * len(base.HORIZONS) +
+                  ["2.5"] * len(base.HORIZONS))
+        with path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(columns)
+            writer.writerow(values)
+        result, groups = calculate_with_legacy_regime_default(
+            path, {("causal_regime", "UNKNOWN"),
+                   ("daily_rci26_direction", "RISING")}, 1)
+        assert result.n == 1
+        assert groups[("causal_regime", "UNKNOWN")].n == 1
+        assert groups[("daily_rci26_direction", "RISING")].metric(5, "win") == 100.0
+        assert base.hash_file(path) == base.hash_file(path)
+        # A different missing feature is still rejected.
+        with path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(columns[1:])
+            writer.writerow(values[1:])
+        try:
+            calculate_with_legacy_regime_default(
+                path, {("causal_regime", "UNKNOWN")}, 1)
+        except ValueError as error:
+            assert "Unrecognized missing saved feature" in str(error)
+        else:
+            raise AssertionError("Unexpectedly accepted non-regime missing feature")
+    print("PASS: legacy absent causal_regime normalization and fail-closed schema tests")
 
 
 def verify(source_root: Path, semantic_root: Path, source_evidence: Path) -> dict:
@@ -66,7 +142,8 @@ def verify(source_root: Path, semantic_root: Path, source_evidence: Path) -> dic
         reference = base.load_reference(ref)
         if len(reference) != EXPECTED_CATEGORY_ROWS:
             raise ValueError(f"Expected exactly 84 untested canonical rows, got {len(reference)}")
-        full, cats = base.calculate_direct(source, set(reference), EXPECTED_ROWS)
+        full, cats = calculate_with_legacy_regime_default(
+            source, set(reference), EXPECTED_ROWS)
     finally:
         base.SELECTED_FEATURES = old_selected
     issues = base.numeric_failures(full, cats, reference)
