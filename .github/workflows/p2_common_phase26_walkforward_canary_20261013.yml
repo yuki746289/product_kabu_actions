@@ -1,0 +1,162 @@
+# Created: 2026-10-13 JST
+# Phase26 walkforward canary: new inner producer, one CSV only, no prior reruns.
+name: P2 common Phase26 isolated walkforward semantic numerical parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase26_walkforward_canary_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase26-walkforward-canary-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Verify isolated single-file walkforward contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python compile and bounded contract selftest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase26_walkforward_canary_20261013.py
+          python scripts/p2_common_phase26_walkforward_canary_20261013.py --selftest
+
+  canary:
+    name: Call only new walkforward producer function and compare pinned saved CSV
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned read-only Private source and original walkforward reference
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/walkforward_results.csv
+          persist-credentials: false
+      - name: Mandatory Public/Private architecture and SHA gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Unexpected Private workflow"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse immutable saved six-sector feature identity PASS (Phase4)
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_pin
+      - name: Reuse Phase26 three-monthly-CSV new common producer PASS
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-transport-monthly-three-csv-evidence
+          run-id: 38401749460
+          github-token: ${{ github.token }}
+          path: monthly_cert
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned original Private dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Only compute new walkforward_results and compare numerical values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f source_pin/group.json && test -f monthly_cert/report.json
+          python scripts/p2_common_phase26_walkforward_canary_20261013.py \
+            --core core \
+            --reference core/preview/kabu/analysis/225_group_all_period/transportation_utilities \
+            --phase4 source_pin/group.json \
+            --monthly-cert monthly_cert/report.json \
+            --stage "core/build/p2_phase26_$GITHUB_RUN_ID/walkforward" \
+            --report "$RUNNER_TEMP/p2_phase26_walkforward/report.json"
+          echo "One new walkforward CSV numerical parity checked. No full semantic/OR/HTML." >> "$GITHUB_STEP_SUMMARY"
+      - name: Confirm immutable Private source remains unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Publish JSON metadata only and no private CSV values
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase26-transport-walkforward-one-csv-evidence
+          path: ${{ runner.temp }}/p2_phase26_walkforward/report.json
+          if-no-files-found: error
+          retention-days: 14
+  final_gate:
+    name: Require isolated new common walkforward numeric equality
+    needs: [selftest, canary]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail closed unless all predecessors succeeded
+        shell: bash
+        env:
+          TEST: ${{ needs.selftest.result }}
+          CHECK: ${{ needs.canary.result }}
+        run: |
+          set -euo pipefail
+          test "$TEST" = success && test "$CHECK" = success
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-transport-walkforward-one-csv-evidence
+          path: evidence
+      - name: Independently certify only isolated walkforward output
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("evidence/report.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE26_WALKFORWARD_NEW_SEMANTIC_CANARY"
+          assert d["dataset"]=="transportation_utilities"
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["original_rows"]==14848 and d["original_tickers"]==20
+          assert d["file"]=="walkforward_results.csv"
+          assert d["computed_rows"]==d["reference_rows"]
+          assert d["new_common_inner_walkforward_executed"] is True
+          assert d["numeric_parity_mismatches"]==[]
+          for key in ("previous_artifacts_recalculated","full_semantic_generated",
+                      "or_generated","signals_recomputed","html_generated",
+                      "production_changed","release_ready"):
+            assert d[key] is False,key
+          print("PASS_PHASE26_ONE_NEW_COMMON_WALKFORWARD_CSV_ONLY")
+          PY
+          echo "Limited Phase26 canary PASS does not certify full semantic, OR, or release." >> "$GITHUB_STEP_SUMMARY"
