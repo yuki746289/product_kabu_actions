@@ -1,0 +1,164 @@
+# Created: 2026-10-13 JST
+# Bounded six canonical feature-type pairwise holdout vs old saved all-pair CSV.
+# No previous certified semantic/OR/HTML artifact rerun and no public CSV.
+name: P2 common Phase26 six-feature pairwise new-producer parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase26_pairwise_holdout_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase26-pairwise-holdout-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Check new pairwise auditor contract and syntax
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and check six-feature canary bounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase26_pairwise_holdout_20261013.py
+          python scripts/p2_common_phase26_pairwise_holdout_20261013.py --selftest
+  subset:
+    name: Recalculate only bounded new pairwise six-type inner function
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse immutable Private core and original full pairwise reference
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/all_pairwise_combinations.csv
+          persist-credentials: false
+      - name: Enforce public runner, pinned SHA, Private workflow zero, architecture PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse previous immutable source identities from Phase4
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_pin
+      - name: Reuse Phase26 new walkforward producer numerical PASS
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-transport-walkforward-one-csv-evidence
+          run-id: 38402173660
+          github-token: ${{ github.token }}
+          path: prior_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned original dependency set
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compute isolated new pairwise holdout and compare saved old full reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f source_pin/group.json && test -f prior_proof/report.json
+          python scripts/p2_common_phase26_pairwise_holdout_20261013.py \
+            --core core \
+            --reference core/preview/kabu/analysis/225_group_all_period/transportation_utilities \
+            --proof4 source_pin/group.json \
+            --proof26 prior_proof/report.json \
+            --stage "core/build/p2_phase26_$GITHUB_RUN_ID/pairwise_holdout" \
+            --report "$RUNNER_TEMP/p2_phase26_pair/report.json"
+          echo "Phase26 bounded pairwise holdout only. No all-pair or triple rebuild." >> "$GITHUB_STEP_SUMMARY"
+      - name: Confirm Private tracked source bytes did not change
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Publish only compact numerical audit JSON
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase26-transport-six-feature-pairwise-evidence
+          path: ${{ runner.temp }}/p2_phase26_pair/report.json
+          retention-days: 14
+          if-no-files-found: error
+  final_gate:
+    name: Require exact bounded pairwise keys and independent numerical equality
+    needs: [selftest, subset]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail if synthetic or new limited pairwise calculation failed
+        shell: bash
+        env:
+          SELF: ${{ needs.selftest.result }}
+          SUBSET: ${{ needs.subset.result }}
+        run: |
+          set -euo pipefail
+          test "$SELF" = success && test "$SUBSET" = success
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-transport-six-feature-pairwise-evidence
+          path: evidence
+      - name: Independently verify Phase26 six-feature new producer evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("evidence/report.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE26_NEW_PAIRWISE_SIX_FEATURE_HOLDOUT"
+          assert d["dataset"]=="transportation_utilities"
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["input_feature_types"]==6
+          assert d["source_rows"]==14848 and d["source_tickers"]==20
+          assert 0<d["new_subset_pair_rows"]==d["old_holdout_pair_rows"]<=1500
+          assert d["old_full_pair_rows"]==10476
+          assert d["numerical_errors"]==[]
+          assert d["new_common_pairwise_inner_function_called"] is True
+          for k in ("full_pairwise_recalculated","full_triple_recalculated",
+                    "full_or_recalculated","previous_artifacts_recalculated",
+                    "p2_signals_recomputed","html_generated",
+                    "production_changed","release_ready"):
+            assert d[k] is False,k
+          print("PASS_PHASE26_SIX_FEATURE_NEW_PAIRWISE_HOLDOUT_ONLY")
+          PY
+          echo "Holdout is not full semantic or full OR equality; production release remains blocked." >> "$GITHUB_STEP_SUMMARY"
