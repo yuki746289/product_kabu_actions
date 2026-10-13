@@ -6,6 +6,7 @@ on:
     branches: [automation/p2-common-postextract-20261012]
     paths:
       - '.github/workflows/p2_common_phase13_all225_direct_20261013.yml'
+      - 'scripts/p2_common_phase13_all225_direct_saved_20261013.py'
 permissions:
   contents: read
   actions: read
