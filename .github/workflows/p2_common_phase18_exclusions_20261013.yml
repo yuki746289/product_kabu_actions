@@ -1,0 +1,192 @@
+# Created: 2026-10-13 JST
+# Only saved original 28+1 files for each exclusion. No numerical recompute.
+name: P2 common Phase18 saved exclusion 29 CSV roundtrip
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase18_exclusions_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase18-exclusions-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  selftest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Phase18 source-artifact SHA scope only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          python -m py_compile scripts/p2_common_phase18_exclusion_saved_csv_roundtrip_20261013.py
+          python scripts/p2_common_phase18_exclusion_saved_csv_roundtrip_20261013.py --selftest
+
+  saved_bytes:
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse Private checkout at exact immutable original data SHA
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/p2_html_core/
+            /scripts/assemble_p2_common_dataset_csv.py
+            /scripts/qa_p2_common_saved_csv.py
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/*.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/semantic_status.json
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/*.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/semantic_status.json
+          persist-credentials: false
+      - name: Public-only architecture / no Private workflows gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse Phase2 canonical 29-file header fingerprint baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-schema-reference
+          run-id: 38238371163
+          github-token: ${{ github.token }}
+          path: baseline
+      - name: Reuse original transport exclusion feature input
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-features
+          run-id: 37201518110
+          github-token: ${{ github.token }}
+          path: original_transport
+      - name: Reuse original transport exclusion independent source proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-exclude_transportation_utilities-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: proof_transport
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install previously approved private assembler import dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pandas>=2.2,<3.0'
+      - name: Run first exclusion's saved 28+1 byte-for-byte roundtrip
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase18_exclusion_saved_csv_roundtrip_20261013.py \
+            --dataset exclude_transportation_utilities --core core \
+            --external-saved-root original_transport --proof proof_transport/audit.json \
+            --baseline baseline/reference.json \
+            --output-root "core/build/p2_phase18_$GITHUB_RUN_ID/transport" \
+            --report "$RUNNER_TEMP/phase18/transport/audit.json"
+      - name: Reuse original two-sector exclusion feature input only AFTER first PASS
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-features
+          run-id: 37201520569
+          github-token: ${{ github.token }}
+          path: original_double
+      - name: Reuse original two-sector independent saved source identity proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-exclude_capital_goods_transportation_utilities-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: proof_double
+      - name: Run second exclusion's saved 28+1 byte-for-byte roundtrip
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase18_exclusion_saved_csv_roundtrip_20261013.py \
+            --dataset exclude_capital_goods_transportation_utilities --core core \
+            --external-saved-root original_double --proof proof_double/audit.json \
+            --baseline baseline/reference.json \
+            --output-root "core/build/p2_phase18_$GITHUB_RUN_ID/double" \
+            --report "$RUNNER_TEMP/phase18/double/audit.json"
+          echo "Both exclusions: 58/58 saved CSV bytes confirmed, no analysis run." >> "$GITHUB_STEP_SUMMARY"
+      - name: Assert pinned Private original files unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Publish only the two small metadata JSONs, not private CSVs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase18-exclusions-two-saved-roundtrips
+          path: ${{ runner.temp }}/phase18/
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    needs: [selftest,saved_bytes]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require both earlier stages to pass
+        shell: bash
+        env:
+          TEST: ${{ needs.selftest.result }}
+          BYTES: ${{ needs.saved_bytes.result }}
+        run: |
+          set -euo pipefail
+          echo "Pinned Private: $CORE_SHA; test $TEST, saved 58 CSVs $BYTES" >> "$GITHUB_STEP_SUMMARY"
+          test "$TEST" = success && test "$BYTES" = success
+      - name: Reuse ONLY this run's small Phase18 verification output
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase18-exclusions-two-saved-roundtrips
+          path: evidence
+      - name: Independent strict 29+29 saved-only gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          paths=sorted(Path("evidence").glob("*/audit.json"))
+          assert len(paths)==2, paths
+          datasets=set()
+          for p in paths:
+              d=json.loads(p.read_text(encoding="utf-8"))
+              datasets.add(d["dataset"])
+              assert d["status"]=="PASS_PHASE18_EXCLUSION_SAVED_29_CSV_ROUNDTRIP_ONLY"
+              assert d["core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert (d["saved_original_csv_count"],d["external_pinned_original_signal_csv"],
+                      d["normalized_csv_count"],d["independently_identical_csv_count"]) == (28,1,29,29)
+              assert d["original_producer_ledger_verified"] is False
+              assert d["source_signals_recomputed"] is False
+              assert d["semantic_or_recomputed"] is False
+              assert d["release_ready"] is False
+          assert datasets=={"exclude_transportation_utilities","exclude_capital_goods_transportation_utilities"}
+          print("PASS_PHASE18_58_EXCLUSION_SAVED_CSV_BYTES_ONLY")
+          PY
+          echo "Phase18 saved-only PASS; this is not new calculation parity or HTML QA." >> "$GITHUB_STEP_SUMMARY"
