@@ -245,15 +245,26 @@ def audit(dataset:str,source:Path,reference:Path,proof_file:Path,core:Path)->dic
 
 def selftest() -> None:
     b.selftest()
-    row=dict(feature1="daily_rci9_direction",category1="RISING",
-             feature2="daily_rci26_direction",category2="FALLING",
-             count="50")
-    a=((row["feature1"],row["category1"]), (row["feature2"],row["category2"]))
-    assert len(pick_conditions([(a,row)]*25,"pair"))==24 if False else True
     assert len(FEATURES)==10 and len(SHAPES)==9
     assert ROW_PER_FAMILY==24
     assert b.finite("True")==1 and b.finite("False")==0
-    print("PASS: phase14 fixed condition sampling and provenance unit checks")
+    pool=[]
+    for i in range(30):
+        key=(("daily_rci9_direction", "RISING"),
+             ("daily_rci26_position", str(i)))
+        pool.append((key, {"count": str(0 if i<10 else 12 if i<20 else 200)}))
+    chosen=pick_conditions(pool,"pair")
+    assert len(chosen)==24 and len({x[0] for x in chosen})==24
+    assert [sum(int(item[1]["count"]) == x for item in chosen)
+            for x in (0,12,200)]==[8,8,8]
+    try:
+        pick_conditions(pool[:23],"pair")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Insufficient saved reference conditions were accepted")
+    assert sorted(SHAPES)==sorted(GROUPS | EXCLUSIONS | {"all_225"})
+    print("PASS: Phase14 deterministic 24-row sampling and source/schema guard")
 
 
 def main() -> int:
