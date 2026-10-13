@@ -72,8 +72,8 @@ def verify(core,ref,proof4,proof26,stage):
     # input feature types only; no full pair/triple candidate computation.
     single,masks=aug._representative_singles(frame,base,sf,se)
     fresh,_=aug._pairwise(frame,base,sf,se,single,masks)
-    if fresh.empty or len(fresh)>1500:
-        raise ValueError("Unbounded or empty new pairwise canary result")
+    if len(fresh)!=1800:
+        raise ValueError(f"Unexpected six-feature pairwise row count: {len(fresh)} != 1800")
     old_path=ref/FILENAME
     old=pd.read_csv(old_path,low_memory=False)
     if len(old)!=10476:
