@@ -1,0 +1,315 @@
+# Created: 2026-10-13 JST
+# Phase16 read-only OR2/OR3 union-mask numeric sample.
+# User-directed continuation: pilot all225 first; fan out eight only after PASS.
+# STOP on mismatch; never rerun completed historic semantic, OR or HTML.
+name: P2 common Phase16 saved OR2 OR3 independent numerical QA
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase16_more_or_saved_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase16-or-saved-numeric-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  selftest:
+    name: OR direct-mask independent metrics selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile new saved OR auditor and unit guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile \
+            scripts/p2_common_phase9_direct_metric_parity_20261013.py \
+            scripts/p2_common_phase14_saved_pair_triple_sample_20261013.py \
+            scripts/p2_common_phase16_more_or_saved_20261013.py
+          python scripts/p2_common_phase16_more_or_saved_20261013.py --selftest
+  pilot_all225:
+    name: Saved all225 next 24 OR2 and next 24 OR3 metrics
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned Private core rule only, read-only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Mandatory public-only SHA and private workflow gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Download only retained original all225 source features
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: saved_source
+      - name: Download retained original OR aggregate CSV artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-or
+          run-id: 36714890471
+          github-token: ${{ github.token }}
+          path: old_or
+      - name: Download independently certified Phase4 signal identity
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: proof
+      - name: Independently inspect saved raw OR2/OR3 and original signal metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f saved_source/features.csv
+          test -f old_or/or_status.json
+          test -f proof/group.json
+          python scripts/p2_common_phase16_more_or_saved_20261013.py \
+            --dataset all_225 --core core \
+            --source saved_source/features.csv --reference old_or \
+            --proof proof/group.json \
+            --out "$RUNNER_TEMP/p2_phase16/all225/audit.json"
+          echo "all225 saved OR2/OR3 disjoint incremental sample was inspected; no re-generation." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify Private source unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save small checked numeric evidence only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase16-all_225-or-sample
+          path: ${{ runner.temp }}/p2_phase16/all225/audit.json
+          if-no-files-found: error
+          retention-days: 14
+  remaining_eight:
+    name: Saved OR2/OR3 numerical pilot ${{ matrix.dataset }}
+    needs: pilot_all225
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - dataset: technology
+            relative_dir: 225_group_all_period/technology
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: financials
+            relative_dir: 225_group_all_period/financials
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: consumer_goods
+            relative_dir: 225_group_all_period/consumer_goods
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: materials
+            relative_dir: 225_group_all_period/materials
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: capital_goods_others
+            relative_dir: 225_group_all_period/capital_goods_others
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: transportation_utilities
+            relative_dir: 225_group_all_period/transportation_utilities
+            kind: group
+            artifact: none
+            source_run: 0
+            proof: p2-common-exact-six-group-identities
+            proof_file: group.json
+          - dataset: exclude_transportation_utilities
+            relative_dir: 225_exclusion_all_period/exclude_transportation_utilities
+            kind: artifact
+            artifact: p2-225-exclusion-no-transport-features
+            source_run: 37201518110
+            proof: p2-common-exact-exclude_transportation_utilities-identities
+            proof_file: audit.json
+          - dataset: exclude_capital_goods_transportation_utilities
+            relative_dir: 225_exclusion_all_period/exclude_capital_goods_transportation_utilities
+            kind: artifact
+            artifact: p2-225-exclusion-no-capital-transport-features
+            source_run: 37201520569
+            proof: p2-common-exact-exclude_capital_goods_transportation_utilities-identities
+            proof_file: audit.json
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse private source and already approved original OR files
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/or_pairwise_all.csv
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/or_triple_all.csv
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/semantic_status.json
+            /preview/kabu/analysis/${{ matrix.relative_dir }}/signal_level_features.csv
+          persist-credentials: false
+      - name: Verify public runner and exact historic private SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Download saved independent Phase4 identity proof
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof }}
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: proof
+      - name: Reuse historic filtered source only for exclusions
+        if: ${{ matrix.kind == 'artifact' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          run-id: ${{ matrix.source_run }}
+          github-token: ${{ github.token }}
+          path: saved_source
+      - name: Inspect existing direct OR2/OR3 unions and numerical summaries
+        shell: bash
+        env:
+          DATASET: ${{ matrix.dataset }}
+          RELATIVE: ${{ matrix.relative_dir }}
+          KIND: ${{ matrix.kind }}
+          PROOF_FILE: ${{ matrix.proof_file }}
+        run: |
+          set -euo pipefail
+          root="core/preview/kabu/analysis/$RELATIVE"
+          if test "$KIND" = group; then
+            source_file="$root/signal_level_features.csv"
+          else
+            test "$(find saved_source -type f -name features.csv | wc -l)" -eq 1
+            source_file="$(find saved_source -type f -name features.csv -print -quit)"
+          fi
+          test -f "$source_file"
+          test -f "proof/$PROOF_FILE"
+          python scripts/p2_common_phase16_more_or_saved_20261013.py \
+            --dataset "$DATASET" --core core \
+            --source "$source_file" --reference "$root" \
+            --proof "proof/$PROOF_FILE" \
+            --out "$RUNNER_TEMP/p2_phase16/$DATASET/audit.json"
+          echo "Original $DATASET OR2/OR3 direct sample metrics checked without recompute." >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve all original private files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save only small QA metadata
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase16-${{ matrix.dataset }}-or-sample
+          path: ${{ runner.temp }}/p2_phase16/${{ matrix.dataset }}/audit.json
+          if-no-files-found: error
+          retention-days: 14
+  final_gate:
+    needs: [selftest, pilot_all225, remaining_eight]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require successful pilot and eight saved sources
+        shell: bash
+        env:
+          UNIT: ${{ needs.selftest.result }}
+          PILOT: ${{ needs.pilot_all225.result }}
+          OTHERS: ${{ needs.remaining_eight.result }}
+        run: |
+          set -euo pipefail
+          echo "Phase16 unit=$UNIT all225=$PILOT other8=$OTHERS" >> "$GITHUB_STEP_SUMMARY"
+          if test "$UNIT" != success || test "$PILOT" != success || test "$OTHERS" != success; then
+            echo "::error::Saved OR numerical parity incomplete; refuse to advance"; exit 1
+          fi
+      - name: Reuse only this run's nine OR evidence files
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase16-*-or-sample
+          path: audit
+          merge-multiple: false
+      - name: Independently verify all nine OR sample reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=list(Path("audit").glob("p2-common-phase16-*-or-sample/audit.json"))
+          assert len(files)==9, f"expected 9 evidence files, got {len(files)}"
+          seen=set()
+          for f in files:
+              x=json.loads(f.read_text(encoding="utf-8"))
+              assert x["dataset"] not in seen
+              seen.add(x["dataset"])
+              assert x["private_source_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert x["status"]=="PASS_PHASE16_ADDITIONAL_SAVED_OR2_OR3_NUMERIC_SAMPLE"
+              assert x["or2_rows_checked"]==24 and x["or3_rows_checked"]==24
+              assert x["numerical_mismatches"]==0
+              assert x["source_features_recomputed"] is False
+              assert x["historical_semantic_or_artifacts_regenerated"] is False
+              assert x["production_p2_v12_changed"] is False
+              assert x["html_qa_complete"] is False
+              assert x["release_ready"] is False
+          print("PASS_PHASE16_NINE_SAVED_DATASETS_432_ADDITIONAL_OR_CONDITIONS")
+          PY
+          echo "Saved OR2/OR3 disjoint incremental sample PASS only, never full OR/HTML/release certification" >> "$GITHUB_STEP_SUMMARY"
