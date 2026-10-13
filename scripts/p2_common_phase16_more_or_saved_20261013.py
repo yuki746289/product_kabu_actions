@@ -16,13 +16,15 @@ import sys
 
 import p2_common_phase15_or2_or3_saved_sample_20261013 as prior
 
+ORIGINAL_PHASE15_SELECTOR=prior.selected_or_rows
+
 FIRST_CERTIFIED_PER_KIND=8
 ADDITIONAL_PER_KIND=24
 N_TOTAL_PER_KIND=FIRST_CERTIFIED_PER_KIND+ADDITIONAL_PER_KIND
 
 
 def next_conditions(folder:Path)->list:
-    old=prior.selected_or_rows(folder)
+    old=ORIGINAL_PHASE15_SELECTOR(folder)
     if len(old)!=2*FIRST_CERTIFIED_PER_KIND:
         raise ValueError("Phase15 old sample scope cannot be matched")
     results=[]
@@ -67,6 +69,7 @@ def selftest()->None:
     assert ADDITIONAL_PER_KIND==24
     assert N_TOTAL_PER_KIND==32
     assert prior.N_PER_KIND==FIRST_CERTIFIED_PER_KIND
+    assert ORIGINAL_PHASE15_SELECTOR is not next_conditions
     print("PASS: disjoint SHA sampling scope (old 8 + next 24 for OR2 and OR3)")
 
 
