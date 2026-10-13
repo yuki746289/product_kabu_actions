@@ -1,0 +1,215 @@
+# Created: 2026-10-13 JST
+# Read-only complete legacy OR dedupe audit. No OR producer/semantic/P2 reruns.
+name: P2 common Phase17 full retained OR dedupe identity audit
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths: ['.github/workflows/p2_common_phase17_full_or_dedupe_20261013.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase17-full-saved-or-dedupe-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  selftest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Independent dedupe comparator synthetic guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase17_full_saved_or_dedupe_20261013.py
+          python scripts/p2_common_phase17_full_saved_or_dedupe_20261013.py --selftest
+  all225:
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned Private core rules only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+          persist-credentials: false
+      - name: Mandatory public-only and pinned Private SHA gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow present"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse retained OR aggregate artifact from original 225 analysis
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-or
+          run-id: 36714890471
+          github-token: ${{ github.token }}
+          path: saved_or
+      - name: Compare every saved OR raw mask to deduped representative
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase17_full_saved_or_dedupe_20261013.py \
+            --dataset all_225 --core core --reference saved_or \
+            --out "$RUNNER_TEMP/p2_phase17/all225/audit.json"
+          echo "Full saved OR2/OR3 duplicate representatives checked, no regeneration" >> "$GITHUB_STEP_SUMMARY"
+      - name: Prove source unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save only aggregate SHA and count evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase17-all225-or-dedupe-evidence
+          path: ${{ runner.temp }}/p2_phase17/all225/audit.json
+          retention-days: 14
+          if-no-files-found: error
+  remaining_eight:
+    needs: all225
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        include:
+          - dataset: technology
+            rel: 225_group_all_period/technology
+          - dataset: financials
+            rel: 225_group_all_period/financials
+          - dataset: consumer_goods
+            rel: 225_group_all_period/consumer_goods
+          - dataset: materials
+            rel: 225_group_all_period/materials
+          - dataset: capital_goods_others
+            rel: 225_group_all_period/capital_goods_others
+          - dataset: transportation_utilities
+            rel: 225_group_all_period/transportation_utilities
+          - dataset: exclude_transportation_utilities
+            rel: 225_exclusion_all_period/exclude_transportation_utilities
+          - dataset: exclude_capital_goods_transportation_utilities
+            rel: 225_exclusion_all_period/exclude_capital_goods_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse checkout only four saved OR CSVs and status
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/${{ matrix.rel }}/or_pairwise_all.csv
+            /preview/kabu/analysis/${{ matrix.rel }}/or_pairwise_unique.csv
+            /preview/kabu/analysis/${{ matrix.rel }}/or_triple_all.csv
+            /preview/kabu/analysis/${{ matrix.rel }}/or_triple_unique.csv
+            /preview/kabu/analysis/${{ matrix.rel }}/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory SHA and Public-only architecture gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow present"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Full saved raw-vs-unique OR identity audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase17_full_saved_or_dedupe_20261013.py \
+            --dataset "${{ matrix.dataset }}" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.rel }}" \
+            --out "$RUNNER_TEMP/p2_phase17/${{ matrix.dataset }}/audit.json"
+          echo "Full saved OR2/OR3 dedupe audit ${{ matrix.dataset }}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify Private tracked sources unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save compact QA evidence only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase17-${{ matrix.dataset }}-or-dedupe-evidence
+          path: ${{ runner.temp }}/p2_phase17/${{ matrix.dataset }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+  final_gate:
+    needs: [selftest, all225, remaining_eight]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all nine read-only original OR checks to pass
+        shell: bash
+        env:
+          SELF: ${{ needs.selftest.result }}
+          IDX: ${{ needs.all225.result }}
+          REST: ${{ needs.remaining_eight.result }}
+        run: |
+          set -euo pipefail
+          echo "Full saved OR dedupe: selftest=$SELF all225=$IDX remaining8=$REST" >> "$GITHUB_STEP_SUMMARY"
+          if test "$SELF" != success || test "$IDX" != success || test "$REST" != success; then
+            echo "::error::OR dedupe audit failed. No further automated steps."; exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase17-*-or-dedupe-evidence
+          path: evidence
+          merge-multiple: false
+      - name: Verify status, immutable hashes, original source protection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=list(Path("evidence").glob("p2-common-phase17-*-or-dedupe-evidence/audit.json"))
+          assert len(files)==9, f"expected 9 independent dedupe audits, got {len(files)}"
+          seen=set()
+          for f in files:
+              v=json.loads(f.read_text(encoding="utf-8"))
+              assert v["dataset"] not in seen
+              seen.add(v["dataset"])
+              assert v["status"]=="PASS_PHASE17_FULL_SAVED_OR_DEDUPE_ONLY"
+              assert v["source_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert v["saved_or_recomputed"] is False
+              assert v["production_p2_v12_changed"] is False
+              assert v["release_ready"] is False
+              assert len(v["families"])==2
+              assert all(x["distinct_masks"]==x["unique_rows"] for x in v["families"])
+          print("PASS_PHASE17_NINE_DATASETS_FULL_SAVED_OR_DEDUPE_IDENTITIES_ONLY")
+          PY
+          echo "Full saved OR dedupe data consistent. NOT new common OR recomputation parity or HTML QA." >> "$GITHUB_STEP_SUMMARY"
