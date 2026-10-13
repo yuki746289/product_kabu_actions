@@ -1,0 +1,307 @@
+# Created: 2026-10-13 JST
+# NEW bounded common OR inner producer on two exclusion saved original sources.
+# No Production P2, semantic, full OR bundle, HTML, or old artifact recomputation.
+name: P2 common Phase24 new bounded OR exclusion numerical parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase24_exclusion_new_or_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase24-exclusion-new-or-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Fail-closed provenance, source and disjoint OR selector selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile bounded new producer auditor and test source guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase24_exclusion_new_or_bounded_20261013.py scripts/p2_common_phase21_new_or_bounded_20261013.py
+          python scripts/p2_common_phase24_exclusion_new_or_bounded_20261013.py --selftest
+
+  transport:
+    name: New common OR bounded calculation exclude_transportation_utilities
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      DATASET: exclude_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse pinned Private original and new common OR inner producer only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/or_pairwise_all.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/or_triple_all.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory Public-only, immutable SHA and no Private workflows preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions workflow is forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse originally saved exclusion features from successful filtering artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-features
+          run-id: 37201518110
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse independently certified saved exact-exclusion identity and source SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-exclude_transportation_utilities-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_proof
+      - name: Reuse successful Phase12 original numerical and SHA source certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase12-exclude_transportation_utilities
+          run-id: 38292226868
+          github-token: ${{ github.token }}
+          path: phase12_proof
+      - name: Reuse successful Phase15 saved OR2 and OR3 source SHA certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase15-exclude_transportation_utilities-or-sample
+          run-id: 38336668272
+          github-token: ${{ github.token }}
+          path: or_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install only original pinned common-producer Python dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Run bounded 8+8 new OR component calculations, compare to old saved values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f source_proof/audit.json
+          test -f phase12_proof/audit.json
+          test -f or_proof/audit.json
+          test "$(find original_source -type f -name features.csv | wc -l)" -eq 1
+          python scripts/p2_common_phase24_exclusion_new_or_bounded_20261013.py \
+            --dataset "$DATASET" --core core \
+            --original-source-root original_source \
+            --reference "core/preview/kabu/analysis/225_exclusion_all_period/$DATASET" \
+            --phase4 source_proof/audit.json \
+            --phase12 phase12_proof/audit.json \
+            --phase15 or_proof/audit.json \
+            --report "$RUNNER_TEMP/p2_phase24/transport/audit.json"
+          echo "Exact canonical new OR inner producer, 16 new conditions; no historic recalculation" >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce pinned source and all tracked source files unmodified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save small audit evidence, no private source rows
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase24-exclude_transportation_utilities-new-or
+          path: ${{ runner.temp }}/p2_phase24/transport/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  double:
+    name: New common OR bounded calculation exclude_capital_goods_transportation_utilities
+    needs: transport
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      DATASET: exclude_capital_goods_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse pinned Private original and new common OR inner producer only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/advantage_single_candidates.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/or_pairwise_all.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/or_triple_all.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory Public-only, immutable SHA and no Private workflows preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions workflow is forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse originally saved exclusion features from successful filtering artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-features
+          run-id: 37201520569
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse independently certified saved exact-exclusion identity and source SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-exclude_capital_goods_transportation_utilities-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_proof
+      - name: Reuse successful Phase12 original numerical and SHA source certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase12-exclude_capital_goods_transportation_utilities
+          run-id: 38292226868
+          github-token: ${{ github.token }}
+          path: phase12_proof
+      - name: Reuse successful Phase15 saved OR2 and OR3 source SHA certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase15-exclude_capital_goods_transportation_utilities-or-sample
+          run-id: 38336668272
+          github-token: ${{ github.token }}
+          path: or_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install only original pinned common-producer Python dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Run bounded 8+8 new OR component calculations, compare to old saved values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f source_proof/audit.json
+          test -f phase12_proof/audit.json
+          test -f or_proof/audit.json
+          test "$(find original_source -type f -name features.csv | wc -l)" -eq 1
+          python scripts/p2_common_phase24_exclusion_new_or_bounded_20261013.py \
+            --dataset "$DATASET" --core core \
+            --original-source-root original_source \
+            --reference "core/preview/kabu/analysis/225_exclusion_all_period/$DATASET" \
+            --phase4 source_proof/audit.json \
+            --phase12 phase12_proof/audit.json \
+            --phase15 or_proof/audit.json \
+            --report "$RUNNER_TEMP/p2_phase24/double/audit.json"
+          echo "Exact canonical new OR inner producer, 16 new conditions; no historic recalculation" >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce pinned source and all tracked source files unmodified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save small audit evidence, no private source rows
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase24-exclude_capital_goods_transportation_utilities-new-or
+          path: ${{ runner.temp }}/p2_phase24/double/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Independent Phase24 exact 2x16 limited new OR proof and no re-release
+    needs: [selftest, transport, double]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every preceding job success
+        shell: bash
+        env:
+          TEST: ${{ needs.selftest.result }}
+          A: ${{ needs.transport.result }}
+          B: ${{ needs.double.result }}
+        run: |
+          set -euo pipefail
+          echo "Phase24 unit=$TEST transport=$A double=$B (private SHA $CORE_SHA)" >> "$GITHUB_STEP_SUMMARY"
+          test "$TEST" = success && test "$A" = success && test "$B" = success
+      - name: Download only this run's new limited original-output comparisons
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase24-*-new-or
+          path: evidence
+          merge-multiple: false
+      - name: Assert both excluded saved sources new bounded OR producer numeric parity PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=list(Path("evidence").glob("p2-common-phase24-*-new-or/audit.json"))
+          assert len(files)==2, files
+          names=set()
+          count=0
+          for file in files:
+              d=json.loads(file.read_text(encoding="utf-8"))
+              names.add(d["dataset"])
+              assert d["status"]=="PASS_PHASE24_EXCLUSION_BOUNDED_NEW_OR_PRODUCER"
+              assert d["source_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert d["or2_conditions_new"]==8 and d["or3_conditions_new"]==8
+              assert d["numeric_mismatches"]==0
+              assert d["actual_new_common_or_inner_producer_executed"] is True
+              assert d["original_artifacts_recomputed"] is False
+              assert d["full_semantic_or_bundle_generated"] is False
+              assert d["release_ready"] is False
+              count+=d["new_producer_fields_checked"]
+          assert names=={
+              "exclude_transportation_utilities",
+              "exclude_capital_goods_transportation_utilities",
+          }
+          print(f"PASS_PHASE24_TWO_EXCLUSIONS_32_NEW_OR_CONDITIONS_{count}_FIELDS")
+          PY
+          echo "Limited success only, full semantic/OR, new 29 CSV and HTML not certified" >> "$GITHUB_STEP_SUMMARY"
