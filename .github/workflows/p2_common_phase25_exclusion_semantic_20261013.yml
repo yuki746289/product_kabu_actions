@@ -1,0 +1,306 @@
+# Created: 2026-10-13 JST
+# New bounded common semantic inner producer: four files per two exclusions.
+# Previous successful features/semantic/OR/HTML artifacts are never recalculated.
+name: P2 common Phase25 new bounded semantic exclusion numerical parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase25_exclusion_semantic_20261013.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase25-exclusion-semantic-20261013
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Verify pinned 2-exclusion new semantic source contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and selftest four-file isolated new semantic producer auditor
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase25_exclusion_semantic_bounded_20261013.py
+          python scripts/p2_common_phase25_exclusion_semantic_bounded_20261013.py --selftest
+
+  double:
+    name: Bounded actual semantic inner producer, exclude_capital_goods_transportation_utilities
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      DATASET: exclude_capital_goods_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse read-only Private source at pinned original SHA
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/all_single_categories.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/representative_single_categories.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/candidate_registry.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/parameter_plateau.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/semantic_status.json
+          persist-credentials: false
+      - name: Assert Public-only runner, exact source commit and no private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original saved exclusion feature artifact without recalculation
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-features
+          run-id: 37201520569
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse immutable independent original source identity certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-exclude_capital_goods_transportation_utilities-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: phase4_proof
+      - name: Reuse original saved direct 84-category numeric parity proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase12-exclude_capital_goods_transportation_utilities
+          run-id: 38292226868
+          github-token: ${{ github.token }}
+          path: phase12_proof
+      - name: Reuse new common OR holdout proof from prior Phase24
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase24-exclude_capital_goods_transportation_utilities-new-or
+          run-id: 38379297099
+          github-token: ${{ github.token }}
+          path: phase24_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install only pinned original common-producer requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compute exactly four new common semantic CSVs and compare saved old values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f phase4_proof/audit.json && test -f phase12_proof/audit.json && test -f phase24_proof/audit.json
+          python scripts/p2_common_phase25_exclusion_semantic_bounded_20261013.py \
+            --dataset "$DATASET" --core core \
+            --original-source-root original_source \
+            --reference "core/preview/kabu/analysis/225_exclusion_all_period/$DATASET" \
+            --phase4 phase4_proof/audit.json \
+            --phase12 phase12_proof/audit.json \
+            --phase24 phase24_proof/audit.json \
+            --stage "core/build/p2_phase25_$GITHUB_RUN_ID/double" \
+            --report "$RUNNER_TEMP/phase25/double/audit.json"
+          echo "Limited new semantic 4 CSVs checked against original; no old artifact rerun" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate exact original Private SHA and all tracked bytes unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Publish only numerical equality summary JSON, never private data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase25-exclude_capital_goods_transportation_utilities-new-semantic
+          path: ${{ runner.temp }}/phase25/double/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  transport:
+    name: Bounded actual semantic inner producer, exclude_transportation_utilities
+    needs: double
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      DATASET: exclude_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse read-only Private source at pinned original SHA
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/all_single_categories.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/representative_single_categories.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/candidate_registry.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/parameter_plateau.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/semantic_status.json
+          persist-credentials: false
+      - name: Assert Public-only runner, exact source commit and no private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original saved exclusion feature artifact without recalculation
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-features
+          run-id: 37201518110
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse immutable independent original source identity certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-exclude_transportation_utilities-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: phase4_proof
+      - name: Reuse original saved direct 84-category numeric parity proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase12-exclude_transportation_utilities
+          run-id: 38292226868
+          github-token: ${{ github.token }}
+          path: phase12_proof
+      - name: Reuse new common OR holdout proof from prior Phase24
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase24-exclude_transportation_utilities-new-or
+          run-id: 38379297099
+          github-token: ${{ github.token }}
+          path: phase24_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install only pinned original common-producer requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compute exactly four new common semantic CSVs and compare saved old values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f phase4_proof/audit.json && test -f phase12_proof/audit.json && test -f phase24_proof/audit.json
+          python scripts/p2_common_phase25_exclusion_semantic_bounded_20261013.py \
+            --dataset "$DATASET" --core core \
+            --original-source-root original_source \
+            --reference "core/preview/kabu/analysis/225_exclusion_all_period/$DATASET" \
+            --phase4 phase4_proof/audit.json \
+            --phase12 phase12_proof/audit.json \
+            --phase24 phase24_proof/audit.json \
+            --stage "core/build/p2_phase25_$GITHUB_RUN_ID/transport" \
+            --report "$RUNNER_TEMP/phase25/transport/audit.json"
+          echo "Limited new semantic 4 CSVs checked against original; no old artifact rerun" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate exact original Private SHA and all tracked bytes unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Publish only numerical equality summary JSON, never private data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase25-exclude_transportation_utilities-new-semantic
+          path: ${{ runner.temp }}/phase25/transport/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Require both excluded original sources limited 4-file numerical parity
+    needs: [selftest, double, transport]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Stop unless selftest and both bounded computations passed
+        shell: bash
+        env:
+          TEST: ${{ needs.selftest.result }}
+          DOUBLE: ${{ needs.double.result }}
+          TRANSPORT: ${{ needs.transport.result }}
+        run: |
+          set -euo pipefail
+          echo "Phase25 pinned $CORE_SHA: synthetic=$TEST, double=$DOUBLE, transport=$TRANSPORT" >> "$GITHUB_STEP_SUMMARY"
+          test "$TEST" = success && test "$DOUBLE" = success && test "$TRANSPORT" = success
+      - name: Consume only this run's two small saved-data comparison JSONs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase25-*-new-semantic
+          path: evidence
+          merge-multiple: false
+      - name: Independently verify both original-source 4-file comparisons without claims of full pipeline completion
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          paths=list(Path("evidence").glob("p2-common-phase25-*-new-semantic/audit.json"))
+          assert len(paths)==2,paths
+          seen=set()
+          compared=0
+          for f in paths:
+              data=json.loads(f.read_text(encoding="utf-8"))
+              seen.add(data["dataset"])
+              assert data["status"]=="PASS_PHASE25_EXCLUSION_NEW_SEMANTIC_4_CSV_NUMERIC_ONLY"
+              assert data["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert data["computed_subset_files"]==data["independently_compared_files"]==4
+              assert data["numerical_mismatches"]==[]
+              assert data["actual_new_common_semantic_inner_functions_executed"] is True
+              assert data["full_semantic_bundle_generated"] is False
+              assert data["prior_successful_artifacts_regenerated"] is False
+              assert data["release_ready"] is False
+              compared+=data["independently_compared_files"]
+          assert seen=={
+              "exclude_transportation_utilities",
+              "exclude_capital_goods_transportation_utilities",
+          }
+          print(f"PASS_PHASE25_TWO_EXCLUSIONS_{compared}_BOUNDED_NEW_SEMANTIC_CSVS")
+          PY
+          echo "Limited Phase25 semantic subset only; full canonical semantic, OR, HTML, 29 CSV not certified." >> "$GITHUB_STEP_SUMMARY"
