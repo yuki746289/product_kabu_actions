@@ -1,5 +1,6 @@
 # Created: 2026-10-14 JST
 # Phase26 limited, independent three-condition stability parity on saved sources.
+# Retry: normalize persisted CSV key types for year/month/regime validation.
 # Prior success artifacts are referenced by immutable run ID; no private CSV publication.
 name: P2 common Phase26 bounded stability parity
 on:
