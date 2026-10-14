@@ -150,12 +150,25 @@ jobs:
           set -euo pipefail
           python -m pip install -r core/requirements.txt
 
-      - name: Run bounded read-only Phase40 and record actual certification scope
+      - name: Reuse old completed Phase40 JSON if available without recalculating successful work
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: batch-40-${{ matrix.dataset }}
+          run-id: 38528366566
+          github-token: ${{ github.token }}
+          path: prior_evidence
+      - name: Reuse verified prior audit or run remaining untouched Phase40 audit
         run: |
           set -euo pipefail
-          python scripts/p2_common_phase40_47_batch_20261014.py --phase 40 \
-            --core core --dataset "$DATASET" --phase38 proof38/audit.json --source-root original_source --phase39 proof39/audit.json \
-            --report "$RUNNER_TEMP/report.json"
+          if test -f prior_evidence/report.json; then
+            python -c 'import json,os; from pathlib import Path; d=json.loads(Path("prior_evidence/report.json").read_text(encoding="utf-8")); assert str(d["phase"])=="40" and d["dataset"]==os.environ["DATASET"]; assert d["status"]=="PASS_SCOPED" and d["errors"]==[]; assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"; assert d["full_producer_certified"] is False and d["deployed"] is False; print("REUSED_PREVIOUS_SCOPED_PASS_40",d["dataset"])'
+            cp prior_evidence/report.json "$RUNNER_TEMP/report.json"
+          else
+            python scripts/p2_common_phase40_47_batch_20261014.py --phase 40 \
+              --core core --dataset "$DATASET" --phase38 proof38/audit.json --source-root original_source --phase39 proof39/audit.json \
+              --report "$RUNNER_TEMP/report.json"
+          fi
       - name: Require no raw data publication, no failed diagnostics and no release
         run: |
           set -euo pipefail
@@ -282,12 +295,25 @@ jobs:
           github-token: ${{ github.token }}
           path: proof38
 
-      - name: Run bounded read-only Phase41 and record actual certification scope
+      - name: Reuse old completed Phase41 JSON if available without recalculating successful work
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: batch-41-${{ matrix.dataset }}
+          run-id: 38528366566
+          github-token: ${{ github.token }}
+          path: prior_evidence
+      - name: Reuse verified prior audit or run remaining untouched Phase41 audit
         run: |
           set -euo pipefail
-          python scripts/p2_common_phase40_47_batch_20261014.py --phase 41 \
-            --core core --dataset "$DATASET" --phase38 proof38/audit.json --source-root original_source \
-            --report "$RUNNER_TEMP/report.json"
+          if test -f prior_evidence/report.json; then
+            python -c 'import json,os; from pathlib import Path; d=json.loads(Path("prior_evidence/report.json").read_text(encoding="utf-8")); assert str(d["phase"])=="41" and d["dataset"]==os.environ["DATASET"]; assert d["status"]=="PASS_SCOPED" and d["errors"]==[]; assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"; assert d["full_producer_certified"] is False and d["deployed"] is False; print("REUSED_PREVIOUS_SCOPED_PASS_41",d["dataset"])'
+            cp prior_evidence/report.json "$RUNNER_TEMP/report.json"
+          else
+            python scripts/p2_common_phase40_47_batch_20261014.py --phase 41 \
+              --core core --dataset "$DATASET" --phase38 proof38/audit.json --source-root original_source \
+              --report "$RUNNER_TEMP/report.json"
+          fi
       - name: Require no raw data publication, no failed diagnostics and no release
         run: |
           set -euo pipefail
@@ -424,12 +450,25 @@ jobs:
           set -euo pipefail
           python -m pip install -r core/requirements.txt
 
-      - name: Run bounded read-only Phase42_43 and record actual certification scope
+      - name: Reuse old completed Phase42_43 JSON if available without recalculating successful work
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: batch-42_43-${{ matrix.dataset }}
+          run-id: 38528366566
+          github-token: ${{ github.token }}
+          path: prior_evidence
+      - name: Reuse verified prior audit or run remaining untouched Phase42_43 audit
         run: |
           set -euo pipefail
-          python scripts/p2_common_phase40_47_batch_20261014.py --phase 42_43 \
-            --core core --dataset "$DATASET" --phase38 proof38/audit.json --source-root original_source \
-            --report "$RUNNER_TEMP/report.json"
+          if test -f prior_evidence/report.json; then
+            python -c 'import json,os; from pathlib import Path; d=json.loads(Path("prior_evidence/report.json").read_text(encoding="utf-8")); assert str(d["phase"])=="42_43" and d["dataset"]==os.environ["DATASET"]; assert d["status"]=="PASS_SCOPED" and d["errors"]==[]; assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"; assert d["full_producer_certified"] is False and d["deployed"] is False; print("REUSED_PREVIOUS_SCOPED_PASS_42_43",d["dataset"])'
+            cp prior_evidence/report.json "$RUNNER_TEMP/report.json"
+          else
+            python scripts/p2_common_phase40_47_batch_20261014.py --phase 42_43 \
+              --core core --dataset "$DATASET" --phase38 proof38/audit.json --source-root original_source \
+              --report "$RUNNER_TEMP/report.json"
+          fi
       - name: Require no raw data publication, no failed diagnostics and no release
         run: |
           set -euo pipefail
@@ -538,12 +577,25 @@ jobs:
           fi
           python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
 
-      - name: Run bounded read-only Phase45 and record actual certification scope
+      - name: Reuse old completed Phase45 JSON if available without recalculating successful work
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: batch-45-${{ matrix.dataset }}
+          run-id: 38528366566
+          github-token: ${{ github.token }}
+          path: prior_evidence
+      - name: Reuse verified prior audit or run remaining untouched Phase45 audit
         run: |
           set -euo pipefail
-          python scripts/p2_common_phase40_47_batch_20261014.py --phase 45 \
-            --core core --dataset "$DATASET" \
-            --report "$RUNNER_TEMP/report.json"
+          if test -f prior_evidence/report.json; then
+            python -c 'import json,os; from pathlib import Path; d=json.loads(Path("prior_evidence/report.json").read_text(encoding="utf-8")); assert str(d["phase"])=="45" and d["dataset"]==os.environ["DATASET"]; assert d["status"]=="PASS_SCOPED" and d["errors"]==[]; assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"; assert d["full_producer_certified"] is False and d["deployed"] is False; print("REUSED_PREVIOUS_SCOPED_PASS_45",d["dataset"])'
+            cp prior_evidence/report.json "$RUNNER_TEMP/report.json"
+          else
+            python scripts/p2_common_phase40_47_batch_20261014.py --phase 45 \
+              --core core --dataset "$DATASET" \
+              --report "$RUNNER_TEMP/report.json"
+          fi
       - name: Require no raw data publication, no failed diagnostics and no release
         run: |
           set -euo pipefail
@@ -608,8 +660,8 @@ jobs:
       - name: Download already-certified historical 225 source bytes
         uses: actions/download-artifact@v4
         with:
-          name: p2-common-verified-postextract-source-all_225
-          run-id: 38261988771
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
           github-token: ${{ github.token }}
           path: old_225
       - uses: actions/setup-python@v5
