@@ -1,0 +1,364 @@
+# Created: 2026-10-14 JST
+# Phase39 six-condition bounded NEW semantic combination stability parity for 8 datasets.
+# Uses Phase38 immutable original 29CSV inventory, no previous successful P2/pair/triple/OR reruns.
+# Fail-closed canary -> seven datasets -> final, NO RELEASE/DEPLOY.
+name: P2 Phase39 bounded new combination stability parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase39_bounded_combo_stability_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase39-new-combination-stability-bounded-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Exact Phase38 success SHA + new bounded combo contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gate Phase38 and syntax
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase39_combo_stability_canary_20261014.py
+          python scripts/p2_common_phase39_combo_stability_canary_20261014.py --selftest
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38524279221 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success b596d5709e0a2e7905651f18200c83d72bee99ae'
+
+  canary:
+    name: New combination stability bounded six conditions (${{ matrix.dataset }})
+    needs: selftest
+    if: ${{ needs.selftest.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        include:
+          - dataset: "technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            dir: "225_group_all_period/technology"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout only pinned Private common inner function and original saved pair/triple reference
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/all_pairwise_combinations.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/tested_triple_combinations.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/combination_stability_summary.csv
+          persist-credentials: false
+      - name: Public-only and Private fixed source SHA must pass before numerical work
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original external exclusion signal-level input artifact
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: original_features
+      - name: Reuse exact successful Phase38 SHA-bound complete original 29 CSV inventory
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: proof38
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install original pinned canonical runtime only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compute only 3 unverified candidate Pairwise and 3 Triple stability rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f proof38/audit.json
+          python scripts/p2_common_phase39_combo_stability_canary_20261014.py \
+            --dataset "$DATASET" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root original_features \
+            --phase38 proof38/audit.json \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independent 6 saved candidate conditions new stable-inner numeric parity gate
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE39_NEW_BOUNDED_COMBO_STABILITY"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["new_pair_candidates"]==3 and d["new_triple_candidates"]==3
+          assert d["new_subset_rows"]==6 and d["columns_compared"]>30
+          assert d["mismatches"]==[] and d["old_stability_total"]>6
+          assert d["canonical_new_stability_inner_called"] is True
+          for key in ("previous_pairwise_producer_recomputed",
+                      "previous_triple_producer_recomputed",
+                      "previous_artifacts_recomputed","full_semantic_recomputed",
+                      "full_or_recomputed","original_signals_recomputed",
+                      "original_csv_modified","production_changed",
+                      "html_generated","release_ready"):
+              assert d[key] is False,key
+          print("PASS_PHASE39_NEW_COMBO_STABILITY_CANARY",d["dataset"])
+          PY
+      - name: Confirm fixed Private original source was not changed
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only SHA-bound compact numerical parity metadata
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase39-${{ matrix.dataset }}-combo-stability-bounded
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+
+  remaining:
+    name: New combination stability bounded six conditions (${{ matrix.dataset }})
+    needs: canary
+    if: ${{ needs.canary.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        include:
+          - dataset: "financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            dir: "225_group_all_period/financials"
+          - dataset: "consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            dir: "225_group_all_period/consumer_goods"
+          - dataset: "materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            dir: "225_group_all_period/materials"
+          - dataset: "capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            dir: "225_group_all_period/capital_goods_others"
+          - dataset: "transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            dir: "225_group_all_period/transportation_utilities"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+          - dataset: "exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout only pinned Private common inner function and original saved pair/triple reference
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/all_pairwise_combinations.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/tested_triple_combinations.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/combination_stability_summary.csv
+          persist-credentials: false
+      - name: Public-only and Private fixed source SHA must pass before numerical work
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original external exclusion signal-level input artifact
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: original_features
+      - name: Reuse exact successful Phase38 SHA-bound complete original 29 CSV inventory
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: proof38
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install original pinned canonical runtime only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compute only 3 unverified candidate Pairwise and 3 Triple stability rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f proof38/audit.json
+          python scripts/p2_common_phase39_combo_stability_canary_20261014.py \
+            --dataset "$DATASET" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root original_features \
+            --phase38 proof38/audit.json \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independent 6 saved candidate conditions new stable-inner numeric parity gate
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE39_NEW_BOUNDED_COMBO_STABILITY"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["new_pair_candidates"]==3 and d["new_triple_candidates"]==3
+          assert d["new_subset_rows"]==6 and d["columns_compared"]>30
+          assert d["mismatches"]==[] and d["old_stability_total"]>6
+          assert d["canonical_new_stability_inner_called"] is True
+          for key in ("previous_pairwise_producer_recomputed",
+                      "previous_triple_producer_recomputed",
+                      "previous_artifacts_recomputed","full_semantic_recomputed",
+                      "full_or_recomputed","original_signals_recomputed",
+                      "original_csv_modified","production_changed",
+                      "html_generated","release_ready"):
+              assert d[key] is False,key
+          print("PASS_PHASE39_NEW_COMBO_STABILITY_CANARY",d["dataset"])
+          PY
+      - name: Confirm fixed Private original source was not changed
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only SHA-bound compact numerical parity metadata
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase39-${{ matrix.dataset }}-combo-stability-bounded
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Verify all eight original sources and new pair/triple stability limited rows
+    needs: [selftest,canary,remaining]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Halt unless all prior gates succeed
+        env:
+          A: ${{ needs.selftest.result }}
+          B: ${{ needs.canary.result }}
+          C: ${{ needs.remaining.result }}
+        run: |
+          set -euo pipefail
+          test "$A" = success && test "$B" = success && test "$C" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase39-*-combo-stability-bounded
+          path: evidence
+      - name: Final independent eight datasets SHA scope and parity audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          datasets={"technology","financials","consumer_goods","materials",
+                    "capital_goods_others","transportation_utilities",
+                    "exclude_capital_goods_transportation_utilities",
+                    "exclude_transportation_utilities"}
+          root=Path("evidence")
+          expected={"p2-phase39-"+x+"-combo-stability-bounded" for x in datasets}
+          actual={x.name for x in root.iterdir() if x.is_dir()}
+          assert actual==expected,(expected-actual,actual-expected)
+          for name in sorted(datasets):
+              d=json.loads((root/("p2-phase39-"+name+"-combo-stability-bounded")/"audit.json").read_text(encoding="utf-8"))
+              assert d["dataset"]==name
+              assert d["status"]=="PASS_PHASE39_NEW_BOUNDED_COMBO_STABILITY"
+              assert d["mismatches"]==[]
+              assert d["new_subset_rows"]==6
+              assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert d["previous_artifacts_recomputed"] is False
+              assert d["release_ready"] is False
+              print("PASS_PHASE39_BOUNDED_COMBO",name,d["old_stability_total"])
+          print("PASS_PHASE39_ALL_EIGHT_DATASETS_NEW_BOUNDED_COMBINATION_STABILITY")
+          PY
+      - name: Explicitly preserve limited certification scope
+        run: |
+          echo "Phase39 validates NEW canonical _stability_summary for 3 pair and 3 triple candidate rows x 8." >> "$GITHUB_STEP_SUMMARY"
+          echo "Full combination stability all candidate rows, walkforward, remaining 29CSV new producer, all225, HTML, Nikkei890 NOT YET certified." >> "$GITHUB_STEP_SUMMARY"
+          echo "Private original CSV, Production P2, old successful artifacts, release and deploy untouched." >> "$GITHUB_STEP_SUMMARY"
