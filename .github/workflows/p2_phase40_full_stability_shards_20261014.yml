@@ -1,0 +1,694 @@
+# Created 2026-10-14 JST after monolithic semantic timeout at 360min.
+# 8 datasets x 8 SHA-pinned disjoint shards. Previous certified 3+20 per kind skipped.
+# Real full remaining candidate-level _stability_summary numerical parity, no source recomputation.
+# Single workflow progresses from canary -> 63 more shards -> independent coverage gate.
+name: P2 Phase40 full remaining stability timeout-safe shards
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase40_full_stability_shards_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-full-phase40-stability-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Verify previous full HTML success, Phase40 source proof and disjoint stability shard scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax, immutable successful Phase40 input, and partition sanity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_full_combo_stability_shard_20261014.py
+          python scripts/p2_full_combo_stability_shard_20261014.py --selftest
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38528887409 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success 8435ec20b812fb38571c22b8422eae6327f005d5'
+
+  canary:
+    name: All unseen combination stability (${{ matrix.dataset }}, shard${{ matrix.part }}/8)
+    needs: selftest
+    if: ${{ needs.selftest.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        include:
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 0
+    env:
+      DATASET: ${{ matrix.dataset }}
+      SHARD: '${{ matrix.part }}'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Only SHA-pinned original Private code and old saved features/pair/triple/stability
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/all_pairwise_combinations.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/tested_triple_combinations.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/combination_stability_summary.csv
+          persist-credentials: false
+      - name: Non-negotiable original SHA, Public runner only, zero private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows prohibited"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse SHA-certified original excluded features artifact
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: old_source
+      - name: Reuse Phase38 pinned source and CSV metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: phase38
+      - name: Reuse Phase39 certified first 3+3 conditions
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase39-${{ matrix.dataset }}-combo-stability-bounded
+          run-id: 38525185498
+          github-token: ${{ github.token }}
+          path: phase39
+      - name: Reuse Phase40 certified next 20+20 without recalculating
+        uses: actions/download-artifact@v4
+        with:
+          name: batch-40-${{ matrix.dataset }}
+          run-id: 38528887409
+          github-token: ${{ github.token }}
+          path: phase40
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned legacy numerical dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compute only disjoint unverified stability condition shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f phase38/audit.json && test -f phase39/audit.json && test -f phase40/report.json
+          python scripts/p2_full_combo_stability_shard_20261014.py \
+            --dataset "$DATASET" --part "$SHARD" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root old_source --phase38 phase38/audit.json \
+            --phase39 phase39/audit.json --phase40 phase40/report.json \
+            --report "$RUNNER_TEMP/report.json"
+      - name: Independent all-new shard numeric and prior-proof disjoint gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_FULL_REMAINING_COMBO_STABILITY_SHARD",d.get("failures")
+          assert d["dataset"]==os.environ["DATASET"] and d["shard"]==int(os.environ["SHARD"])
+          assert d["shards"]==8 and d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["new_condition_count"]==len(d["new_condition_digest_list"])>0
+          assert len(set(d["new_condition_digest_list"]))==d["new_condition_count"]
+          assert d["failures"]==[] and d["new_stability_inner_function_executed"] is True
+          assert d["previously_certified_conditions_recomputed"] is False
+          assert d["semantic_full_bundle_generated"] is False
+          assert d["historical_success_artifacts_recomputed"] is False
+          assert d["production_changed"] is False and d["release_ready"] is False
+          print("PASS_FULL_UNSEEN_STABILITY_SHARD",d["dataset"],d["shard"],d["new_condition_count"])
+          PY
+      - name: No modified Private saved files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only SHA-bound new numeric certificate, no sensitive source rows
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-phase40-${{ matrix.dataset }}-shard-${{ matrix.part }}
+          path: ${{ runner.temp }}/report.json
+          retention-days: 20
+          if-no-files-found: error
+
+
+  remaining:
+    name: All unseen combination stability (${{ matrix.dataset }}, shard${{ matrix.part }}/8)
+    needs: canary
+    if: ${{ needs.canary.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        include:
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 1
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 2
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 3
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 4
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 5
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 6
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 7
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 0
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 1
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 2
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 3
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 4
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 5
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 6
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 7
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 0
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 1
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 2
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 3
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 4
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 5
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 6
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 7
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 0
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 1
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 2
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 3
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 4
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 5
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 6
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 7
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 0
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 1
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 2
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 3
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 4
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 5
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 6
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 7
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 0
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 1
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 2
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 3
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 4
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 5
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 6
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            part: 7
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            part: 0
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            part: 1
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            part: 2
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            part: 3
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            part: 4
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            part: 5
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            part: 6
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            part: 7
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            part: 0
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            part: 1
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            part: 2
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            part: 3
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            part: 4
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            part: 5
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            part: 6
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            part: 7
+    env:
+      DATASET: ${{ matrix.dataset }}
+      SHARD: '${{ matrix.part }}'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Only SHA-pinned original Private code and old saved features/pair/triple/stability
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/all_pairwise_combinations.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/tested_triple_combinations.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/combination_stability_summary.csv
+          persist-credentials: false
+      - name: Non-negotiable original SHA, Public runner only, zero private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows prohibited"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse SHA-certified original excluded features artifact
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: old_source
+      - name: Reuse Phase38 pinned source and CSV metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: phase38
+      - name: Reuse Phase39 certified first 3+3 conditions
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase39-${{ matrix.dataset }}-combo-stability-bounded
+          run-id: 38525185498
+          github-token: ${{ github.token }}
+          path: phase39
+      - name: Reuse Phase40 certified next 20+20 without recalculating
+        uses: actions/download-artifact@v4
+        with:
+          name: batch-40-${{ matrix.dataset }}
+          run-id: 38528887409
+          github-token: ${{ github.token }}
+          path: phase40
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned legacy numerical dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compute only disjoint unverified stability condition shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f phase38/audit.json && test -f phase39/audit.json && test -f phase40/report.json
+          python scripts/p2_full_combo_stability_shard_20261014.py \
+            --dataset "$DATASET" --part "$SHARD" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root old_source --phase38 phase38/audit.json \
+            --phase39 phase39/audit.json --phase40 phase40/report.json \
+            --report "$RUNNER_TEMP/report.json"
+      - name: Independent all-new shard numeric and prior-proof disjoint gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_FULL_REMAINING_COMBO_STABILITY_SHARD",d.get("failures")
+          assert d["dataset"]==os.environ["DATASET"] and d["shard"]==int(os.environ["SHARD"])
+          assert d["shards"]==8 and d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["new_condition_count"]==len(d["new_condition_digest_list"])>0
+          assert len(set(d["new_condition_digest_list"]))==d["new_condition_count"]
+          assert d["failures"]==[] and d["new_stability_inner_function_executed"] is True
+          assert d["previously_certified_conditions_recomputed"] is False
+          assert d["semantic_full_bundle_generated"] is False
+          assert d["historical_success_artifacts_recomputed"] is False
+          assert d["production_changed"] is False and d["release_ready"] is False
+          print("PASS_FULL_UNSEEN_STABILITY_SHARD",d["dataset"],d["shard"],d["new_condition_count"])
+          PY
+      - name: No modified Private saved files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only SHA-bound new numeric certificate, no sensitive source rows
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-phase40-${{ matrix.dataset }}-shard-${{ matrix.part }}
+          path: ${{ runner.temp }}/report.json
+          retention-days: 20
+          if-no-files-found: error
+
+  final_gate:
+    name: Prove 8 datasets all previous + newly calculated original stability candidates accounted for
+    needs: [selftest,canary,remaining]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Never claim complete when any shard was skipped or failed
+        env:
+          S: ${{ needs.selftest.result }}
+          A: ${{ needs.canary.result }}
+          B: ${{ needs.remaining.result }}
+        run: |
+          set -euo pipefail
+          test "$S" = success && test "$A" = success && test "$B" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: full-phase40-*-shard-*
+          path: evidence
+      - name: Exact disjoint exhaustive all-original-candidate source coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          ds=("technology","financials","consumer_goods","materials","capital_goods_others",
+              "transportation_utilities","exclude_capital_goods_transportation_utilities",
+              "exclude_transportation_utilities")
+          root=Path("evidence")
+          expected={"full-phase40-"+d+"-shard-"+str(i) for d in ds for i in range(8)}
+          observed={x.name for x in root.iterdir() if x.is_dir()}
+          assert expected==observed,(sorted(expected-observed),sorted(observed-expected))
+          for dataset in ds:
+              parts=[]
+              for n in range(8):
+                  j=json.loads((root/("full-phase40-"+dataset+"-shard-"+str(n))/"report.json").read_text(encoding="utf-8"))
+                  assert j["status"]=="PASS_FULL_REMAINING_COMBO_STABILITY_SHARD"
+                  assert j["dataset"]==dataset and j["shard"]==n
+                  assert j["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+                  assert j["previously_certified_conditions_recomputed"] is False
+                  assert j["failures"]==[] and j["release_ready"] is False
+                  parts.append(j)
+              keys=[x for j in parts for x in j["new_condition_digest_list"]]
+              assert len(keys)==len(set(keys))
+              assert len({j["source_sha256"] for j in parts})==1
+              assert len({j["original_stability_sha256"] for j in parts})==1
+              sum_for_dataset=0
+              for kind in ("pair","triple"):
+                  totals={j["kinds"][kind]["saved_candidate_total"] for j in parts}
+                  assert len(totals)==1
+                  total=next(iter(totals))
+                  actual=sum(j["kinds"][kind]["new_rows_checked"] for j in parts)
+                  assert actual+23==total,(dataset,kind,actual,total)
+                  sum_for_dataset+=total
+              assert sum_for_dataset==parts[0]["expected_original_stability_rows"]
+              assert len(keys)==sum_for_dataset-46
+              print("PASS_ALL_REMAINING_STABILITY_NUMERIC",dataset,"old+new",sum_for_dataset)
+          print("PASS_ALL_EIGHT_FULL_COMBINATION_STABILITY_CONDITION_NUMERIC_PARITY")
+          PY
+      - name: State no release and no full walkforward or 29CSV claim
+        if: always()
+        run: |
+          echo "This verifies exhaustive original candidate combination stability only." >> "$GITHUB_STEP_SUMMARY"
+          echo "Walkforward full numerical parity, 29CSV end-to-end and all225 remain separately uncertified." >> "$GITHUB_STEP_SUMMARY"
+          echo "Private P2 v12 and saved artifacts unchanged. No release, PR merge or deployment." >> "$GITHUB_STEP_SUMMARY"
