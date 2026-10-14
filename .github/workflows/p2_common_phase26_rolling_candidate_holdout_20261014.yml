@@ -1,0 +1,171 @@
+# Created: 2026-10-14 JST
+# Phase26 bounded rolling and monthly-candidate numeric parity on saved sources.
+# Retry: normalize persisted CSV key types for year/month/regime validation.
+# Prior success artifacts are referenced by immutable run ID; no private CSV publication.
+name: P2 common Phase26 bounded rolling candidate parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase26_rolling_candidate_holdout_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase26-rolling-candidate-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Validate isolated rolling/candidate auditor syntax and scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify static contract and Python syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase26_rolling_candidate_holdout_20261014.py
+          python scripts/p2_common_phase26_rolling_candidate_holdout_20261014.py --selftest
+  canary:
+    name: New bounded rolling and monthly-candidate canonical calculations
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout read-only immutable source and three original stability CSVs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/rolling_3y_stability.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/rolling_5y_stability.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/monthly_candidate_stability_summary.csv
+          persist-credentials: false
+      - name: Enforce public-only architecture, immutable core and zero private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"
+            exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse Phase4 immutable original source proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_pin
+      - name: Reuse Phase26 independently certified stability proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-transport-three-condition-stability-evidence
+          run-id: 38495616202
+          github-token: ${{ github.token }}
+          path: prior_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned canonical dependency set
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Independently compare three bounded rolling and candidate computations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f source_pin/group.json && test -f prior_proof/report.json
+          python scripts/p2_common_phase26_rolling_candidate_holdout_20261014.py \
+            --core core \
+            --reference core/preview/kabu/analysis/225_group_all_period/transportation_utilities \
+            --proof4 source_pin/group.json \
+            --proof26 prior_proof/report.json \
+            --stage "core/build/p2_phase26_$GITHUB_RUN_ID/rolling_candidate_holdout" \
+            --report "$RUNNER_TEMP/p2_phase26_rolling_candidate/report.json"
+          echo "New rolling/candidate three-condition holdout only; no full semantic or OR recalculation." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify checked out private tracked files remain unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Publish JSON summary only, never source data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase26-transport-three-condition-rolling-candidate-evidence
+          path: ${{ runner.temp }}/p2_phase26_rolling_candidate/report.json
+          retention-days: 14
+          if-no-files-found: error
+  final_gate:
+    name: Enforce bounded rolling/candidate files independent numeric equality
+    needs: [selftest, canary]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require upstream success
+        shell: bash
+        env:
+          A: ${{ needs.selftest.result }}
+          B: ${{ needs.canary.result }}
+        run: |
+          set -euo pipefail
+          test "$A" = success && test "$B" = success
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-transport-three-condition-rolling-candidate-evidence
+          path: evidence
+      - name: Independent JSON proof contract gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("evidence/report.json").read_text(encoding="utf-8"))
+          assert d["status"] == "PASS_PHASE26_NEW_ROLLING_CANDIDATE_THREE_CONDITION_HOLDOUT"
+          assert d["dataset"] == "transportation_utilities"
+          assert d["private_core_sha"] == "52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["source_rows"] == 14848 and d["source_tickers"] == 20
+          assert d["input_feature_types"] == 6 and d["selected_candidate_conditions"] == 3
+          assert d["mismatches"] == []
+          expected = {"rolling_3y_stability.csv", "rolling_5y_stability.csv", "monthly_candidate_stability_summary.csv"}
+          assert set(d["files"]) == expected
+          for name, s in d["files"].items():
+              assert 0 < s["old_selected_rows"] == s["new_selected_rows"] <= s["old_full_rows"], name
+              assert s["columns"] > 2
+              assert len(s["old_sha256"]) == len(s["new_subset_sha256"]) == 64
+          assert d["canonical_inner_rolling_candidate_functions_called"] is True
+          for flag in ("full_semantic_recalculated","full_or_recalculated",
+                       "previous_artifacts_recalculated","p2_signals_recomputed",
+                       "html_generated","production_changed","release_ready"):
+              assert d[flag] is False, flag
+          print("PASS_PHASE26_BOUNDED_ROLLING_CANDIDATE_3_CSV_NUMERIC_PARITY")
+          PY
+          echo "Restricted three-condition comparison is not all-semantic/OR/full-release certification." >> "$GITHUB_STEP_SUMMARY"
