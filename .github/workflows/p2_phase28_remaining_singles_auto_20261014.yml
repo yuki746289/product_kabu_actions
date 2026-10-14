@@ -1,0 +1,519 @@
+# Created: 2026-10-14T11:07:00+09:00
+# Phase28: complete unverified *single candidate* CSV parity, not pair/OR/full semantic.
+# Prior Phase26 and Phase27 successful artifacts are always downloaded, not recalculated.
+# Two-stage canary->remainder; fail closed. No release, PR merge or deployment.
+name: P2 Phase28 full remaining single-candidate automatic chain
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase28_remaining_singles_auto_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase28-remaining-single-candidates-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Require prior Phase27 overall success and verify selftest contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Python compile, exact prior success and immutable Run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase28_remaining_candidates_20261014.py
+          python scripts/p2_common_phase28_remaining_candidates_20261014.py --selftest
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38498442014 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success da6d031912576dfe781cdfca33e49bcdf16044bc'
+
+  canary:
+    name: Full remaining unseen candidate singles (${{ matrix.dataset }})
+    needs: selftest
+    if: ${{ needs.selftest.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "technology"
+            total: 54
+            reference_dir: "225_group_all_period/technology"
+            source_run: 0
+            source_artifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proof4_file: "group.json"
+            proof26_run: 38496510859
+            proof26_artifact: "p2-common-phase26-rolling-candidate-technology"
+            proof26_file: "report.json"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      DATASET: ${{ matrix.dataset }}
+      EXPECTED_TOTAL: '${{ matrix.total }}'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read immutable canonical source for exact dataset, no Private workflow execution
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/candidate_registry.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/yearly_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/monthly_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/regime_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/rolling_3y_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/rolling_5y_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/monthly_candidate_stability_summary.csv
+          persist-credentials: false
+      - name: Fail closed on Public-only architecture, SHA or Private workflow drift
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Unapproved Private workflows"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original exclusion features artifact rather than regenerating
+        if: ${{ matrix.source_run != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.source_artifact }}
+          run-id: ${{ matrix.source_run }}
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse certified Phase4 source identity artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof4 }}
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: phase4
+      - name: Reuse certified Phase26 numerical parity artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof26_artifact }}
+          run-id: ${{ matrix.proof26_run }}
+          github-token: ${{ github.token }}
+          path: phase26
+      - name: Reuse Phase27 candidate offsets 3-5 evidence, never recompute
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase27-${{ matrix.dataset }}-offset-3
+          run-id: 38498442014
+          github-token: ${{ github.token }}
+          path: phase27_a
+      - name: Reuse Phase27 candidate offsets 6-8 evidence, never recompute
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase27-${{ matrix.dataset }}-offset-6
+          run-id: 38498442014
+          github-token: ${{ github.token }}
+          path: phase27_b
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned original dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Run all still-unverified candidate conditions as fresh three-or-fewer-row shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "phase4/${{ matrix.proof4_file }}"
+          test -f "phase26/${{ matrix.proof26_file }}"
+          test -f phase27_a/report.json && test -f phase27_b/report.json
+          mkdir -p "$RUNNER_TEMP/shard_evidence"
+          for ((offset=9; offset<EXPECTED_TOTAL; offset+=3)); do
+            python scripts/p2_common_phase28_remaining_candidates_20261014.py \
+              --core core \
+              --reference "core/preview/kabu/analysis/${{ matrix.reference_dir }}" \
+              --source-root original_source \
+              --dataset "$DATASET" \
+              --offset "$offset" \
+              --proof4 "phase4/${{ matrix.proof4_file }}" \
+              --proof26 "phase26/${{ matrix.proof26_file }}" \
+              --proof27-a phase27_a/report.json \
+              --proof27-b phase27_b/report.json \
+              --stage "core/build/p2_phase28_$GITHUB_RUN_ID/$DATASET/$offset" \
+              --report "$RUNNER_TEMP/shard_evidence/$offset.json"
+          done
+      - name: Independent complete-shard manifest proof and no overlaps
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])/"shard_evidence"
+          total=int(os.environ["EXPECTED_TOTAL"]); ds=os.environ["DATASET"]
+          offsets=list(range(9,total,3))
+          files=sorted(root.glob("*.json"))
+          assert {int(p.stem) for p in files}==set(offsets)
+          hash_union=set(); sha=None; checked=0
+          for off in offsets:
+              d=json.loads((root/f"{off}.json").read_text(encoding="utf-8"))
+              assert d["status"]=="PASS_PHASE28_REMAINING_NEW_SINGLES_SIX_CSV"
+              assert d["dataset"]==ds and d["candidate_offset"]==off
+              assert d["saved_candidate_total"]==total
+              assert d["candidate_count"]==min(3,total-off)
+              assert d["mismatches"]==[] and len(d["checked_files"])==6
+              assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert d["previous_certified_conditions_recomputed"] is False
+              assert d["successful_artifacts_recalculated"] is False
+              assert d["signals_recomputed"] is False and d["production_changed"] is False
+              assert d["release_ready"] is False
+              assert sha is None or sha==d["source_sha256"]
+              sha=d["source_sha256"]
+              hashes=d["selected_condition_hashes"]
+              assert len(hashes)==d["candidate_count"] and not(hash_union&set(hashes))
+              hash_union.update(hashes); checked+=d["candidate_count"]
+          assert checked==total-9 and len(hash_union)==checked
+          summary={"status":"PASS_PHASE28_ALL_REMAINING_SINGLES_BOUNDED",
+                   "dataset":ds,"private_core_sha":"52df33a6b26f988a1f71f0b61839d6888a96e1b8",
+                   "source_sha256":sha,"candidate_total":total,
+                   "previously_certified_candidates":9,"new_candidates":checked,
+                   "shard_count":len(offsets),"mismatches":[],
+                   "pair_triple_or_full_parity_certified":False,
+                   "production_changed":False,"release_ready":False}
+          (root/"summary.json").write_text(json.dumps(summary,indent=2)+"\n",encoding="utf-8")
+          print("PASS_PHASE28_REMAINING_SINGLES",ds,"new",checked,"shards",len(offsets))
+          PY
+      - name: Source SHA and original tracked files immutable after all shards
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Preserve all new small JSON shard certificates, never source data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase28-${{ matrix.dataset }}-all-remaining-single-candidates
+          path: ${{ runner.temp }}/shard_evidence/*.json
+          retention-days: 14
+          if-no-files-found: error
+
+
+  remaining:
+    name: Full remaining unseen candidate singles (${{ matrix.dataset }})
+    needs: canary
+    if: ${{ needs.canary.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "financials"
+            total: 64
+            reference_dir: "225_group_all_period/financials"
+            source_run: 0
+            source_artifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proof4_file: "group.json"
+            proof26_run: 38496510859
+            proof26_artifact: "p2-common-phase26-rolling-candidate-financials"
+            proof26_file: "report.json"
+          - dataset: "consumer_goods"
+            total: 64
+            reference_dir: "225_group_all_period/consumer_goods"
+            source_run: 0
+            source_artifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proof4_file: "group.json"
+            proof26_run: 38496510859
+            proof26_artifact: "p2-common-phase26-rolling-candidate-consumer_goods"
+            proof26_file: "report.json"
+          - dataset: "materials"
+            total: 56
+            reference_dir: "225_group_all_period/materials"
+            source_run: 0
+            source_artifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proof4_file: "group.json"
+            proof26_run: 38496510859
+            proof26_artifact: "p2-common-phase26-rolling-candidate-materials"
+            proof26_file: "report.json"
+          - dataset: "capital_goods_others"
+            total: 57
+            reference_dir: "225_group_all_period/capital_goods_others"
+            source_run: 0
+            source_artifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proof4_file: "group.json"
+            proof26_run: 38496510859
+            proof26_artifact: "p2-common-phase26-rolling-candidate-capital_goods_others"
+            proof26_file: "report.json"
+          - dataset: "transportation_utilities"
+            total: 64
+            reference_dir: "225_group_all_period/transportation_utilities"
+            source_run: 0
+            source_artifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proof4_file: "group.json"
+            proof26_run: 38495878262
+            proof26_artifact: "p2-common-phase26-transport-three-condition-rolling-candidate-evidence"
+            proof26_file: "report.json"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            total: 64
+            reference_dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            source_run: 37201520569
+            source_artifact: "p2-225-exclusion-no-capital-transport-features"
+            proof4: "p2-common-exact-exclude_capital_goods_transportation_utilities-identities"
+            proof4_file: "audit.json"
+            proof26_run: 38496915820
+            proof26_artifact: "p2-common-phase26-exclusion-six-csv-exclude_capital_goods_transportation_utilities"
+            proof26_file: "audit.json"
+          - dataset: "exclude_transportation_utilities"
+            total: 55
+            reference_dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            source_run: 37201518110
+            source_artifact: "p2-225-exclusion-no-transport-features"
+            proof4: "p2-common-exact-exclude_transportation_utilities-identities"
+            proof4_file: "audit.json"
+            proof26_run: 38496915820
+            proof26_artifact: "p2-common-phase26-exclusion-six-csv-exclude_transportation_utilities"
+            proof26_file: "audit.json"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      DATASET: ${{ matrix.dataset }}
+      EXPECTED_TOTAL: '${{ matrix.total }}'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read immutable canonical source for exact dataset, no Private workflow execution
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/candidate_registry.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/yearly_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/monthly_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/regime_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/rolling_3y_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/rolling_5y_stability.csv
+            /preview/kabu/analysis/${{ matrix.reference_dir }}/monthly_candidate_stability_summary.csv
+          persist-credentials: false
+      - name: Fail closed on Public-only architecture, SHA or Private workflow drift
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Unapproved Private workflows"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original exclusion features artifact rather than regenerating
+        if: ${{ matrix.source_run != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.source_artifact }}
+          run-id: ${{ matrix.source_run }}
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse certified Phase4 source identity artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof4 }}
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: phase4
+      - name: Reuse certified Phase26 numerical parity artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof26_artifact }}
+          run-id: ${{ matrix.proof26_run }}
+          github-token: ${{ github.token }}
+          path: phase26
+      - name: Reuse Phase27 candidate offsets 3-5 evidence, never recompute
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase27-${{ matrix.dataset }}-offset-3
+          run-id: 38498442014
+          github-token: ${{ github.token }}
+          path: phase27_a
+      - name: Reuse Phase27 candidate offsets 6-8 evidence, never recompute
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase27-${{ matrix.dataset }}-offset-6
+          run-id: 38498442014
+          github-token: ${{ github.token }}
+          path: phase27_b
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned original dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Run all still-unverified candidate conditions as fresh three-or-fewer-row shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "phase4/${{ matrix.proof4_file }}"
+          test -f "phase26/${{ matrix.proof26_file }}"
+          test -f phase27_a/report.json && test -f phase27_b/report.json
+          mkdir -p "$RUNNER_TEMP/shard_evidence"
+          for ((offset=9; offset<EXPECTED_TOTAL; offset+=3)); do
+            python scripts/p2_common_phase28_remaining_candidates_20261014.py \
+              --core core \
+              --reference "core/preview/kabu/analysis/${{ matrix.reference_dir }}" \
+              --source-root original_source \
+              --dataset "$DATASET" \
+              --offset "$offset" \
+              --proof4 "phase4/${{ matrix.proof4_file }}" \
+              --proof26 "phase26/${{ matrix.proof26_file }}" \
+              --proof27-a phase27_a/report.json \
+              --proof27-b phase27_b/report.json \
+              --stage "core/build/p2_phase28_$GITHUB_RUN_ID/$DATASET/$offset" \
+              --report "$RUNNER_TEMP/shard_evidence/$offset.json"
+          done
+      - name: Independent complete-shard manifest proof and no overlaps
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])/"shard_evidence"
+          total=int(os.environ["EXPECTED_TOTAL"]); ds=os.environ["DATASET"]
+          offsets=list(range(9,total,3))
+          files=sorted(root.glob("*.json"))
+          assert {int(p.stem) for p in files}==set(offsets)
+          hash_union=set(); sha=None; checked=0
+          for off in offsets:
+              d=json.loads((root/f"{off}.json").read_text(encoding="utf-8"))
+              assert d["status"]=="PASS_PHASE28_REMAINING_NEW_SINGLES_SIX_CSV"
+              assert d["dataset"]==ds and d["candidate_offset"]==off
+              assert d["saved_candidate_total"]==total
+              assert d["candidate_count"]==min(3,total-off)
+              assert d["mismatches"]==[] and len(d["checked_files"])==6
+              assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert d["previous_certified_conditions_recomputed"] is False
+              assert d["successful_artifacts_recalculated"] is False
+              assert d["signals_recomputed"] is False and d["production_changed"] is False
+              assert d["release_ready"] is False
+              assert sha is None or sha==d["source_sha256"]
+              sha=d["source_sha256"]
+              hashes=d["selected_condition_hashes"]
+              assert len(hashes)==d["candidate_count"] and not(hash_union&set(hashes))
+              hash_union.update(hashes); checked+=d["candidate_count"]
+          assert checked==total-9 and len(hash_union)==checked
+          summary={"status":"PASS_PHASE28_ALL_REMAINING_SINGLES_BOUNDED",
+                   "dataset":ds,"private_core_sha":"52df33a6b26f988a1f71f0b61839d6888a96e1b8",
+                   "source_sha256":sha,"candidate_total":total,
+                   "previously_certified_candidates":9,"new_candidates":checked,
+                   "shard_count":len(offsets),"mismatches":[],
+                   "pair_triple_or_full_parity_certified":False,
+                   "production_changed":False,"release_ready":False}
+          (root/"summary.json").write_text(json.dumps(summary,indent=2)+"\n",encoding="utf-8")
+          print("PASS_PHASE28_REMAINING_SINGLES",ds,"new",checked,"shards",len(offsets))
+          PY
+      - name: Source SHA and original tracked files immutable after all shards
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Preserve all new small JSON shard certificates, never source data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase28-${{ matrix.dataset }}-all-remaining-single-candidates
+          path: ${{ runner.temp }}/shard_evidence/*.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Verify exactly eight independent complete single-candidate certificates
+    needs: [selftest, canary, remaining]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail if any upstream work did not pass
+        env:
+          SELF: ${{ needs.selftest.result }}
+          CANARY: ${{ needs.canary.result }}
+          REST: ${{ needs.remaining.result }}
+        run: |
+          set -euo pipefail
+          test "$SELF" = success && test "$CANARY" = success && test "$REST" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase28-*-all-remaining-single-candidates
+          path: evidence
+      - name: Read-only final aggregated SHA and dataset coverage check
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          candidates={
+              "technology":54,"financials":64,"consumer_goods":64,
+              "materials":56,"capital_goods_others":57,"transportation_utilities":64,
+              "exclude_capital_goods_transportation_utilities":64,
+              "exclude_transportation_utilities":55,
+          }
+          root=Path("evidence")
+          expected={"p2-phase28-"+ds+"-all-remaining-single-candidates" for ds in candidates}
+          found={p.name for p in root.iterdir() if p.is_dir()}
+          assert found==expected,(found,expected)
+          for ds,total in sorted(candidates.items()):
+              path=root/("p2-phase28-"+ds+"-all-remaining-single-candidates")/"summary.json"
+              d=json.loads(path.read_text(encoding="utf-8"))
+              assert d["status"]=="PASS_PHASE28_ALL_REMAINING_SINGLES_BOUNDED"
+              assert d["dataset"]==ds and d["candidate_total"]==total
+              assert d["previously_certified_candidates"]==9
+              assert d["new_candidates"]==total-9
+              assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert d["mismatches"]==[]
+              assert d["production_changed"] is False and d["release_ready"] is False
+              print("PASS_PHASE28_FULL_SAVED_SINGLE_CANDIDATE_COVERAGE",ds,total)
+          print("PASS_PHASE28_EIGHT_DATASETS_ALL_SAVED_CANDIDATE_SINGLES_LIMITED_6_CSV")
+          PY
+      - name: Prevent accidental full release certification
+        run: |
+          echo "Only saved single candidate conditions on six stability/rolling CSVs are numerically certified." >> "$GITHUB_STEP_SUMMARY"
+          echo "Still unverified: full pair/triple/combination/OR, all 29 CSVs, all_225 adapter, HTML QA, Nikkei 890 CSV source." >> "$GITHUB_STEP_SUMMARY"
+          echo "PR #62 Draft; no merge, release or deployment." >> "$GITHUB_STEP_SUMMARY"
