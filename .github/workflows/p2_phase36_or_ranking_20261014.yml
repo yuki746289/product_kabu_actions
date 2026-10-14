@@ -1,0 +1,331 @@
+# Created 2026-10-14 JST. Phase36 OR selection/ranking from certified SAVED unique.
+# Phase35 fixed success and Phase34 exact SHA gates, no old raw OR or monthly rerun.
+name: P2 Phase36 saved unique OR candidate ranking parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase36_or_ranking_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase36-original-OR-ranking-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Require Phase35 exact final PASS and Phase36 scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard immutable full raw OR provenance and compile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase36_or_ranking_20261014.py
+          python scripts/p2_common_phase36_or_ranking_20261014.py --selftest
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38514178506 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success 21f8d9c26529f30b7387ba56153f37769d719214'
+
+  canary:
+    name: Phase36 saved OR candidate ranking (${{ matrix.dataset }})
+    needs: selftest
+    if: ${{ needs.selftest.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse pinned Private code and immutable saved OR selection inputs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/or_pairwise_unique.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_triple_unique.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_candidate_summary.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory Public-only architecture and Private original SHA preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Download earlier successful Phase34 unique SHA and source proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase34-${{ matrix.dataset }}-or2-or3-unique
+          run-id: 38512534788
+          github-token: ${{ github.token }}
+          path: phase34
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned canonical library versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Fresh candidate ranking from saved unique inputs, no monthly computations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f phase34/audit.json
+          python scripts/p2_common_phase36_or_ranking_20261014.py \
+            --core core --dataset "$DATASET" \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --phase34 phase34/audit.json \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independent SHA-bound exact old/new ordered candidate ranking proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE36_OR_CANDIDATE_RANK_SELECTION"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["ranked_candidates"]==d["original_candidate_rows"]>0
+          assert d["rank_columns_checked"]>=40
+          assert d["numeric_or_label_mismatches"]==[]
+          assert len(d["or_unique_source_sha256"])==2
+          assert d["used_original_phase34_unique_proofs"] is True
+          assert d["new_canonical_ranking_executed"] is True
+          for k in ("previous_artifacts_recomputed","new_raw_OR_calculated",
+                    "new_monthly_stability_calculated","source_signals_recomputed",
+                    "original_data_modified","full_OR_bundle_generated",
+                    "html_generated","production_changed","release_ready"):
+              assert d[k] is False,k
+          print("PASS_PHASE36_OR_RANKING",d["dataset"],d["ranked_candidates"])
+          PY
+      - name: Confirm no original Private CSV or core modifications
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only compact JSON OR ranking parity certificate
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase36-${{ matrix.dataset }}-or-ranking
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+
+  remaining:
+    name: Phase36 saved OR candidate ranking (${{ matrix.dataset }})
+    needs: canary
+    if: ${{ needs.canary.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse pinned Private code and immutable saved OR selection inputs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/or_pairwise_unique.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_triple_unique.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_candidate_summary.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory Public-only architecture and Private original SHA preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Download earlier successful Phase34 unique SHA and source proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase34-${{ matrix.dataset }}-or2-or3-unique
+          run-id: 38512534788
+          github-token: ${{ github.token }}
+          path: phase34
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned canonical library versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Fresh candidate ranking from saved unique inputs, no monthly computations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f phase34/audit.json
+          python scripts/p2_common_phase36_or_ranking_20261014.py \
+            --core core --dataset "$DATASET" \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --phase34 phase34/audit.json \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independent SHA-bound exact old/new ordered candidate ranking proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE36_OR_CANDIDATE_RANK_SELECTION"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["ranked_candidates"]==d["original_candidate_rows"]>0
+          assert d["rank_columns_checked"]>=40
+          assert d["numeric_or_label_mismatches"]==[]
+          assert len(d["or_unique_source_sha256"])==2
+          assert d["used_original_phase34_unique_proofs"] is True
+          assert d["new_canonical_ranking_executed"] is True
+          for k in ("previous_artifacts_recomputed","new_raw_OR_calculated",
+                    "new_monthly_stability_calculated","source_signals_recomputed",
+                    "original_data_modified","full_OR_bundle_generated",
+                    "html_generated","production_changed","release_ready"):
+              assert d[k] is False,k
+          print("PASS_PHASE36_OR_RANKING",d["dataset"],d["ranked_candidates"])
+          PY
+      - name: Confirm no original Private CSV or core modifications
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only compact JSON OR ranking parity certificate
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase36-${{ matrix.dataset }}-or-ranking
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: All eight source-bound OR candidate selection/ranking proofs
+    needs: [selftest, canary, remaining]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Stop unless all dependencies passed
+        shell: bash
+        env:
+          A: ${{ needs.selftest.result }}
+          B: ${{ needs.canary.result }}
+          C: ${{ needs.remaining.result }}
+        run: |
+          set -euo pipefail
+          test "$A" = success && test "$B" = success && test "$C" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase36-*-or-ranking
+          path: evidence
+      - name: Compare complete eight dataset evidence coverage and SHA gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          ds={"technology","financials","consumer_goods","materials",
+              "capital_goods_others","transportation_utilities",
+              "exclude_capital_goods_transportation_utilities",
+              "exclude_transportation_utilities"}
+          root=Path("evidence")
+          expected={"p2-phase36-"+d+"-or-ranking" for d in ds}
+          actual={p.name for p in root.iterdir() if p.is_dir()}
+          assert actual==expected,(expected-actual,actual-expected)
+          for name in sorted(ds):
+              d=json.loads((root/("p2-phase36-"+name+"-or-ranking")/"audit.json").read_text(encoding="utf-8"))
+              assert d["dataset"]==name and d["status"]=="PASS_PHASE36_OR_CANDIDATE_RANK_SELECTION"
+              assert d["ranked_candidates"]==d["original_candidate_rows"]>0
+              assert d["numeric_or_label_mismatches"]==[]
+              assert d["previous_artifacts_recomputed"] is False
+              assert d["new_monthly_stability_calculated"] is False
+              assert d["release_ready"] is False
+              print("PASS_PHASE36_CANDIDATE_RANK",name,d["ranked_candidates"])
+          print("PASS_PHASE36_EIGHT_DATASETS_OR_CANDIDATE_RANK_SELECTION")
+          PY
+      - name: State exact limited certification
+        run: |
+          echo "All 8 datasets OR candidate ranking/order/base metrics from SAVED unique inputs match." >> "$GITHUB_STEP_SUMMARY"
+          echo "New candidate monthly stability, full new semantic-to-OR connected 29 CSVs, all225 adapter, HTML, Nikkei890 still unverified." >> "$GITHUB_STEP_SUMMARY"
+          echo "Private original saved sources untouched, no release or deploy." >> "$GITHUB_STEP_SUMMARY"
