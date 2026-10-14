@@ -1,0 +1,760 @@
+# Created: 2026-10-14 JST
+# Phase37 all ranked OR monthly stability metrics, 51 disjoint <=10 row shards.
+# Phase36 exact successful ranking reused, no prior source/OR/HTML recalc.
+name: P2 Phase37 disjoint OR candidate monthly stability
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase37_or_monthly_stability_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase37-or-ranked-monthly-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Require full Phase36 original OR ranking success and source SHA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax, shard non-overlap and successful phase36 fixed SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase37_or_monthly_stability_20261014.py
+          python scripts/p2_common_phase37_or_monthly_stability_20261014.py --selftest
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38518149928 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success 54c5b357a6e8a9c8767fac8b33b4720c260c70d9'
+
+  canary:
+    name: Phase37 bounded OR monthly (${{ matrix.dataset }}, offset=${{ matrix.offset }})
+    needs: selftest
+    if: ${{ needs.selftest.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "technology"
+            total: 60
+            offset: 0
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      DATASET: ${{ matrix.dataset }}
+      OFFSET: '${{ matrix.offset }}'
+      EXPECTED_TOTAL: '${{ matrix.total }}'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout only original private code, saved features and OR candidate summary
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_candidate_summary.csv
+          persist-credentials: false
+      - name: Mandatory Public-only runner, SHA and zero Private workflows
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original saved excluded features, no extraction
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse Phase4 original source identity
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof4 }}
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: phase4
+      - name: Reuse exact Phase36 certified OR ranking, never recompute
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase36-${{ matrix.dataset }}-or-ranking
+          run-id: 38518149928
+          github-token: ${{ github.token }}
+          path: proof36
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install exact original canonical dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: New monthly stability inner function only on previously unverified candidate rows
+        run: |
+          set -euo pipefail
+          test -f proof36/audit.json && test -f "phase4/${{ matrix.proofFile }}"
+          python scripts/p2_common_phase37_or_monthly_stability_20261014.py \
+            --core core --dataset "$DATASET" --offset "$OFFSET" \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root original_source \
+            --proof4 "phase4/${{ matrix.proofFile }}" \
+            --proof36 proof36/audit.json \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independent new monthly numeric/condition key SHA gate
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE37_NEW_OR_MONTHLY_STABILITY_SHARD"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["candidate_offset"]==int(os.environ["OFFSET"])
+          assert d["candidate_rows"]==min(10,int(os.environ["EXPECTED_TOTAL"])-d["candidate_offset"])
+          assert d["total_candidate_rows"]==int(os.environ["EXPECTED_TOTAL"])
+          assert d["mismatches"]==[] and d["monthly_fields_compared"]>=15
+          assert len(d["candidate_key_hashes"])==d["candidate_rows"]
+          assert len(set(d["candidate_key_hashes"]))==d["candidate_rows"]
+          assert d["canonical_new_stability_called"] is True
+          for k in ("previous_rank_recalculated","previous_OR_raw_or_unique_recalculated",
+                    "previous_artifacts_recalculated","original_signals_recomputed",
+                    "original_files_modified","production_changed","html_generated",
+                    "release_ready"):
+              assert d[k] is False,k
+          print("PASS_PHASE37_NEW_OR_MONTHLY",d["dataset"],d["candidate_offset"],d["candidate_rows"])
+          PY
+      - name: Verify original immutable Private repository unchanged
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload compact monthly stability JSON only, never original private signal data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase37-${{ matrix.dataset }}-offset-${{ matrix.offset }}
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+
+  remaining:
+    name: Phase37 bounded OR monthly (${{ matrix.dataset }}, offset=${{ matrix.offset }})
+    needs: canary
+    if: ${{ needs.canary.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "technology"
+            total: 60
+            offset: 10
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "technology"
+            total: 60
+            offset: 20
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "technology"
+            total: 60
+            offset: 30
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "technology"
+            total: 60
+            offset: 40
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "technology"
+            total: 60
+            offset: 50
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "financials"
+            total: 75
+            offset: 0
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "financials"
+            total: 75
+            offset: 10
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "financials"
+            total: 75
+            offset: 20
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "financials"
+            total: 75
+            offset: 30
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "financials"
+            total: 75
+            offset: 40
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "financials"
+            total: 75
+            offset: 50
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "financials"
+            total: 75
+            offset: 60
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "financials"
+            total: 75
+            offset: 70
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "consumer_goods"
+            total: 60
+            offset: 0
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "consumer_goods"
+            total: 60
+            offset: 10
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "consumer_goods"
+            total: 60
+            offset: 20
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "consumer_goods"
+            total: 60
+            offset: 30
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "consumer_goods"
+            total: 60
+            offset: 40
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "consumer_goods"
+            total: 60
+            offset: 50
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "materials"
+            total: 60
+            offset: 0
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "materials"
+            total: 60
+            offset: 10
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "materials"
+            total: 60
+            offset: 20
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "materials"
+            total: 60
+            offset: 30
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "materials"
+            total: 60
+            offset: 40
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "materials"
+            total: 60
+            offset: 50
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "capital_goods_others"
+            total: 60
+            offset: 0
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "capital_goods_others"
+            total: 60
+            offset: 10
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "capital_goods_others"
+            total: 60
+            offset: 20
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "capital_goods_others"
+            total: 60
+            offset: 30
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "capital_goods_others"
+            total: 60
+            offset: 40
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "capital_goods_others"
+            total: 60
+            offset: 50
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "transportation_utilities"
+            total: 61
+            offset: 0
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "transportation_utilities"
+            total: 61
+            offset: 10
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "transportation_utilities"
+            total: 61
+            offset: 20
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "transportation_utilities"
+            total: 61
+            offset: 30
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "transportation_utilities"
+            total: 61
+            offset: 40
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "transportation_utilities"
+            total: 61
+            offset: 50
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "transportation_utilities"
+            total: 61
+            offset: 60
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            total: 60
+            offset: 0
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            proof4: "p2-common-exact-exclude_capital_goods_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            total: 60
+            offset: 10
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            proof4: "p2-common-exact-exclude_capital_goods_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            total: 60
+            offset: 20
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            proof4: "p2-common-exact-exclude_capital_goods_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            total: 60
+            offset: 30
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            proof4: "p2-common-exact-exclude_capital_goods_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            total: 60
+            offset: 40
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            proof4: "p2-common-exact-exclude_capital_goods_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            total: 60
+            offset: 50
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            proof4: "p2-common-exact-exclude_capital_goods_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_transportation_utilities"
+            total: 60
+            offset: 0
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            proof4: "p2-common-exact-exclude_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_transportation_utilities"
+            total: 60
+            offset: 10
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            proof4: "p2-common-exact-exclude_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_transportation_utilities"
+            total: 60
+            offset: 20
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            proof4: "p2-common-exact-exclude_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_transportation_utilities"
+            total: 60
+            offset: 30
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            proof4: "p2-common-exact-exclude_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_transportation_utilities"
+            total: 60
+            offset: 40
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            proof4: "p2-common-exact-exclude_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_transportation_utilities"
+            total: 60
+            offset: 50
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            proof4: "p2-common-exact-exclude_transportation_utilities-identities"
+            proofFile: "audit.json"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      DATASET: ${{ matrix.dataset }}
+      OFFSET: '${{ matrix.offset }}'
+      EXPECTED_TOTAL: '${{ matrix.total }}'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout only original private code, saved features and OR candidate summary
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_candidate_summary.csv
+          persist-credentials: false
+      - name: Mandatory Public-only runner, SHA and zero Private workflows
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original saved excluded features, no extraction
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse Phase4 original source identity
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof4 }}
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: phase4
+      - name: Reuse exact Phase36 certified OR ranking, never recompute
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase36-${{ matrix.dataset }}-or-ranking
+          run-id: 38518149928
+          github-token: ${{ github.token }}
+          path: proof36
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install exact original canonical dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: New monthly stability inner function only on previously unverified candidate rows
+        run: |
+          set -euo pipefail
+          test -f proof36/audit.json && test -f "phase4/${{ matrix.proofFile }}"
+          python scripts/p2_common_phase37_or_monthly_stability_20261014.py \
+            --core core --dataset "$DATASET" --offset "$OFFSET" \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root original_source \
+            --proof4 "phase4/${{ matrix.proofFile }}" \
+            --proof36 proof36/audit.json \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independent new monthly numeric/condition key SHA gate
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE37_NEW_OR_MONTHLY_STABILITY_SHARD"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["candidate_offset"]==int(os.environ["OFFSET"])
+          assert d["candidate_rows"]==min(10,int(os.environ["EXPECTED_TOTAL"])-d["candidate_offset"])
+          assert d["total_candidate_rows"]==int(os.environ["EXPECTED_TOTAL"])
+          assert d["mismatches"]==[] and d["monthly_fields_compared"]>=15
+          assert len(d["candidate_key_hashes"])==d["candidate_rows"]
+          assert len(set(d["candidate_key_hashes"]))==d["candidate_rows"]
+          assert d["canonical_new_stability_called"] is True
+          for k in ("previous_rank_recalculated","previous_OR_raw_or_unique_recalculated",
+                    "previous_artifacts_recalculated","original_signals_recomputed",
+                    "original_files_modified","production_changed","html_generated",
+                    "release_ready"):
+              assert d[k] is False,k
+          print("PASS_PHASE37_NEW_OR_MONTHLY",d["dataset"],d["candidate_offset"],d["candidate_rows"])
+          PY
+      - name: Verify original immutable Private repository unchanged
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload compact monthly stability JSON only, never original private signal data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase37-${{ matrix.dataset }}-offset-${{ matrix.offset }}
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Verify all 51 disjoint candidate OR monthly shards and original counts
+    needs: [selftest, canary, remaining]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail if any previous stage unsuccessful
+        env:
+          A: ${{ needs.selftest.result }}
+          B: ${{ needs.canary.result }}
+          C: ${{ needs.remaining.result }}
+        run: |
+          set -euo pipefail
+          test "$A" = success && test "$B" = success && test "$C" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase37-*-offset-*
+          path: evidence
+      - name: Original population, SHA and all disjoint condition-key coverage
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          totals={"technology":60,"financials":75,"consumer_goods":60,
+              "materials":60,"capital_goods_others":60,"transportation_utilities":61,
+              "exclude_capital_goods_transportation_utilities":60,
+              "exclude_transportation_utilities":60}
+          base=Path("evidence")
+          expected={"p2-phase37-"+ds+"-offset-"+str(i)
+              for ds,total in totals.items() for i in range(0,total,10)}
+          actual={p.name for p in base.iterdir() if p.is_dir()}
+          assert expected==actual,(sorted(expected-actual),sorted(actual-expected))
+          for ds,total in totals.items():
+              reports=[]
+              for offset in range(0,total,10):
+                  d=json.loads((base/("p2-phase37-"+ds+"-offset-"+str(offset))/"audit.json")
+                               .read_text(encoding="utf-8"))
+                  assert d["status"]=="PASS_PHASE37_NEW_OR_MONTHLY_STABILITY_SHARD"
+                  assert d["dataset"]==ds and d["candidate_offset"]==offset
+                  assert d["candidate_rows"]==min(10,total-offset)
+                  assert d["mismatches"]==[]
+                  assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+                  assert d["previous_artifacts_recalculated"] is False
+                  assert d["previous_rank_recalculated"] is False
+                  assert d["release_ready"] is False
+                  reports.append(d)
+              assert len({r["original_source_sha256"] for r in reports})==1
+              assert len({r["old_candidate_sha256"] for r in reports})==1
+              allkeys=[k for r in reports for k in r["candidate_key_hashes"]]
+              assert len(allkeys)==len(set(allkeys))==total
+              assert sum(r["candidate_rows"] for r in reports)==total
+              print("PASS_PHASE37_ALL_RANKED_MONTHLY",ds,total)
+          print("PASS_PHASE37_EIGHT_DATASETS_OR_MONTHLY_STABILITY_NUMERIC_PARITY")
+          PY
+      - name: Declare exact certified scope and release hold
+        run: |
+          echo "All saved OR ranked candidates monthly stability metrics verified across 8 datasets." >> "$GITHUB_STEP_SUMMARY"
+          echo "Full new common 29 CSV, all225 adapter, HTML/browser, Nikkei890 remain uncertified." >> "$GITHUB_STEP_SUMMARY"
+          echo "No successful old artifacts reexecuted, old data modified, PR merged, release or deploy." >> "$GITHUB_STEP_SUMMARY"
