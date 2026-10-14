@@ -149,7 +149,7 @@ jobs:
           assert len(set(d["candidate_key_hashes"]))==d["candidate_rows"]
           assert d["canonical_new_stability_called"] is True
           for k in ("previous_rank_recalculated","previous_OR_raw_or_unique_recalculated",
-                    "previous_artifacts_recalculated","original_signals_recomputed",
+                    "previous_artifacts_recomputed","original_signals_recomputed",
                     "original_files_modified","production_changed","html_generated",
                     "release_ready"):
               assert d[k] is False,k
@@ -676,7 +676,7 @@ jobs:
           assert len(set(d["candidate_key_hashes"]))==d["candidate_rows"]
           assert d["canonical_new_stability_called"] is True
           for k in ("previous_rank_recalculated","previous_OR_raw_or_unique_recalculated",
-                    "previous_artifacts_recalculated","original_signals_recomputed",
+                    "previous_artifacts_recomputed","original_signals_recomputed",
                     "original_files_modified","production_changed","html_generated",
                     "release_ready"):
               assert d[k] is False,k
@@ -741,7 +741,7 @@ jobs:
                   assert d["candidate_rows"]==min(10,total-offset)
                   assert d["mismatches"]==[]
                   assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
-                  assert d["previous_artifacts_recalculated"] is False
+                  assert d["previous_artifacts_recomputed"] is False
                   assert d["previous_rank_recalculated"] is False
                   assert d["release_ready"] is False
                   reports.append(d)
