@@ -53,7 +53,7 @@ def verify(core,ref,proof4,proof26,stage):
         group.get("ticker_count")!=TICKERS or group.get("duplicate_ids") is not False):
         raise ValueError("Original source identity proof invalid")
     prev=json.loads(proof26.read_text(encoding="utf-8"))
-    if (prev.get("status")!="PASS_PHASE26_NEW_TRIPLE_FOUR_FEATURE_HOLDOUT" or
+    if (prev.get("status")!="PASS_PHASE26_NEW_PAIRWISE_SIX_FEATURE_HOLDOUT" or
         prev.get("dataset")!=DATASET or prev.get("private_core_sha")!=SHA or
         prev.get("source_sha256")!=sha or
         prev.get("new_subset_pair_rows")!=1800 or
