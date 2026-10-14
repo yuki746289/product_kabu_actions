@@ -136,6 +136,7 @@ def verify(core: Path, ref: Path, source_root: Path, proof4: Path, proof26: Path
     if len(frame) != rows or frame["ticker"].astype(str).nunique() != tickers:
         raise ValueError("Original source cardinality mismatch")
     registry_path = ref / "candidate_registry.csv"
+    registry_sha = digest(registry_path)
     registry = pd.read_csv(registry_path, low_memory=False)
     if "condition_id" not in registry or registry["condition_id"].duplicated().any():
         raise ValueError("Saved certified candidate registry invalid")
@@ -153,7 +154,8 @@ def verify(core: Path, ref: Path, source_root: Path, proof4: Path, proof26: Path
         cid = f"S:{feature}={category}"
         if (feature not in fields or category not in expected[feature] or
             cid != r.condition_id or cid in conditions or
-            int(r.count) <= 0):
+            int(r.count) <= 0 or
+            (hasattr(r, "candidate") and str(r.candidate).lower() not in ("true", "1"))):
             raise ValueError("Unrecognized selected canonical candidate")
         conditions[cid] = np.asarray(fields[feature], dtype=object) == category
         if int(conditions[cid].sum()) != int(r.count):
@@ -215,7 +217,7 @@ def verify(core: Path, ref: Path, source_root: Path, proof4: Path, proof26: Path
             "original_sha256": digest(old_path),
             "new_subset_sha256": digest(output),
         }
-    if digest(source) != source_sha or digest(registry_path) != digest(ref / "candidate_registry.csv"):
+    if digest(source) != source_sha or digest(registry_path) != registry_sha:
         raise ValueError("Original saved source identity changed during audit")
     return {
         "schema": 1,
