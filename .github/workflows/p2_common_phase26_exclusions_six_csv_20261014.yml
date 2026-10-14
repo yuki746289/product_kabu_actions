@@ -1,0 +1,319 @@
+# Created: 2026-10-14 JST
+# Existing saved original features and successful Phase4/25 proofs reused.
+# Two dataset-specific limited six-output calculations; double exclusion first.
+name: P2 common Phase26 two exclusions six-CSV bounded parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase26_exclusions_six_csv_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase26-exclusion-six-csv-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Compile and verify bounded exclusion auditor contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify auditor syntax and input constraints
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase26_exclusion_six_csv_bounded_20261014.py
+          python scripts/p2_common_phase26_exclusion_six_csv_bounded_20261014.py --selftest
+  double:
+    name: Exclusion bounded six-CSV parity exclude_capital_goods_transportation_utilities
+    needs: selftest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      DATASET: exclude_capital_goods_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse checkout immutable private canonical code and six reference CSVs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/yearly_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/monthly_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/regime_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/rolling_3y_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/rolling_5y_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/monthly_candidate_stability_summary.csv
+          persist-credentials: false
+      - name: Public-only runner, exact private SHA, zero private workflows gate
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse immutable saved original exclusion source, no reconstruction
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-capital-transport-features
+          run-id: 37201520569
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse exact Phase4 independent exclusion source identity
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-exclude_capital_goods_transportation_utilities-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: phase4_proof
+      - name: Reuse Phase25 exclusion four-CSV numerical parity proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase25-exclude_capital_goods_transportation_utilities-new-semantic
+          run-id: 38379887510
+          github-token: ${{ github.token }}
+          path: phase25_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned original dependency set
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compare six fresh limited semantic outputs against original saved CSVs
+        run: |
+          set -euo pipefail
+          test -f phase4_proof/audit.json && test -f phase25_proof/audit.json
+          test "$(find original_source -type f -name features.csv | wc -l)" -eq 1
+          python scripts/p2_common_phase26_exclusion_six_csv_bounded_20261014.py \
+            --dataset "$DATASET" \
+            --core core \
+            --reference "core/preview/kabu/analysis/225_exclusion_all_period/$DATASET" \
+            --saved_source original_source \
+            --proof4 phase4_proof/audit.json \
+            --proof25 phase25_proof/audit.json \
+            --stage "core/build/p2_phase26_$GITHUB_RUN_ID/$DATASET" \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Enforce original-source status, six file checks and zero numerical mismatches
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE26_EXCLUSIONS_SIX_CSV_BOUNDED_PARITY"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["selected_candidate_conditions"]==3 and d["mismatches"]==[]
+          assert set(d["files"])=={"yearly_stability.csv","monthly_stability.csv",
+              "regime_stability.csv","rolling_3y_stability.csv",
+              "rolling_5y_stability.csv","monthly_candidate_stability_summary.csv"}
+          for v in d["files"].values():
+              assert 0<v["old_selected_rows"]==v["new_selected_rows"]<=v["old_full_rows"]
+          assert d["canonical_inner_stability_rolling_candidate_functions_called"] is True
+          for flag in ("full_semantic_recalculated","full_or_recalculated",
+                       "previous_artifacts_recalculated","p2_signals_recomputed",
+                       "html_generated","production_changed","release_ready"):
+              assert d[flag] is False,flag
+          print("PASS_PHASE26_EXCLUSION_SIX_CSV_LIMITED_PARITY",d["dataset"])
+          PY
+      - name: Confirm immutable Private tracked bytes unchanged
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only compact numerical audit JSON
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase26-exclusion-six-csv-exclude_capital_goods_transportation_utilities
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  transport:
+    name: Exclusion bounded six-CSV parity exclude_transportation_utilities
+    needs: double
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      DATASET: exclude_transportation_utilities
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse checkout immutable private canonical code and six reference CSVs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/yearly_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/monthly_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/regime_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/rolling_3y_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/rolling_5y_stability.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/monthly_candidate_stability_summary.csv
+          persist-credentials: false
+      - name: Public-only runner, exact private SHA, zero private workflows gate
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse immutable saved original exclusion source, no reconstruction
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-exclusion-no-transport-features
+          run-id: 37201518110
+          github-token: ${{ github.token }}
+          path: original_source
+      - name: Reuse exact Phase4 independent exclusion source identity
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-exclude_transportation_utilities-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: phase4_proof
+      - name: Reuse Phase25 exclusion four-CSV numerical parity proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase25-exclude_transportation_utilities-new-semantic
+          run-id: 38379887510
+          github-token: ${{ github.token }}
+          path: phase25_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned original dependency set
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Compare six fresh limited semantic outputs against original saved CSVs
+        run: |
+          set -euo pipefail
+          test -f phase4_proof/audit.json && test -f phase25_proof/audit.json
+          test "$(find original_source -type f -name features.csv | wc -l)" -eq 1
+          python scripts/p2_common_phase26_exclusion_six_csv_bounded_20261014.py \
+            --dataset "$DATASET" \
+            --core core \
+            --reference "core/preview/kabu/analysis/225_exclusion_all_period/$DATASET" \
+            --saved_source original_source \
+            --proof4 phase4_proof/audit.json \
+            --proof25 phase25_proof/audit.json \
+            --stage "core/build/p2_phase26_$GITHUB_RUN_ID/$DATASET" \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Enforce original-source status, six file checks and zero numerical mismatches
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE26_EXCLUSIONS_SIX_CSV_BOUNDED_PARITY"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["selected_candidate_conditions"]==3 and d["mismatches"]==[]
+          assert set(d["files"])=={"yearly_stability.csv","monthly_stability.csv",
+              "regime_stability.csv","rolling_3y_stability.csv",
+              "rolling_5y_stability.csv","monthly_candidate_stability_summary.csv"}
+          for v in d["files"].values():
+              assert 0<v["old_selected_rows"]==v["new_selected_rows"]<=v["old_full_rows"]
+          assert d["canonical_inner_stability_rolling_candidate_functions_called"] is True
+          for flag in ("full_semantic_recalculated","full_or_recalculated",
+                       "previous_artifacts_recalculated","p2_signals_recomputed",
+                       "html_generated","production_changed","release_ready"):
+              assert d[flag] is False,flag
+          print("PASS_PHASE26_EXCLUSION_SIX_CSV_LIMITED_PARITY",d["dataset"])
+          PY
+      - name: Confirm immutable Private tracked bytes unchanged
+        if: always()
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only compact numerical audit JSON
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase26-exclusion-six-csv-exclude_transportation_utilities
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Verify both exclusion limited six-output numeric parity artifacts
+    needs: [selftest, double, transport]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all three predecessor jobs succeed
+        env:
+          SELF: ${{ needs.selftest.result }}
+          DOUBLE: ${{ needs.double.result }}
+          TRANSPORT: ${{ needs.transport.result }}
+        run: |
+          set -euo pipefail
+          test "$SELF" = success && test "$DOUBLE" = success && test "$TRANSPORT" = success
+      - name: Fetch just this run's JSON audits
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase26-exclusion-six-csv-*
+          path: evidence
+      - name: Confirm two independent complete 6-file bounded audit contracts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          names={"exclude_transportation_utilities",
+                 "exclude_capital_goods_transportation_utilities"}
+          root=Path("evidence")
+          found={p.name.removeprefix("p2-common-phase26-exclusion-six-csv-")
+                 for p in root.iterdir() if p.is_dir()}
+          assert found==names,(found,names)
+          for name in sorted(names):
+              d=json.loads((root/("p2-common-phase26-exclusion-six-csv-"+name)/"audit.json").read_text(encoding="utf-8"))
+              assert d["status"]=="PASS_PHASE26_EXCLUSIONS_SIX_CSV_BOUNDED_PARITY"
+              assert d["dataset"]==name and d["mismatches"]==[]
+              assert len(d["files"])==6 and d["selected_candidate_conditions"]==3
+              print("PASS",name,{k:v["new_selected_rows"] for k,v in d["files"].items()})
+          print("PASS_PHASE26_TWO_EXCLUSIONS_SIX_CSV_BOUNDED_ONLY")
+          PY
