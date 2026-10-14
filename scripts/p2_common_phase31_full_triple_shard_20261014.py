@@ -132,6 +132,7 @@ def verify(core:Path,reference:Path,original_source:Path,proof4:Path,
             and not(dataset=="transportation_utilities" and k<4)]
     if not wanted:raise ValueError("No unverified triple feature combinations")
     old_path=reference/"tested_triple_combinations.csv"
+    old_sha=digest(old_path)
     old=pd.read_csv(old_path,low_memory=False)
     if len(old)<1000 or old.duplicated(list(KEYS)).any():
         raise ValueError("Old canonical full triple reference invalid")
@@ -172,8 +173,8 @@ def verify(core:Path,reference:Path,original_source:Path,proof4:Path,
                 check_exact=False,atol=1e-7,rtol=1e-10,check_index_type=False)
         except AssertionError:
             problems.append("numeric_or_label")
-    if digest(src)!=sha or digest(old_path)!=digest(old_path):
-        raise ValueError("Saved original features changed")
+    if digest(src)!=sha or digest(old_path)!=old_sha:
+        raise ValueError("Saved original feature or reference bytes changed")
     return {
         "schema":1,
         "status":"PASS_PHASE31_NEW_TRIPLE_DISJOINT_SHARD" if not problems else "FAIL_PHASE31_NEW_TRIPLE_DISJOINT_SHARD",
