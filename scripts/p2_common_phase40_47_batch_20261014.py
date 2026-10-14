@@ -130,29 +130,25 @@ def phase40(core,ref,src,p38,p39,dataset):
         raise ValueError("Candidate accounting underflow")
     keys=["condition_type","feature1","category1","feature2","category2"]
     errors=[]
-    for kind,fresh in new_parts:
-        filt=old[old["condition_type"].eq(kind)]
+    full_new=pd.concat([part for _,part in new_parts],ignore_index=True,sort=False)
+    if list(full_new.columns)!=list(old.columns):
+        raise ValueError("New/old combined stability column order differs")
+    for i,row in full_new.iterrows():
+        kind=str(row["condition_type"])
         select_cols=keys+(["feature3","category3"] if kind=="triple" else [])
-        old_map=filt.copy()
-        for i in range(len(fresh)):
-            row=fresh.iloc[i]
-            selected=old_map
-            for key in select_cols:
-                if key.startswith("category3") or key.startswith("feature3"):
-                    # pair CSV stores NaN on these columns; triple has values
-                    pass
-                selected=selected[selected[key].astype(str)==str(row.get(key))]
-            if len(selected)!=1:raise ValueError("Expected one original saved candidate stability row")
-            if list(fresh.columns)!=list(old.columns):
-                raise ValueError("New/old combination stability column order differs")
-            a=selected.iloc[0:1].reset_index(drop=True)
-            b=fresh.iloc[i:i+1].reset_index(drop=True)
-            try:
-                pd.testing.assert_frame_equal(a,b,check_dtype=False,check_exact=False,
-                    atol=1e-7,rtol=1e-10,check_index_type=False)
-            except AssertionError:
-                errors.append({"kind":kind,"selected_index":i,"issue":"numeric_or_label"})
-                if len(errors)>8:break
+        selected=old.loc[old["condition_type"].eq(kind)]
+        for key in select_cols:
+            selected=selected[selected[key].astype(str)==str(row[key])]
+        if len(selected)!=1:
+            raise ValueError("Expected exactly one original saved stability row")
+        a=selected.iloc[0:1].reset_index(drop=True)
+        b=full_new.iloc[i:i+1].reset_index(drop=True)
+        try:
+            pd.testing.assert_frame_equal(a,b,check_dtype=False,check_exact=False,
+                atol=1e-7,rtol=1e-10,check_index_type=False)
+        except AssertionError:
+            errors.append({"kind":kind,"selected_index":i,"issue":"numeric_or_label"})
+            if len(errors)>8:break
     details={"scope":"next unverified 20 candidate rows per pair/triple, not full",
       "kinds":by_kind,"reference_sha256":sha(old_path),
       "column_and_order_numeric_mismatches":len(errors),
