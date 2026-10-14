@@ -1,0 +1,390 @@
+# Created: 2026-10-14 JST
+# Phase38: exact original SAVED 29 CSV inventory/headers/SHA + external pinned exclusion source.
+# Not a full new-producer numerical equivalence certificate; never claim that.
+# The original Private core remains immutable; read-only analysis and JSON-only evidence.
+name: P2 Phase38 exact saved 29 CSV contract and SHA audit
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase38_saved_29csv_contract_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase38-saved-original-29-csv-readonly-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  selftest:
+    name: Require Phase37 exact success and static 29 CSV schema verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard exact previous successful SHA and audit-only code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase38_29csv_inventory_20261014.py
+          python scripts/p2_common_phase38_29csv_inventory_20261014.py --selftest
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38518904606 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success cadb894e695702aad9b5ff2a3bf91eb32aa0596d'
+
+  canary:
+    name: Canonical original 29 CSV SHA/shape/headers (${{ matrix.dataset }})
+    needs: selftest
+    if: ${{ needs.selftest.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "technology"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Immutable Private core and exact original six-group + excluded CSV folders
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/p2_html_core/
+            /preview/kabu/analysis/225_group_all_period/technology/*.csv
+            /preview/kabu/analysis/225_group_all_period/financials/*.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/*.csv
+            /preview/kabu/analysis/225_group_all_period/materials/*.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/*.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/*.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/*.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/*.csv
+          persist-credentials: false
+      - name: Mandatory architecture, original fixed SHA and zero Private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow files are prohibited"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse SHA-certified exclusion source artifact without data processing
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: source_artifact
+      - name: Reuse original immutable Phase4 source-identity certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof4 }}
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: proof4
+      - name: Reuse final successful Phase37 first-shard source-bound numerical certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase37-${{ matrix.dataset }}-offset-0
+          run-id: 38518904606
+          github-token: ${{ github.token }}
+          path: proof37
+      - name: Run only read-only original 29 CSV contract, SHA and row audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "proof4/${{ matrix.proofFile }}" && test -f proof37/audit.json
+          python scripts/p2_common_phase38_29csv_inventory_20261014.py \
+            --dataset "$DATASET" --core core --site-root core/preview/kabu \
+            --saved-sources source_artifact \
+            --proof4 "proof4/${{ matrix.proofFile }}" \
+            --proof37 proof37/audit.json \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independent check that all 29 inputs, source identity and manifest are saved and untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          a=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert a["status"]=="PASS_PHASE38_SAVED_29_CSV_READONLY_CONTRACT"
+          assert a["dataset"]==os.environ["DATASET"]
+          assert a["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert a["resolved_csv_files"]==29 and len(a["files"])==29
+          assert a["local_csv_files"]==(28 if a["dataset"].startswith("exclude_") else 29)
+          assert a["external_pinned_csv_files"]==(1 if a["dataset"].startswith("exclude_") else 0)
+          assert a["mismatches"]==[]
+          assert len(a["manifest_sha256"])==64
+          assert a["source_rows"]>0 and a["source_tickers"]>0
+          for name,x in a["files"].items():
+              assert name.endswith(".csv")
+              assert x["columns"]>0 and x["rows"]>=0 and len(x["sha256"])==64
+          assert a["shared_contract_function_called"] is True
+          assert a["full_new_producer_numerical_certification"] is False
+          for key in ("source_signals_recomputed","old_csv_modified",
+                      "new_semantic_producer_executed","new_or_producer_executed",
+                      "normalization_producer_executed","old_artifacts_recomputed",
+                      "html_generated","production_changed","release_ready"):
+              assert a[key] is False,key
+          print("PASS_PHASE38_SAVED_29_CSV_INVENTORY",a["dataset"],len(a["files"]))
+          PY
+      - name: Verify no changes to immutable Private source and tracked CSVs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload metadata-only 29 CSV inventory and hash evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+
+  remaining:
+    name: Canonical original 29 CSV SHA/shape/headers (${{ matrix.dataset }})
+    needs: canary
+    if: ${{ needs.canary.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "financials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "materials"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+            proof4: "p2-common-exact-six-group-identities"
+            proofFile: "group.json"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+            proof4: "p2-common-exact-exclude_capital_goods_transportation_utilities-identities"
+            proofFile: "audit.json"
+          - dataset: "exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+            proof4: "p2-common-exact-exclude_transportation_utilities-identities"
+            proofFile: "audit.json"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Immutable Private core and exact original six-group + excluded CSV folders
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/p2_html_core/
+            /preview/kabu/analysis/225_group_all_period/technology/*.csv
+            /preview/kabu/analysis/225_group_all_period/financials/*.csv
+            /preview/kabu/analysis/225_group_all_period/consumer_goods/*.csv
+            /preview/kabu/analysis/225_group_all_period/materials/*.csv
+            /preview/kabu/analysis/225_group_all_period/capital_goods_others/*.csv
+            /preview/kabu/analysis/225_group_all_period/transportation_utilities/*.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_transportation_utilities/*.csv
+            /preview/kabu/analysis/225_exclusion_all_period/exclude_capital_goods_transportation_utilities/*.csv
+          persist-credentials: false
+      - name: Mandatory architecture, original fixed SHA and zero Private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow files are prohibited"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse SHA-certified exclusion source artifact without data processing
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: source_artifact
+      - name: Reuse original immutable Phase4 source-identity certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.proof4 }}
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: proof4
+      - name: Reuse final successful Phase37 first-shard source-bound numerical certificate
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase37-${{ matrix.dataset }}-offset-0
+          run-id: 38518904606
+          github-token: ${{ github.token }}
+          path: proof37
+      - name: Run only read-only original 29 CSV contract, SHA and row audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "proof4/${{ matrix.proofFile }}" && test -f proof37/audit.json
+          python scripts/p2_common_phase38_29csv_inventory_20261014.py \
+            --dataset "$DATASET" --core core --site-root core/preview/kabu \
+            --saved-sources source_artifact \
+            --proof4 "proof4/${{ matrix.proofFile }}" \
+            --proof37 proof37/audit.json \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independent check that all 29 inputs, source identity and manifest are saved and untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          a=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert a["status"]=="PASS_PHASE38_SAVED_29_CSV_READONLY_CONTRACT"
+          assert a["dataset"]==os.environ["DATASET"]
+          assert a["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert a["resolved_csv_files"]==29 and len(a["files"])==29
+          assert a["local_csv_files"]==(28 if a["dataset"].startswith("exclude_") else 29)
+          assert a["external_pinned_csv_files"]==(1 if a["dataset"].startswith("exclude_") else 0)
+          assert a["mismatches"]==[]
+          assert len(a["manifest_sha256"])==64
+          assert a["source_rows"]>0 and a["source_tickers"]>0
+          for name,x in a["files"].items():
+              assert name.endswith(".csv")
+              assert x["columns"]>0 and x["rows"]>=0 and len(x["sha256"])==64
+          assert a["shared_contract_function_called"] is True
+          assert a["full_new_producer_numerical_certification"] is False
+          for key in ("source_signals_recomputed","old_csv_modified",
+                      "new_semantic_producer_executed","new_or_producer_executed",
+                      "normalization_producer_executed","old_artifacts_recomputed",
+                      "html_generated","production_changed","release_ready"):
+              assert a[key] is False,key
+          print("PASS_PHASE38_SAVED_29_CSV_INVENTORY",a["dataset"],len(a["files"]))
+          PY
+      - name: Verify no changes to immutable Private source and tracked CSVs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload metadata-only 29 CSV inventory and hash evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Confirm eight datasets 29 CSV source SHA/row/header inventories
+    needs: [selftest, canary, remaining]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail unless all preceding work succeeded
+        env:
+          A: ${{ needs.selftest.result }}
+          B: ${{ needs.canary.result }}
+          C: ${{ needs.remaining.result }}
+        run: |
+          set -euo pipefail
+          test "$A" = success && test "$B" = success && test "$C" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase38-*-saved-29csv-inventory
+          path: evidence
+      - name: Independent all 8 datasets, 29 file complete schema/inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          names={"technology","financials","consumer_goods","materials",
+                 "capital_goods_others","transportation_utilities",
+                 "exclude_capital_goods_transportation_utilities",
+                 "exclude_transportation_utilities"}
+          root=Path("evidence")
+          expected={"p2-phase38-"+n+"-saved-29csv-inventory" for n in names}
+          actual={p.name for p in root.iterdir() if p.is_dir()}
+          assert expected==actual,(expected-actual,actual-expected)
+          source_files=None
+          for dataset in sorted(names):
+              d=json.loads((root/("p2-phase38-"+dataset+"-saved-29csv-inventory")/"audit.json").read_text(encoding="utf-8"))
+              assert d["status"]=="PASS_PHASE38_SAVED_29_CSV_READONLY_CONTRACT"
+              assert d["dataset"]==dataset and d["resolved_csv_files"]==29
+              assert d["mismatches"]==[] and len(d["files"])==29
+              assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+              assert d["old_artifacts_recomputed"] is False
+              assert d["full_new_producer_numerical_certification"] is False
+              assert d["release_ready"] is False
+              nameset=set(d["files"])
+              if source_files is None:source_files=nameset
+              else:assert nameset==source_files
+              print("PASS_PHASE38_EXACT_SAVED_29CSV",dataset,d["local_csv_files"],d["external_pinned_csv_files"])
+          print("PASS_PHASE38_ALL_EIGHT_DATASETS_SAVED_29CSV_METADATA_ONLY")
+          PY
+      - name: Explicitly distinguish old saved contract from full new calculation certification
+        shell: bash
+        run: |
+          echo "All original saved CSVs validated via common source/headers/counts/SHA, incl 2 pinned external exclusion source artifacts." >> "$GITHUB_STEP_SUMMARY"
+          echo "NOT YET certified: new numerical producer end-to-end 29 CSV, all225 adapter, HTML, Nikkei890 original." >> "$GITHUB_STEP_SUMMARY"
+          echo "No original data modification, full historical re-run, PR merge, release or deploy." >> "$GITHUB_STEP_SUMMARY"
