@@ -1,0 +1,344 @@
+# Created: 2026-10-14 JST
+# Full ORIGINAL saved raw-to-unique OR2/OR3 dedupe parity, eight datasets.
+# Does not call full OR producer or regenerate prior successful OR artifacts.
+# Phase33 SHA-fixed numerical proof required, canary then other seven.
+# Fail closed. No Private Actions, Production logic, release or deployment.
+name: P2 Phase34 full OR unique mask dedupe parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase34_or_unique_dedupe_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase34-dedupe-full8-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Pin Phase33 completed success and validate scoped OR dedupe contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require source audit exact SHA and Python selftest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase34_or_unique_dedupe_20261014.py
+          python scripts/p2_common_phase34_or_unique_dedupe_20261014.py --selftest
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38510961490 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success a73ed9f94854e3ead5bced1356e36e6b36ff6751'
+
+  canary:
+    name: Full OR2/OR3 mask-hash dedupe numeric parity (${{ matrix.dataset }})
+    needs: selftest
+    if: ${{ needs.selftest.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse checkout pinned original code and exactly five saved OR audit inputs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/or_pairwise_all.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_pairwise_unique.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_triple_all.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_triple_unique.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory Public-only Actions, fixed Private SHA, zero Private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden Private workflow"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse certified Phase33 exact saved OR source SHA evidence without rerunning
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase33-${{ matrix.dataset }}-or2-or3-new
+          run-id: 38510961490
+          github-token: ${{ github.token }}
+          path: proof33
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install canonical pinned original requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Test new common OR unique mask dedupe against original persisted output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f proof33/audit.json
+          python scripts/p2_common_phase34_or_unique_dedupe_20261014.py \
+            --dataset "$DATASET" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --proof33 proof33/audit.json \
+            --stage "core/build/p2_phase34_$GITHUB_RUN_ID/$DATASET" \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independently require all original unique keys, columns and values equal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE34_FULL_OR2_OR3_DEDUPE_NUMERIC_PARITY"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["mismatches"]==[]
+          assert set(d["verified"])=={"or_pairwise_unique.csv","or_triple_unique.csv"}
+          for f in d["verified"].values():
+              assert 0<f["new_unique_rows"]==f["original_unique_rows"]<=f["original_raw_rows"]
+              assert f["new_unique_rows"]==f["raw_mask_hash_count"]
+              assert f["new_columns"]>10
+              assert len(f["original_raw_sha256"])==len(f["original_unique_sha256"])==64
+          assert d["new_common_dedupe_function_called"] is True
+          for flag in ("previous_certified_raw_or_producers_rerun",
+                       "source_features_recomputed","successful_artifacts_recomputed",
+                       "full_or_bundle_generated","original_files_modified",
+                       "html_generated","production_changed","release_ready"):
+              assert d[flag] is False,flag
+          print("PASS_PHASE34_OR_UNIQUE_CANONICAL_NUMERIC_PARITY",d["dataset"])
+          PY
+      - name: Verify saved Private tracked files remain byte-identical
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload compact JSON-only OR unique audit evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase34-${{ matrix.dataset }}-or2-or3-unique
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+
+  remaining:
+    name: Full OR2/OR3 mask-hash dedupe numeric parity (${{ matrix.dataset }})
+    needs: canary
+    if: ${{ needs.canary.result == 'success' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix:
+        include:
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse checkout pinned original code and exactly five saved OR audit inputs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/or_pairwise_all.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_pairwise_unique.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_triple_all.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/or_triple_unique.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/semantic_status.json
+          persist-credentials: false
+      - name: Mandatory Public-only Actions, fixed Private SHA, zero Private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden Private workflow"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse certified Phase33 exact saved OR source SHA evidence without rerunning
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase33-${{ matrix.dataset }}-or2-or3-new
+          run-id: 38510961490
+          github-token: ${{ github.token }}
+          path: proof33
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install canonical pinned original requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Test new common OR unique mask dedupe against original persisted output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f proof33/audit.json
+          python scripts/p2_common_phase34_or_unique_dedupe_20261014.py \
+            --dataset "$DATASET" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --proof33 proof33/audit.json \
+            --stage "core/build/p2_phase34_$GITHUB_RUN_ID/$DATASET" \
+            --report "$RUNNER_TEMP/audit.json"
+      - name: Independently require all original unique keys, columns and values equal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"audit.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE34_FULL_OR2_OR3_DEDUPE_NUMERIC_PARITY"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["mismatches"]==[]
+          assert set(d["verified"])=={"or_pairwise_unique.csv","or_triple_unique.csv"}
+          for f in d["verified"].values():
+              assert 0<f["new_unique_rows"]==f["original_unique_rows"]<=f["original_raw_rows"]
+              assert f["new_unique_rows"]==f["raw_mask_hash_count"]
+              assert f["new_columns"]>10
+              assert len(f["original_raw_sha256"])==len(f["original_unique_sha256"])==64
+          assert d["new_common_dedupe_function_called"] is True
+          for flag in ("previous_certified_raw_or_producers_rerun",
+                       "source_features_recomputed","successful_artifacts_recomputed",
+                       "full_or_bundle_generated","original_files_modified",
+                       "html_generated","production_changed","release_ready"):
+              assert d[flag] is False,flag
+          print("PASS_PHASE34_OR_UNIQUE_CANONICAL_NUMERIC_PARITY",d["dataset"])
+          PY
+      - name: Verify saved Private tracked files remain byte-identical
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload compact JSON-only OR unique audit evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase34-${{ matrix.dataset }}-or2-or3-unique
+          path: ${{ runner.temp }}/audit.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Require all eight independent original OR2 OR3 unique row/value audits
+    needs: [selftest, canary, remaining]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Stop unless prior jobs and all data sets certified
+        env:
+          A: ${{ needs.selftest.result }}
+          B: ${{ needs.canary.result }}
+          C: ${{ needs.remaining.result }}
+        run: |
+          set -euo pipefail
+          test "$A" = success && test "$B" = success && test "$C" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase34-*-or2-or3-unique
+          path: evidence
+      - name: Cross-check eight JSON certificates without reexecuting prior producers
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          datasets={"technology","financials","consumer_goods","materials",
+            "capital_goods_others","transportation_utilities",
+            "exclude_capital_goods_transportation_utilities",
+            "exclude_transportation_utilities"}
+          root=Path("evidence")
+          expected={"p2-phase34-"+d+"-or2-or3-unique" for d in datasets}
+          found={p.name for p in root.iterdir() if p.is_dir()}
+          assert found==expected,(expected-found,found-expected)
+          for ds in sorted(datasets):
+              q=root/("p2-phase34-"+ds+"-or2-or3-unique")/"audit.json"
+              d=json.loads(q.read_text(encoding="utf-8"))
+              assert d["dataset"]==ds
+              assert d["status"]=="PASS_PHASE34_FULL_OR2_OR3_DEDUPE_NUMERIC_PARITY"
+              assert d["mismatches"]==[]
+              assert d["new_common_dedupe_function_called"] is True
+              assert d["successful_artifacts_recomputed"] is False
+              assert d["release_ready"] is False
+              print("PASS_PHASE34_OR_UNIQUE",ds,{
+                 key:value["new_unique_rows"] for key,value in d["verified"].items()
+              })
+          print("PASS_PHASE34_ALL_EIGHT_DATASETS_SAVED_OR_UNIQUE_DEDUPE_NUMERIC_PARITY")
+          PY
+      - name: Declare bounded certification and release hold
+        run: |
+          echo "Original saved raw OR mask dedupe into unique outputs matches for eight datasets." >> "$GITHUB_STEP_SUMMARY"
+          echo "NOT YET certified: full new OR raw metrics, candidate summary, full 29CSV pipeline, all225 adapter, HTML and Nikkei890 source." >> "$GITHUB_STEP_SUMMARY"
+          echo "Original files untouched; PR Draft, release/deploy NOT performed." >> "$GITHUB_STEP_SUMMARY"
