@@ -303,15 +303,18 @@ def final_gate(evidence:Path):
         key=(str(d.get("phase")),str(d.get("dataset")))
         if key in got:raise ValueError("Duplicate certificate per phase/dataset: "+str(key))
         got[key]=d
-    if set(got)!=expected:
-        raise ValueError("Missing/extra phase evidence: "+repr((expected-set(got),set(got)-expected)))
-    failures=[k for k,d in got.items() if d.get("errors") or d.get("status") not in (STATUS_OK,"BLOCKED_SOURCE_UNAVAILABLE","PASS_ORIGINAL_890_SHA_NEEDS_PIN")]
+    missing=sorted(expected-set(got))
+    extra=sorted(set(got)-expected)
+    failures=[list(k) for k,d in got.items() if d.get("errors") or d.get("status") not in (STATUS_OK,"BLOCKED_SOURCE_UNAVAILABLE","PASS_ORIGINAL_890_SHA_NEEDS_PIN")]
     outstanding=[{"phase":k[0],"dataset":k[1],"status":v["status"]} for k,v in got.items()
                  if not v.get("full_producer_certified",False)]
+    for k in missing:
+        outstanding.append({"phase":k[0],"dataset":k[1],"status":"NO_EVIDENCE"})
     return {
-      "schema":1,"phase":"47","status":"RESEARCH_PREDEPLOY_NO_GO" if not failures else "RESEARCH_AUDIT_FAILURE",
-      "total_certificates":len(got),"dataset_certificates":len(got)-2,
-      "errors":failures,"unresolved_verification_gates":outstanding,
+      "schema":1,"phase":"47","status":"RESEARCH_PREDEPLOY_NO_GO" if not (failures or missing or extra) else "RESEARCH_AUDIT_FAILURE",
+      "total_certificates":len(got),"dataset_certificates":len(got)-sum(k[0] in ("44","46") for k in got),
+      "errors":failures,"missing_certificates":missing,"unexpected_certificates":extra,
+      "unresolved_verification_gates":outstanding,
       "release_ready":False,"pr62_merge_permitted":False,"phase48_executed":False,
       "production_p2_changed":False,"old_success_artifacts_recomputed":False,
       "nikkei_source_substituted":False,
