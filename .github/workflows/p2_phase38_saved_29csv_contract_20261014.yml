@@ -112,6 +112,16 @@ jobs:
           run-id: 38518904606
           github-token: ${{ github.token }}
           path: proof37
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned original dependencies for canonical read-only shared contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
       - name: Run only read-only original 29 CSV contract, SHA and row audit
         shell: bash
         run: |
@@ -276,6 +286,16 @@ jobs:
           run-id: 38518904606
           github-token: ${{ github.token }}
           path: proof37
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install pinned original dependencies for canonical read-only shared contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
       - name: Run only read-only original 29 CSV contract, SHA and row audit
         shell: bash
         run: |
