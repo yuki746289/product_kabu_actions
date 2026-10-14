@@ -114,7 +114,7 @@ jobs:
       - name: Reuse exact successful Phase32 4+4 previous OR proof
         uses: actions/download-artifact@v4
         with:
-          name: p2-phase33-${{ matrix.dataset }}-or2-or3-new
+          name: p2-phase32-${{ matrix.dataset }}-or2-or3-new
           run-id: 38510437816
           github-token: ${{ github.token }}
           path: previous_or
@@ -128,7 +128,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -r core/requirements.txt
-      - name: Compare 4 plus 4 never-before-audited OR component combinations
+      - name: Compare next 8 plus 8 never-before-audited OR component combinations
         shell: bash
         run: |
           set -euo pipefail
@@ -297,7 +297,7 @@ jobs:
       - name: Reuse exact successful Phase32 4+4 previous OR proof
         uses: actions/download-artifact@v4
         with:
-          name: p2-phase33-${{ matrix.dataset }}-or2-or3-new
+          name: p2-phase32-${{ matrix.dataset }}-or2-or3-new
           run-id: 38510437816
           github-token: ${{ github.token }}
           path: previous_or
@@ -311,7 +311,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install -r core/requirements.txt
-      - name: Compare 4 plus 4 never-before-audited OR component combinations
+      - name: Compare next 8 plus 8 never-before-audited OR component combinations
         shell: bash
         run: |
           set -euo pipefail
@@ -404,7 +404,7 @@ jobs:
               assert d["new_or2_conditions"]==d["new_or3_conditions"]==8
               assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
               assert d["release_ready"] is False
-              print("PASS_PHASE32_DATASET",dataset,d["numeric_fields_checked"])
+              print("PASS_PHASE33_DATASET",dataset,d["numeric_fields_checked"])
           print("PASS_PHASE33_EIGHT_DATASETS_NEXT_UNSEEN_OR2_OR3")
           PY
       - name: Declare non-release limited proof
