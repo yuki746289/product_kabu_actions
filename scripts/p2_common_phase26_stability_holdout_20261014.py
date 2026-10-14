@@ -115,16 +115,19 @@ def verify(core: Path, ref: Path, proof4: Path, proof26: Path, stage: Path) -> d
             raise ValueError(f"Duplicate stability keys in {name}")
         select = select.sort_values(key).reset_index(drop=True)
         fresh = fresh.sort_values(key).reset_index(drop=True)
-        if len(select) != len(fresh) or len(select) == 0:
-            mismatches.append({"file": name, "kind": "row_count"})
-        elif not select[key].equals(fresh[key]):
-            mismatches.append({"file": name, "kind": "key_values"})
+        # Compare after CSV roundtrip so inferred key types match the
+        # persisted canonical CSV (e.g. year integer vs in-memory string).
         out = stage / name
         fresh.to_csv(out, index=False, encoding="utf-8")
         checked = pd.read_csv(out, low_memory=False)
-        if list(select.columns) != list(checked.columns):
+        checked = checked.sort_values(key).reset_index(drop=True)
+        if len(select) != len(checked) or len(select) == 0:
+            mismatches.append({"file": name, "kind": "row_count"})
+        elif list(select.columns) != list(checked.columns):
             mismatches.append({"file": name, "kind": "ordered_columns"})
-        elif select.shape == checked.shape and select[key].equals(checked[key]):
+        elif not select[key].equals(checked[key]):
+            mismatches.append({"file": name, "kind": "key_values"})
+        else:
             try:
                 pd.testing.assert_frame_equal(
                     select, checked, check_dtype=False, check_exact=False,
