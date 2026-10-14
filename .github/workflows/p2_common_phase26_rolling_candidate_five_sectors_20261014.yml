@@ -1,0 +1,307 @@
+# Created: 2026-10-14 JST
+# Five remaining six-sector datasets; existing transport PASS is not rerun.
+# Single canary must PASS before the four independent bounded shards run.
+name: P2 common Phase26 five-sector bounded rolling/candidate parity
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_common_phase26_rolling_candidate_five_sectors_20261014.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-common-phase26-rolling-candidate-five-sectors-20261014
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  selftest:
+    name: Compile and self-test five-sector rolling/candidate auditor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source syntax and bounded test
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_common_phase26_rolling_candidate_five_sectors_20261014.py
+          python scripts/p2_common_phase26_rolling_candidate_five_sectors_20261014.py --selftest
+  canary:
+    name: Canary rolling/candidate numeric parity (${{ matrix.dataset }})
+    needs: selftest
+    strategy:
+      fail-fast: true
+      matrix:
+        dataset: [technology]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned Private core and only selected dataset inputs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/rolling_3y_stability.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/rolling_5y_stability.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/monthly_candidate_stability_summary.csv
+          persist-credentials: false
+      - name: Mandatory architecture and immutable source SHA gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden private workflows"
+            exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse immutable Phase4 six-sector saved input identity proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_pin
+      - name: Reuse per-sector Phase26 stability proof from successful Run
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-stability-${{ matrix.dataset }}
+          run-id: 38496180715
+          github-token: ${{ github.token }}
+          path: prior_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install original requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Execute bounded rolling/candidate producer and saved parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase26_rolling_candidate_five_sectors_20261014.py \
+            --core core \
+            --dataset "$DATASET" \
+            --reference "core/preview/kabu/analysis/225_group_all_period/$DATASET" \
+            --proof4 source_pin/group.json \
+            --proof26 prior_proof/report.json \
+            --stage "core/build/p2_phase26_$GITHUB_RUN_ID/rolling_candidate_$DATASET" \
+            --report "$RUNNER_TEMP/report.json"
+      - name: Validate output contract before artifact publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE26_NEW_ROLLING_CANDIDATE_FIVE_GROUP_HOLDOUT"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["source_rows"]>0 and d["source_tickers"]>0
+          assert d["selected_candidate_conditions"]==3 and d["mismatches"]==[]
+          assert set(d["files"])=={"rolling_3y_stability.csv","rolling_5y_stability.csv","monthly_candidate_stability_summary.csv"}
+          for v in d["files"].values():
+              assert 0<v["old_selected_rows"]==v["new_selected_rows"]<=v["old_full_rows"]
+          assert d["canonical_inner_rolling_candidate_functions_called"] is True
+          for flag in ("full_semantic_recalculated","full_or_recalculated",
+                       "previous_artifacts_recalculated","p2_signals_recomputed",
+                       "html_generated","production_changed","release_ready"):
+              assert d[flag] is False,flag
+          print("PASS_PHASE26_SECTOR_BOUNDED_ROLLING_CANDIDATE_PARITY", d["dataset"])
+          PY
+      - name: Prove saved Private tracked bytes remain unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload compact JSON proof only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase26-rolling-candidate-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/report.json
+          retention-days: 14
+          if-no-files-found: error
+  sectors:
+    name: New sector rolling/candidate numeric parity (${{ matrix.dataset }})
+    needs: canary
+    strategy:
+      fail-fast: true
+      matrix:
+        dataset: [financials, consumer_goods, materials, capital_goods_others]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned Private core and only selected dataset inputs
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/rolling_3y_stability.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/rolling_5y_stability.csv
+            /preview/kabu/analysis/225_group_all_period/${{ matrix.dataset }}/monthly_candidate_stability_summary.csv
+          persist-credentials: false
+      - name: Mandatory architecture and immutable source SHA gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden private workflows"
+            exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse immutable Phase4 six-sector saved input identity proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-exact-six-group-identities
+          run-id: 38239501315
+          github-token: ${{ github.token }}
+          path: source_pin
+      - name: Reuse per-sector Phase26 stability proof from successful Run
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-stability-${{ matrix.dataset }}
+          run-id: 38496180715
+          github-token: ${{ github.token }}
+          path: prior_proof
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install original requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Execute bounded rolling/candidate producer and saved parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_common_phase26_rolling_candidate_five_sectors_20261014.py \
+            --core core \
+            --dataset "$DATASET" \
+            --reference "core/preview/kabu/analysis/225_group_all_period/$DATASET" \
+            --proof4 source_pin/group.json \
+            --proof26 prior_proof/report.json \
+            --stage "core/build/p2_phase26_$GITHUB_RUN_ID/rolling_candidate_$DATASET" \
+            --report "$RUNNER_TEMP/report.json"
+      - name: Validate output contract before artifact publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE26_NEW_ROLLING_CANDIDATE_FIVE_GROUP_HOLDOUT"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert d["source_rows"]>0 and d["source_tickers"]>0
+          assert d["selected_candidate_conditions"]==3 and d["mismatches"]==[]
+          assert set(d["files"])=={"rolling_3y_stability.csv","rolling_5y_stability.csv","monthly_candidate_stability_summary.csv"}
+          for v in d["files"].values():
+              assert 0<v["old_selected_rows"]==v["new_selected_rows"]<=v["old_full_rows"]
+          assert d["canonical_inner_rolling_candidate_functions_called"] is True
+          for flag in ("full_semantic_recalculated","full_or_recalculated",
+                       "previous_artifacts_recalculated","p2_signals_recomputed",
+                       "html_generated","production_changed","release_ready"):
+              assert d[flag] is False,flag
+          print("PASS_PHASE26_SECTOR_BOUNDED_ROLLING_CANDIDATE_PARITY", d["dataset"])
+          PY
+      - name: Prove saved Private tracked bytes remain unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload compact JSON proof only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-common-phase26-rolling-candidate-${{ matrix.dataset }}
+          path: ${{ runner.temp }}/report.json
+          retention-days: 14
+          if-no-files-found: error
+
+  final_gate:
+    name: Check five JSON evidence artifacts with zero missing shards
+    needs: [selftest, canary, sectors]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all upstream jobs succeed
+        env:
+          SELF: ${{ needs.selftest.result }}
+          CANARY: ${{ needs.canary.result }}
+          SECTORS: ${{ needs.sectors.result }}
+        run: |
+          set -euo pipefail
+          test "$SELF" = success && test "$CANARY" = success && test "$SECTORS" = success
+      - name: Fetch just this Run's five compact JSON results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-common-phase26-rolling-candidate-*
+          path: evidence
+      - name: Check all five sector artifacts independently
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          names={"technology","financials","consumer_goods","materials","capital_goods_others"}
+          root=Path("evidence")
+          actual={p.name.removeprefix("p2-common-phase26-rolling-candidate-") for p in root.iterdir() if p.is_dir()}
+          assert actual==names,(sorted(actual),sorted(names))
+          for name in sorted(names):
+              d=json.loads((root/("p2-common-phase26-rolling-candidate-"+name)/"report.json").read_text(encoding="utf-8"))
+              assert d["status"]=="PASS_PHASE26_NEW_ROLLING_CANDIDATE_FIVE_GROUP_HOLDOUT"
+              assert d["dataset"]==name
+              assert d["selected_candidate_conditions"]==3 and d["mismatches"]==[]
+              assert len(d["files"])==3
+              print("PASS",name,{key:value["new_selected_rows"] for key,value in d["files"].items()})
+          print("PASS_PHASE26_FIVE_SECTOR_ROLLING_CANDIDATE_3_CSV_PARITY")
+          PY
