@@ -1,6 +1,7 @@
 # Created: 2026-10-14 JST
 # Bounded four canonical feature-type triple holdout vs saved full triples.
 # No previous certified semantic/OR/HTML artifact rerun and no public CSV.
+# Phase26 triple only: retry after correcting upstream pairwise proof status validation.
 name: P2 common Phase26 four-feature triple new-producer parity
 on:
   push:
