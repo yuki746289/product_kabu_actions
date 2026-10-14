@@ -259,12 +259,27 @@ def html_source(core,dataset):
         original=sha(page)
         parser=Parser();parser.feed(page.read_text(encoding="utf-8"))
         if not parser.title_text.strip():invalid.append("no-title:"+filename)
+        from urllib.parse import urlsplit,unquote
+        site=(core/"preview/kabu").resolve()
         for link in parser.links:
-            low=link.lower().strip()
+            value=link.strip()
+            low=value.lower()
             if low.startswith(("javascript:","data:","file:")):
                 invalid.append("unsafe-uri")
-            if ".." in low.split("?")[0].split("#")[0].split("/"):
-                invalid.append("traversal-url")
+                continue
+            u=urlsplit(value)
+            if u.scheme and u.scheme not in ("https","http","mailto","tel"):
+                invalid.append("unsupported-uri-scheme")
+                continue
+            if not u.scheme and not u.netloc and u.path:
+                requested=unquote(u.path)
+                if "\\x00" in requested:
+                    invalid.append("null-path")
+                    continue
+                candidate=((site/requested.lstrip("/")) if requested.startswith("/")
+                           else (page.parent/requested)).resolve()
+                if not candidate.is_relative_to(site):
+                    invalid.append("out-of-site-relative-url")
         if sha(page)!=original:invalid.append("page-sha-modified")
         result.append({"file":filename,"bytes":page.stat().st_size,
                        "sha256":original,"links_checked":len(parser.links)})
