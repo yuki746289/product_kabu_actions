@@ -1,0 +1,103 @@
+# Source-pinned, read-only all225 OR deduplication. Does NOT regenerate OR raw.
+name: P2 Phase44 two new canonical OR-unique numerical proofs
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths: ['.github/workflows/p2_phase44_or_unique_only_20261016.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-all225-unique-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+jobs:
+  two_unique:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+          persist-credentials: false
+      - name: Source and runner architecture gate before all calculations
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python -m py_compile scripts/p2_phase44_all225_new_or_unique_20261016.py
+          python -m py_compile scripts/p2_phase44_optimized_family_20261016.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+          python scripts/p2_phase44_all225_new_or_unique_20261016.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          run-id: 36844054546
+          github-token: ${{ github.token }}
+          path: core/build/phase44_new_unique_saved/reference
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: core/build/phase44_new_unique_saved/features
+      - name: Fresh canonical dedupe and complete two CSV row/column comparison
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_all225_new_or_unique_20261016.py \
+            --core core \
+            --reference core/build/phase44_new_unique_saved/reference \
+            --source core/build/phase44_new_unique_saved/features/features.csv \
+            --report "$RUNNER_TEMP/result.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads((Path(os.environ['RUNNER_TEMP'])/'result.json').read_text())
+          assert r['status']=='PASS_PHASE44_BOUNDED_OR_UNIQUE_TWO_DIRECT_CANONICAL'
+          assert r['new_calculated_unique_count']==len(r['calculated'])==2
+          assert r['source_rows']==181318 and r['source_tickers']==225
+          assert not r['all_29_new_producer_certified'] and not r['release_ready']
+          assert not r['old_OR_raw_producer_rerun']
+          print("PASS_OR_UNIQUE_TWO_PROOF_NOT_FULL_PRODUCER")
+          PY
+      - name: Purge temporary private data and verify original checkout unchanged
+        if: always()
+        run: |
+          rm -rf -- core/build/phase44_new_unique_saved
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: p2-phase44-all225-or-unique-two-new-20261016
+          path: ${{ runner.temp }}/result.json
+          if-no-files-found: error
+          retention-days: 21
