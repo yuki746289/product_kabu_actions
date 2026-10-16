@@ -1,0 +1,123 @@
+# Phase45 research-only first sector: complete local HTML links and Chromium.
+# Requires Phase44 independent numeric E2E PASS first. Private source read-only.
+name: P2 Phase45 technology full HTML links and Chromium canary
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - .github/workflows/p2_phase45_html_browser_technology_canary_20261016.yml
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase45-technology-html-browser-canary-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  full_html_browser_technology:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Machine-confirm certified true fresh Phase44 numeric E2E
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(gh api repos/yuki746289/product_kabu_actions/actions/runs/38913800757 --jq '.conclusion')" = success
+          gh api 'repos/yuki746289/product_kabu_actions/actions/runs/38913800757/artifacts?per_page=100' \
+            --jq '.artifacts[] | select(.id==12051277101 and .expired==false) | .name' \
+            | grep -Fx p2-phase44-true-fresh-29csv-independent-final-PASS-20261016
+          python -m py_compile scripts/p2_full_original_html_browser_20261014.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-true-fresh-29csv-independent-final-PASS-20261016
+          run-id: 38913800757
+          github-token: ${{ github.token }}
+          path: source_proof
+      - name: Prove Phase44 metadata certificate permits Phase45
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(next(Path('source_proof').glob('*.json')).read_text())
+          assert d['status']=='PASS_PHASE44_TRUE_FRESH_29CSV_INDEPENDENT_METADATA_GATE'
+          assert d['csv_proof_count']==29 and d['newly_calculated_csv_count']==28
+          assert d['phase44_full_fresh_data_qa_pass'] is True
+          assert d['phase45_allowed'] is True and d['phase48_authorized'] is False
+          assert d['errors']==[]
+          print('PASS_PHASE45_ALLOWED_BY_TRUE_FRESH_PHASE44_AUDIT')
+          PY
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /preview/kabu/analysis/225_group_all_period/technology/
+          persist-credentials: false
+      - name: Confirm Private original SHA and no Private workflows before browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private GitHub Actions forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          test -f core/preview/kabu/analysis/225_group_all_period/technology/index.html
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install real Chromium for desktop/mobile behavior
+        run: |
+          set -euo pipefail
+          python -m pip install 'playwright>=1.55,<2'
+          python -m playwright install --with-deps chromium
+      - name: Verify all technology HTML titles, anchor targets and desktop/mobile Chromium
+        run: |
+          set -euo pipefail
+          python scripts/p2_full_original_html_browser_20261014.py \
+            --core core --dataset technology --out "$RUNNER_TEMP/phase45_technology.json"
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          d=json.loads((Path(os.environ['RUNNER_TEMP'])/'phase45_technology.json').read_text())
+          assert d['status']=='PASS_FULL_ORIGINAL_HTML_LINK_SCAN_AND_BROWSER_SMOKE'
+          assert d['dataset']=='technology' and d['private_core_sha']=='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+          assert d['pages_scanned']>=20 and d['browser_smokes']>=6
+          assert d['unresolved_internal_links']==0
+          assert d['old_html_modified'] is False and d['release_ready'] is False
+          assert d['all_browser_features_certified'] is False
+          print('PASS_PHASE45_TECHNOLOGY_EXISTING_HTML_BROWSER_SCOPED_ONLY')
+          PY
+      - name: Confirm no private original tracked modifications
+        if: always()
+        run: |
+          if [ -d core ]; then
+            test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+            test -z "$(git -C core diff --name-only)"
+            test -z "$(git -C core diff --cached --name-only)"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: p2-phase45-technology-html-link-browser-canary-20261016
+          path: ${{ runner.temp }}/phase45_technology.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: No false full Phase45 pass
+        if: always()
+        run: |
+          echo 'Only saved HTML link scan + representative desktop/mobile Chromium; interactive favorites and new template still require separate gates.' >> "$GITHUB_STEP_SUMMARY"
