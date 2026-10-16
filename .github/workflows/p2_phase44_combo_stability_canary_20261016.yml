@@ -3,7 +3,9 @@ name: P2 Phase44 combo stability all225 shard0 NumPy canary
 on:
   push:
     branches: [automation/p2-common-postextract-20261012]
-    paths: ['.github/workflows/p2_phase44_combo_stability_canary_20261016.yml']
+    paths:
+      - '.github/workflows/p2_phase44_combo_stability_canary_20261016.yml'
+      - 'scripts/p2_phase44_all225_combo_stability_shard_20261016.py'
 permissions:
   contents: read
   actions: read
