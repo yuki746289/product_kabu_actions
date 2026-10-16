@@ -168,7 +168,7 @@ jobs:
           assert d["physical_output_sha_and_column_parity_files"]==29
           assert d["original_23_semantic_numeric_evidence_passed"] is True
           assert d["real_canonical_29_csv_assembler_executed"] is True
-          assert d["full_fresh_single_run_29_numeric_certified"] is False
+          assert d["fresh_full_29_csv_e2e_numeric_certified"] is False
           assert d["phase43_strict_fresh_only_passed"] is False
           assert d["prior_successful_numeric_computation_repeated"] is False
           assert d["phase48_started"] is False and d["release_ready"] is False
@@ -342,7 +342,7 @@ jobs:
           assert d["physical_output_sha_and_column_parity_files"]==29
           assert d["original_23_semantic_numeric_evidence_passed"] is True
           assert d["real_canonical_29_csv_assembler_executed"] is True
-          assert d["full_fresh_single_run_29_numeric_certified"] is False
+          assert d["fresh_full_29_csv_e2e_numeric_certified"] is False
           assert d["phase43_strict_fresh_only_passed"] is False
           assert d["prior_successful_numeric_computation_repeated"] is False
           assert d["phase48_started"] is False and d["release_ready"] is False
@@ -403,7 +403,7 @@ jobs:
               x=json.loads((root/("p2-phase43-"+name+"-verified-real-checkpoint-29")/"report.json").read_text())
               assert x["status"]=="PASS_PHASE43_SOURCE_BOUND_CHECKPOINT_REAL_29_CSV_ASSEMBLY"
               assert x["dataset"]==name and x["physical_output_sha_and_column_parity_files"]==29
-              assert x["full_fresh_single_run_29_numeric_certified"] is False
+              assert x["fresh_full_29_csv_e2e_numeric_certified"] is False
               assert x["phase43_strict_fresh_only_passed"] is False
               assert x["release_ready"] is False
               print("PASS_PHASE43_29_SHA_SOURCE_CHECKPOINT_ONLY",name)
