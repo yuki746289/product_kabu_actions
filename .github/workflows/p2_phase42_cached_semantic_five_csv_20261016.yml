@@ -6,6 +6,7 @@ on:
     branches: [automation/p2-common-postextract-20261012]
     paths:
       - '.github/workflows/p2_phase42_cached_semantic_five_csv_20261016.yml'
+      - 'scripts/p2_phase42_numpy_cached_stability_20261016.py'
 permissions:
   contents: read
   actions: read
