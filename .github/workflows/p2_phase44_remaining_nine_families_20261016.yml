@@ -1,0 +1,228 @@
+# Source-pinned, fail-closed Phase44 optimization: jobs are bounded; no monolith.
+# This workflow certifies only directly verified families; never full 29 CSV parity.
+name: P2 Phase44 remaining 9-CSV bounded fresh functions
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths: ['.github/workflows/p2_phase44_remaining_nine_families_20261016.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-remaining-nine-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile and verify corruption rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pandas>=2.2,<3' 'numpy>=2,<3'
+          python -m py_compile scripts/p2_phase44_remaining_bounded_20261016.py
+          python -m py_compile scripts/p2_phase44_all225_fresh_newproducer_29csv_20261016.py
+          python scripts/p2_phase44_remaining_bounded_20261016.py --selftest
+          python scripts/p2_phase44_all225_fresh_newproducer_29csv_20261016.py --selftest
+      - name: Prior certified sources and Phase42/43 gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(gh api repos/yuki746289/product_kabu_actions/actions/runs/38850891084 --jq '.conclusion + " " + .head_sha')" = 'success f9709aabbfbac6769e9d5d464693085f2416cfd5'
+          test "$(gh api repos/yuki746289/product_kabu_actions/actions/runs/38851469805 --jq '.conclusion + " " + .head_sha')" = 'success 66de76edec787516e44c5fcc466f6aafeb09bcef'
+          gh api 'repos/yuki746289/product_kabu_actions/actions/runs/36844054546/artifacts?per_page=100' --jq '.artifacts[] | select(.id==11154711638 and .expired==false) | .name' | grep -Fx p2-225-raw-canonical-mirror-final
+          gh api 'repos/yuki746289/product_kabu_actions/actions/runs/36703088996/artifacts?per_page=100' --jq '.artifacts[] | select(.id==11093338366 and .expired==false) | .name' | grep -Fx p2-225-raw-features-20260930
+  bounded_family:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 38
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        family: [dependent4, walkforward1, pair4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+          persist-credentials: false
+      - name: Mandatory architecture gate before analysis
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo '::error::Private workflow forbidden'; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: python -m pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          run-id: 36844054546
+          github-token: ${{ github.token }}
+          path: core/build/phase44_bounded_saved/reference
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: core/build/phase44_bounded_saved/features
+      - name: Independently calculate and compare bounded family
+        env:
+          FAMILY: ${{ matrix.family }}
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_remaining_bounded_20261016.py \
+            --family "$FAMILY" --core core \
+            --source core/build/phase44_bounded_saved/features/features.csv \
+            --reference core/build/phase44_bounded_saved/reference \
+            --out "$RUNNER_TEMP/result.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ['RUNNER_TEMP'])/'result.json').read_text())
+          expected={'dependent4':4,'walkforward1':1,'pair4':4}
+          assert d['status']=='PASS_PHASE44_BOUNDED_UNSEEN_FRESH_NUMERIC_FUNCTION'
+          assert d['newly_computed_file_count']==expected[os.environ['FAMILY']]
+          assert d['source_rows']==181318 and d['source_tickers']==225
+          assert d['private_core_sha']=='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+          assert d['full_new_semantic_or_29_csv_chain_certified'] is False
+          assert not d['release_ready'] and not d['phase48_executed']
+          print('PASS_NUMERIC_FAMILY_ONLY',d['family'],flush=True)
+          PY
+      - name: Cleanup inputs and verify original Git tree unchanged
+        if: always()
+        run: |
+          rm -rf -- core/build/phase44_bounded_saved
+          if [ -d core ]; then
+            test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+            test -z "$(git -C core diff --name-only)"
+            test -z "$(git -C core diff --cached --name-only)"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: p2-phase44-extension-${{ matrix.family }}-20261016
+          path: ${{ runner.temp }}/result.json
+          retention-days: 30
+          if-no-files-found: error
+  final_gate:
+    needs: [preflight, bounded_family]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase44-extension-*-20261016
+          path: receipts
+          merge-multiple: false
+      - name: Read prior audited 12 successful CSV receipts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase44-bounded-*-20261016
+          run-id: 38878698697
+          github-token: ${{ github.token }}
+          path: previous_12
+          merge-multiple: false
+      - name: Validate previous 12 plus new 9 unique directly computed CSVs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          prior={'stability5':5,'single4':4,'baseline3':3}
+          added={'dependent4':4,'walkforward1':1,'pair4':4}
+          seen=set()
+          passed=[]
+          errors=[]
+          SRC='71fb0dc947a4777610fec2d07e08fac168a7ab1d49ac5028c39ad1b7ec03bdc9'
+          SHA='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+          def proof(fam,n,folder,prefix,status,key,count):
+              p=Path(folder)/(prefix+fam+'-20261016')/'result.json'
+              if not p.is_file():
+                  errors.append(fam+':missing')
+                  return
+              d=json.loads(p.read_text(encoding='utf-8'))
+              if (d.get('status')!=status or d.get('family')!=fam
+                  or d.get(count)!=n or d.get('private_core_sha')!=SHA
+                  or d.get('source_sha256',d.get('input_sha256'))!=SRC):
+                  errors.append(fam+':incomplete_source_proof')
+                  return
+              fields=d.get(key,{})
+              if len(fields)!=n or seen.intersection(fields):
+                  errors.append(fam+':count_or_duplicate')
+                  return
+              if any(v.get('all_rows_columns_numeric_equal') is not True for v in fields.values()):
+                  errors.append(fam+':numeric_mismatch')
+                  return
+              seen.update(fields)
+              passed.append(fam)
+          for fam,count in prior.items():
+              proof(fam,count,'previous_12','p2-phase44-bounded-',
+                    'PASS_PHASE44_BOUNDED_NEW_FUNCTION_NUMERIC_PARITY',
+                    'newly_independently_computed_files','newly_verified_file_count')
+          for fam,count in added.items():
+              proof(fam,count,'receipts','p2-phase44-extension-',
+                    'PASS_PHASE44_BOUNDED_UNSEEN_FRESH_NUMERIC_FUNCTION',
+                    'newly_computed','newly_computed_file_count')
+          success=not errors and len(seen)==21 and len(passed)==6
+          result={
+              'phase':44,
+              'status': 'LIMITED_PASS_PHASE44_21_NEW_COMPUTED_CSV' if success else 'BLOCKED_PHASE44_NEW_CSV_PROOF',
+              'previously_proved':12,'newly_proved':9,
+              'verified_unique_csv':len(seen),'expected_total_csv':29,
+              'certified_families':passed,'errors':errors,
+              'remaining_without_new_function_proof':29-len(seen),
+              'all_29_new_end_to_end_producer_certified':False,
+              'phase44_complete':False,'phase45_authorized':False,
+              'release_ready':False,'phase48_authorized':False}
+          Path('result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+          print('PHASE44_INCREMENTAL_EVIDENCE',result,flush=True)
+          if not success:raise SystemExit(2)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-phase44-extension-final-limited-20261016
+          path: result.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Explicit no-release audit scope
+        if: always()
+        run: |
+          echo '21 distinct verified new-function CSVs still do not certify an end-to-end 29 CSV producer.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Phase45 onward, PR merge, release and deployment are not executed.' >> "$GITHUB_STEP_SUMMARY"
