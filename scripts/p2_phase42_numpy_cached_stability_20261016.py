@@ -244,6 +244,11 @@ def verify(core,reference,source,proof,dataset,output):
         # composite key, not a mixed-dtype pandas MultiIndex.
         aligned=fresh.set_index(right_key.to_numpy(),drop=False).loc[left_key.tolist()]
         aligned=aligned.reset_index(drop=True)[old.columns]
+        # Preserve old CSV's parsed numeric calendar-key types, while keeping
+        # the normalized textual key used ONLY for identity lookup.
+        for field in ("year","window_start","window_end"):
+            if field in old.columns:
+                aligned[field]=pd.to_numeric(aligned[field],errors="raise")
         try:
             pd.testing.assert_frame_equal(old,aligned,check_dtype=False,
                 check_exact=False,atol=1e-7,rtol=1e-10,check_index_type=False)
