@@ -1,0 +1,181 @@
+# User requested strict Phase42 -> Phase43 ... sequence, only after passed numerical proof gate.
+# This proves exhaustive *disaggregated* evidence, never relabels it as same-run monolithic output.
+name: P2 Phase42 final 23 Semantic CSV evidence gate no-recompute
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase42_final_23_semantic_gate_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: phase42-final-disaggregated-sourceproof-20261016
+  cancel-in-progress: false
+jobs:
+  phase42_final:
+    name: Phase42 audit 23 Semantic filenames x 8 immutable datasets from prior NUMERIC proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned complete upstream source and all independent proof gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_phase42_semantic_23_evidence_gate_20261016.py
+          for item in '38524279221 success b596d5709e0a2e7905651f18200c83d72bee99ae' \
+                      '38500718243 success e5fa2f8dc94529691118700ea36494b6ddb8f81c' \
+                      '38582105679 success 99d884384661054e281552633fffaf4749e747b1' \
+                      '38834103298 success d78f10bd7c6ac740b88c33112973a5ed39792974' \
+                      '38840450229 success dafbbcd1b0c4f82d2a4cc9e46dcebdd954291ae3' \
+                      '38841568372 success 57142858976697017574ca12ea13b1a322a7845a' \
+                      '38844201706 success f654c2f1c7380c08c42b1eb0cd31fa3e4809b36b' \
+                      '38401749460 success' \
+                      '38402173660 success'; do
+            set -- $item
+            id="$1"; status="$2"; expected_sha="${3:-}"
+            actual_status="$(gh api "repos/yuki746289/product_kabu_actions/actions/runs/$id" --jq .conclusion)"
+            test "$actual_status" = "$status"
+            if test -n "$expected_sha"; then
+              actual_sha="$(gh api "repos/yuki746289/product_kabu_actions/actions/runs/$id" --jq .head_sha)"
+              test "$actual_sha" = "$expected_sha"
+            fi
+          done
+          # Count EXACT successful previously audited Phase40/41 disjoint artifact evidence,
+          # no repeated combinations/stability computations.
+          python - <<'PY'
+          import json,subprocess
+          known=[(38582105679,64),(38834103298,56)]
+          for run,number in known:
+              data=json.loads(subprocess.check_output(
+                  ["gh","api",f"repos/yuki746289/product_kabu_actions/actions/runs/{run}/artifacts?per_page=100"]))
+              names={a["name"] for a in data["artifacts"] if not a["expired"]}
+              assert data["total_count"]==len(names)==number,(run,len(names),number)
+              print("PASS_PHASE42_SOURCE_PINNED_PRIOR_EVIDENCE_COUNT",run,number)
+          PY
+      - name: Reuse proof only phase38 from immutable successful Run 38524279221
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase38-*-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: evidence/phase38
+      - name: Reuse proof only fresh from immutable successful Run 38844201706
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase43-*-eight-fresh-canonical-semantic
+          run-id: 38844201706
+          github-token: ${{ github.token }}
+          path: evidence/fresh
+      - name: Reuse proof only five from immutable successful Run 38840450229
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase42-*-five-semantic-cached-parity
+          run-id: 38840450229
+          github-token: ${{ github.token }}
+          path: evidence/five
+      - name: Reuse proof only two from immutable successful Run 38841568372
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase42-*-two-unseen-semantic
+          run-id: 38841568372
+          github-token: ${{ github.token }}
+          path: evidence/two
+      - name: Reuse proof only monthly from immutable successful Run 38500718243
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase29-*-monthly-walkforward
+          run-id: 38500718243
+          github-token: ${{ github.token }}
+          path: evidence/monthly
+      - name: Reuse earlier independent transport monthly baseline 3CSV proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-transport-monthly-three-csv-evidence
+          run-id: 38401749460
+          github-token: ${{ github.token }}
+          path: evidence/transport_monthly
+      - name: Reuse earlier independent transport single Walkforward proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-common-phase26-transport-walkforward-one-csv-evidence
+          run-id: 38402173660
+          github-token: ${{ github.token }}
+          path: evidence/transport_walkforward
+      - name: Assert each dataset evidence source SHA matches for 23 Semantic outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,subprocess
+          ds=("technology","financials","consumer_goods","materials","capital_goods_others",
+              "transportation_utilities","exclude_capital_goods_transportation_utilities",
+              "exclude_transportation_utilities")
+          folder={
+            "phase38":("p2-phase38-","-saved-29csv-inventory"),
+            "fresh":("p2-phase43-","-eight-fresh-canonical-semantic"),
+            "five":("p2-phase42-","-five-semantic-cached-parity"),
+            "two":("p2-phase42-","-two-unseen-semantic"),
+            "monthly":("p2-phase29-","-monthly-walkforward")}
+          root=Path("evidence")
+          results=Path("audit_generated")
+          results.mkdir()
+          for dataset in ds:
+              place=results/dataset
+              place.mkdir()
+              for type,(prefix,suffix) in folder.items():
+                  source=root/type/(prefix+dataset+suffix)/(
+                      "audit.json" if type=="phase38" or type=="monthly" else "report.json")
+                  if type=="monthly" and dataset=="transportation_utilities":
+                      source=root/"transport_monthly"/"report.json"
+                  assert source.is_file(),source
+                  (place/type).mkdir()
+                  (place/type/("audit.json" if type=="phase38" else "report.json")).write_bytes(source.read_bytes())
+              if dataset=="transportation_utilities":
+                  (place/"walkforward").mkdir()
+                  (place/"walkforward"/"report.json").write_bytes(
+                      (root/"transport_walkforward"/"report.json").read_bytes())
+              cmd=["python","scripts/p2_phase42_semantic_23_evidence_gate_20261016.py",
+                   "--dataset",dataset,"--proof-root",str(place),
+                   "--out",str(place/"result.json")]
+              subprocess.run(cmd,check=True)
+          print("PASS_PHASE42_23x8_DISJOINT_NUMERICAL_PROOF_EVIDENCE")
+          PY
+      - name: Verify all results, no monolithic new-producer claim
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          names=("technology","financials","consumer_goods","materials","capital_goods_others",
+                 "transportation_utilities","exclude_capital_goods_transportation_utilities",
+                 "exclude_transportation_utilities")
+          for n in names:
+              r=json.loads((Path("audit_generated")/n/"result.json").read_text())
+              assert r["status"]=="PASS_PHASE42_DISAGGREGATED_23_SEMANTIC_EVIDENCE_COVERAGE"
+              assert r["saved_23_semantic_sha_ledger_keys"]==23
+              assert r["semantic_23_file_evidence_ownership_exhaustive"] is True
+              assert r["new_23_semantic_output_SHA_ledger_generated_by_same_unified_process"] is False
+              assert r["phase43_finished"] is False and r["phase48_started"] is False
+              print("PASS_PHASE42_FINAL_EVIDENCE",n)
+          PY
+      - name: Upload ONLY final source SHA-bound Phase42 metadata JSON x 8
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase42-23-semantic-eight-source-ledger-gate-20261016
+          path: audit_generated/*/result.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Explicit finished scope without false 29CSV or release certification
+        if: always()
+        run: |
+          echo "Pass criterion: disaggregated genuine 23 semantic source-bound CSV evidence across 8 datasets, including prior verified 64+56 Phase40/41 shards." >> "$GITHUB_STEP_SUMMARY"
+          echo "This does NOT mean full 23 CSV in one actual new producer pass; Phase43 new producer integration and 29CSV remains." >> "$GITHUB_STEP_SUMMARY"
+          echo "No Private workflow, no original successful recompute, no merge/release/deploy." >> "$GITHUB_STEP_SUMMARY"
