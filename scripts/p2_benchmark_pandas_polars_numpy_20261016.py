@@ -59,7 +59,7 @@ def normalize_number(s):
     return pd.to_numeric(text.replace({"true":"1","false":"0"}),errors="coerce").astype(float)
 
 def create_result(records):
-    return {k:{"rows":int(d[0]),"totals":[(int(x),round(float(s),8)) for x,s in d[1]]}
+    return {"::".join(k):{"rows":int(d[0]),"totals":[(int(x),round(float(s),8)) for x,s in d[1]]}
             for k,d in sorted(records.items())}
 
 def pandas_groups(frame):
