@@ -8,6 +8,7 @@ on:
     branches: [automation/p2-common-postextract-20261012]
     paths:
       - '.github/workflows/p2_phase41_full_walkforward_20261016.yml'
+      - 'scripts/p2_full_walkforward_year_shard_20261016.py'
 permissions:
   contents: read
   actions: read
