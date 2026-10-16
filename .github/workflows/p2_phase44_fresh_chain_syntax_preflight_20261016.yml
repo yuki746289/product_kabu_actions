@@ -1,0 +1,30 @@
+# Static-only canary: no private source checkout, no data recomputation.
+name: P2 Phase44 fresh source-chain compiler and control check
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase44_fresh_chain_syntax_preflight_20261016.yml'
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile all three bounded new research implementations
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          python -m py_compile \
+            scripts/p2_phase44_fresh_all225_semantic_optimized_20261016.py \
+            scripts/p2_phase44_fresh_all225_or_optimized_20261016.py \
+            scripts/p2_phase44_full_fresh_optimized_end_to_end_20261016.py
+          python scripts/p2_phase44_fresh_all225_semantic_optimized_20261016.py --help >/dev/null
+          python scripts/p2_phase44_fresh_all225_or_optimized_20261016.py --help >/dev/null
+          python scripts/p2_phase44_full_fresh_optimized_end_to_end_20261016.py --help >/dev/null
+          echo "PASS_PHASE44_ALL_FRESH_CHAIN_PYTHON_COMPILE_AND_CLI"
