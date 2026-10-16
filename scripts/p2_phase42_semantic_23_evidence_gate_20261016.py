@@ -80,11 +80,14 @@ def verify(base):
             or mc["original_source_sha256"]!=source_sha or mc["compared_csvs"]!=3
             or mc["mismatches"] or
             set(x["file"] for x in mc["csv_details"])!=set(MONTHLY[:3])
-            or not all(x["numerically_equal"] for x in mc["csv_details"])):
+            or not all(x["numerically_equal"] and x["saved_original_sha256"]==expected[x["file"]]
+                       for x in mc["csv_details"])):
             raise ValueError("Transport prior monthly three new calculations incomplete")
         if (wf["status"]!="PASS_PHASE26_WALKFORWARD_NEW_SEMANTIC_CANARY"
             or wf["dataset"]!=ds or wf["private_core_sha"]!=SHA
-            or wf["original_source_sha256"]!=source_sha):
+            or wf["source_sha256"]!=source_sha
+            or wf["saved_original_sha256"]!=expected["walkforward_results.csv"]
+            or wf["numeric_parity_mismatches"]):
             raise ValueError("Transport prior one new walkforward original SHA proof incomplete")
         # Earlier Phase26 original-source success gates explicitly required
         # fixed matching old sources; no Phase29 re-execution.
