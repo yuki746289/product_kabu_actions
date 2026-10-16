@@ -45,7 +45,7 @@ def verify(source:Path,proof:Path,core:Path)->dict:
     if p.get("source_sha256")!=SOURCE_SHA:
         raise ValueError("Phase38 source identity mismatch")
     if p.get("source_rows")!=48782:raise ValueError("Unexpected full population size")
-    if p.get("source_tickers")!=60:raise ValueError("Unexpected original technology ticker count")
+    if p.get("source_tickers")!=61:raise ValueError("Unexpected original technology ticker count")
     if digest(source)!=SOURCE_SHA:raise ValueError("Original saved source bytes changed")
     actual=subprocess.check_output(["git","-C",str(core),"rev-parse","HEAD"],text=True).strip()
     if actual!=PRIVATE_SHA:raise ValueError("Pinned Private original SHA differs")
