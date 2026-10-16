@@ -131,7 +131,26 @@ def run(core:Path,source:Path,reference:Path,shard:int)->dict:
     finally:
         fin._uplift=old_uplift
     fresh=pd.concat(out,ignore_index=True,sort=False)
-    expected=old.iloc[start:end].reset_index(drop=True)
+    # Saved canonical combination-stability CSV is the same COMPLETE
+    # candidate identity set but has a DIFFERENT row order from the saved
+    # advantage_pairwise/triple candidate inputs. Never compare by offset:
+    # select each old row by its unique (kind, feature1/2/3, category1/2/3)
+    # identity while preserving new canonical computed candidate order.
+    id_cols=["condition_type","feature1","category1","feature2","category2",
+             "feature3","category3"]
+    def identity_keys(table):
+        normalized=table.reindex(columns=id_cols)
+        return list(map(tuple,normalized.astype("string").fillna("<MISSING>").to_numpy()))
+    legacy_keys=identity_keys(old)
+    new_keys=identity_keys(fresh)
+    if len(set(legacy_keys))!=len(legacy_keys):
+        raise ValueError("Saved canonical stability identity is duplicated")
+    if len(set(new_keys))!=len(new_keys):
+        raise ValueError("Fresh bounded stability identity is duplicated")
+    legacy_positions={key:i for i,key in enumerate(legacy_keys)}
+    if any(key not in legacy_positions for key in new_keys):
+        raise ValueError("New stability candidates are missing from old complete reference")
+    expected=old.iloc[[legacy_positions[key] for key in new_keys]].reset_index(drop=True)
     # A bounded pair-only/triple-only shard does not itself contain columns
     # belonging exclusively to the other kind. The original full CSV is a
     # concatenation of both kinds. Only canonical all-NA union columns may be
