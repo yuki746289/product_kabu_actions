@@ -230,12 +230,15 @@ def validate_old_reference(reference: Path) -> dict:
 
 def identity_column(name: str) -> bool:
     lowered = name.lower()
-    protected = (
-        "ticker", "as_of", "slug", "condition", "feature", "category",
-        "name", "label", "pattern", "params", "direction", "regime",
-        "identifier", "source", "period_type", "group", "code", "month_key"
-    )
-    return any(piece in lowered for piece in protected) or lowered.endswith("_id")
+    exact = {
+        "ticker", "as_of", "slug", "condition_key", "condition_id",
+        "feature_family", "feature", "category", "params_json",
+        "name", "label", "pattern", "direction", "causal_regime",
+        "regime", "period_type", "month_key", "source", "group"
+    }
+    return (lowered in exact or lowered.endswith(
+        ("_id", "_key", "_label", "_slug", "_category", "_name", "_type")
+    ))
 
 def compare_csv(original: Path, produced: Path, expected: dict) -> dict:
     with original.open("r", encoding="utf-8-sig", newline="") as old, produced.open(
