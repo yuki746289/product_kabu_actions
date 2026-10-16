@@ -1,0 +1,117 @@
+# Read-only user-approved comparison of canonical masks, _metrics and _stability_summary
+# No P2 producer, source recomputation, old CSV HTML rewrites, merge, release, deploy.
+name: P2 benchmark real mask metrics stability NumPy Polars
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_benchmark_mask_metrics_stability_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-real-mask-metrics-stability-benchmark-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  benchmark:
+    name: Original 48782-row technology source masks metrics stability parity and speed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read pinned immutable Private code and original feature, pair, triple source CSVs only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
+            /preview/kabu/analysis/225_group_all_period/technology/all_pairwise_combinations.csv
+            /preview/kabu/analysis/225_group_all_period/technology/tested_triple_combinations.csv
+          persist-credentials: false
+      - name: Fail closed on any forbidden Private workflows, source SHA or architecture gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden Private GitHub Actions workflow"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python -m py_compile scripts/p2_benchmark_mask_metrics_stability_20261016.py
+      - name: Download successful source SHA/shape and pair/triple reference proof (no private rows)
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-technology-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: proof38
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Install exact original producer runtime and benchmark-only Polars
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+          python -m pip install 'polars>=1,<2'
+          python - <<'PY'
+          import pandas,numpy,polars
+          print("BENCH_VERSIONS",pandas.__version__,numpy.__version__,polars.__version__)
+          PY
+      - name: Benchmark real canonical pair/triple masks metrics and stability, full row parity first
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_benchmark_mask_metrics_stability_20261016.py \
+            --core core --phase38 proof38/audit.json \
+            --report "$RUNNER_TEMP/report.json"
+      - name: Independent benchmark evidence gate and no prior producer execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          q=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text(encoding="utf-8"))
+          assert q["status"]=="PASS_MASK_METRICS_STABILITY_MICROBENCH_PARITY"
+          assert q["dataset"]=="technology" and q["source_rows"]==48782
+          assert q["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert q["original_candidate_cases"]==18
+          assert q["scopes"]["canonical_condition_intersection"]["parity"]=="PASS_ALL_BOOLEAN_ROWS"
+          assert q["scopes"]["canonical_metrics"]["parity"]=="PASS_ALL_NUMERIC_AND_NULL_FIELDS"
+          assert q["scopes"]["canonical_stability_summary"]["parity"]=="PASS_ALL_COLUMNS_VALUES_AND_LABELS"
+          assert q["canonical_functions_or_private_artifacts_modified"] is False
+          assert q["full_semantic_or_29csv_producers_executed"] is False
+          assert q["previous_success_artifacts_recomputed"] is False
+          assert q["phase42_change_authorized"] is False and q["release_or_deploy"] is False
+          print("PASS_ONLY_BENCHMARK_NO_PRODUCER_CHANGES")
+          PY
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only timings, scalar counters and parity, not original CSV or masks
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-real-mask-metrics-stability-performance-20261016
+          path: ${{ runner.temp }}/report.json
+          retention-days: 21
+          if-no-files-found: error
