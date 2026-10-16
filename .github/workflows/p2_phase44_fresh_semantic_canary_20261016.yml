@@ -1,0 +1,114 @@
+# Strict Phase44: execute pinned ORIGINAL canonical.build() with proven cached
+# NumPy scalars, temporary mask release, and equivalent grouped stability.
+# Fully fresh semantic CSVs are checked in runner memory/disk and never uploaded.
+name: P2 Phase44 fresh optimized complete 23 Semantic CSV canary
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - .github/workflows/p2_phase44_fresh_semantic_canary_20261016.yml
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-fresh-semantic-canary-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  PYTHONUNBUFFERED: '1'
+jobs:
+  semantic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+          persist-credentials: false
+      - name: Verify original Private SHA and Public-only Actions policy BEFORE computing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::private workflows prohibited"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python -m py_compile scripts/p2_phase44_fresh_all225_semantic_optimized_20261016.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Fixed source code dependencies
+        run: python -m pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          run-id: 36844054546
+          github-token: ${{ github.token }}
+          path: core/build/phase44_semantic_reference
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: core/build/phase44_saved_features
+      - name: Fresh canonical semantic producer 23 CSV complete new rows and independent old-numeric parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_fresh_all225_semantic_optimized_20261016.py \
+            --core core \
+            --source core/build/phase44_saved_features/features.csv \
+            --reference core/build/phase44_semantic_reference \
+            --output core/build/phase44_new_fresh_semantic
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('core/build/phase44_new_fresh_semantic/semantic_status.json')
+          x=json.loads(p.read_text(encoding='utf-8'))
+          assert x['overall_pass'] is True
+          assert x['dataset_id']=='all_225'
+          assert x['source_rows']==181318 and x['source_tickers']==225
+          assert x['newly_computed_semantic_csv_count']==23
+          assert len(x['output_csv_sha256'])==23
+          assert x['newly_computed_not_old_checkpoint_copy'] is True
+          assert x['previous_success_artifacts_recomputed'] is False
+          Path('receipt.json').write_text(json.dumps({
+            k:v for k,v in x.items()
+            if k!='output_csv_sha256'
+          },ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print("PASS_FRESH_ALL225_CANONICAL_23_SEMANTIC_OUTPUTS_AND_SOURCE_HASHES",flush=True)
+          PY
+      - name: Cleanup 23 new and all historical input CSVs, preserve original checkout
+        if: always()
+        run: |
+          rm -rf core/build/phase44_new_fresh_semantic core/build/phase44_saved_features core/build/phase44_semantic_reference
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only safe stage/count/runtime/peak RAM receipt metadata
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase44-new-semantic-all23-proof-only-20261016
+          path: receipt.json
+          retention-days: 21
+          if-no-files-found: error
