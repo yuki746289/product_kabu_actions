@@ -224,14 +224,34 @@ def verify(core,reference,source,proof,dataset,output):
             raise ValueError(f"{name} output order/schema differs old={list(old.columns)} fresh={list(fresh.columns)}")
         if len(old)!=len(fresh):
             raise ValueError(f"{name} row count differs old={len(old)} fresh={len(fresh)}")
+        keycols=(["condition_id","year"] if name=="yearly_stability.csv" else
+                 ["condition_id","month"] if name=="monthly_stability.csv" else
+                 ["condition_id","window_start","window_end"] if name.startswith("rolling_") else
+                 ["condition_id","regime"])
+        left_key=old[keycols].astype(str).agg("\\x1f".join,axis=1)
+        right_key=fresh[keycols].astype(str).agg("\\x1f".join,axis=1)
+        if left_key.duplicated().any() or right_key.duplicated().any():
+            raise ValueError(f"{name}: duplicate source or computed condition/period keys")
+        if set(left_key)!=set(right_key):
+            missing=len(set(left_key)-set(right_key))
+            extra=len(set(right_key)-set(left_key))
+            raise ValueError(f"{name}: condition selection coverage differs; old-only={missing} computed-only={extra}; not certifiable")
+        same_original_order=left_key.tolist()==right_key.tolist()
+        # Compare EXACT SAME condition+period and all 3 horizon numeric values.
+        # Do not treat lexical/report presentation order as numeric logic.
+        aligned=fresh.set_index(keycols).reindex(old.set_index(keycols).index).reset_index()
+        aligned=aligned[old.columns]
         try:
-            pd.testing.assert_frame_equal(old,fresh,check_dtype=False,
+            pd.testing.assert_frame_equal(old,aligned,check_dtype=False,
                 check_exact=False,atol=1e-7,rtol=1e-10,check_index_type=False)
         except AssertionError as err:
-            raise AssertionError(f"{name}: numerical/label/order parity differs: {str(err)[:800]}") from err
+            raise AssertionError(f"{name}: same-key numeric/label parity differs: {str(err)[:800]}") from err
         files[name]={"rows":len(fresh),"columns":len(fresh.columns),
                      "original_sha256":phase["files"][name]["sha256"],
                      "numeric_and_label_parity":True,
+                     "condition_period_key_coverage_exact":True,
+                     "input_original_order_already_equal":same_original_order,
+                     "numeric_rows_aligned_by_pinned_condition_period_key":not same_original_order,
                      "seconds":round(time.perf_counter()-start,3)}
         print("PASS_PHASE42_CACHED_NUMPY_FULL_FILE",dataset,name,len(fresh),flush=True)
         del old,fresh
