@@ -146,6 +146,15 @@ def verify(core:Path,ref:Path,sources:Path,proof:Path,dataset:str,shard:int):
         print("COMPLETE_NEW_ORIGINAL_WALKFORWARD_YEAR",dataset,year,flush=True)
     now=pd.DataFrame(results).reindex(columns=targets.columns)
     if len(now)!=len(old):raise ValueError("New walkforward candidate row count changed")
+    # The original saved file orders horizons lexically 10D,20D,5D inside
+    # each year and kind. Canonical inner producer visits 5D,10D,20D.
+    # Normalize ONLY row order to the immutable saved CSV contract; compare
+    # the full fields (including the actual newly calculated winner identities).
+    ordered=["test_year","condition_type","horizon"]
+    if not old[ordered].reset_index(drop=True).equals(
+         old.sort_values(ordered,kind="stable")[ordered].reset_index(drop=True)):
+        raise ValueError("Original saved walkforward output ordering changed")
+    now=now.sort_values(ordered,kind="stable").reset_index(drop=True)
     mismatches=[]
     try:
         pd.testing.assert_frame_equal(old,now,check_dtype=False,check_exact=False,
