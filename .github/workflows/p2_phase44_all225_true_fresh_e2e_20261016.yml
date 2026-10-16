@@ -1,0 +1,140 @@
+# Phase44 TRUE source-bound fresh Semantic 23 -> OR 5 -> canonical assemble 29.
+# This is ONE isolated same-runner integration CANARY with three bounded subprocess
+# stages; no private CSV on Public artifacts or Git and no old success runs rerun.
+# The optimized semantic stage has a measured prior complete runtime of 1070.5s.
+name: P2 Phase44 original-core fresh Semantic OR 29CSV integrated canary
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase44_all225_true_fresh_e2e_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-one-time-true-newproducer-integration-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: '52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  PYTHONUNBUFFERED: '1'
+jobs:
+  integration_canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm successful independently complete new Semantic23 canary
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(gh api repos/yuki746289/product_kabu_actions/actions/runs/38903527629 --jq '.status + " " + .conclusion + " " + .head_sha')" = "completed success 8ede5d40fe50e8ee4d392426d3b12c46a7eb86fc"
+          gh api 'repos/yuki746289/product_kabu_actions/actions/runs/38903527629/artifacts?per_page=100' \
+            --jq '.artifacts[]|select(.id==12048271888 and .expired==false)|.name' |
+            grep -Fx 'p2-phase44-new-semantic-all23-proof-only-20261016'
+          python -m py_compile \
+            scripts/p2_phase44_fresh_all225_semantic_optimized_20261016.py \
+            scripts/p2_phase44_fresh_all225_or_optimized_20261016.py \
+            scripts/p2_phase44_full_fresh_optimized_end_to_end_20261016.py
+          echo 'PASS_PINNED_23_NEW_SEMANTIC_PRIOR_EVIDENCE_AND_NEW_CHAIN_SYNTAX'
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+          persist-credentials: false
+      - name: Mandatory Public runner, pinned original Private core, no Private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: python -m pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          run-id: 36844054546
+          github-token: ${{ github.token }}
+          path: core/build/p44_input_only/old_reference
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: core/build/p44_input_only/features
+      - name: Execute fully newly calculated full P2 canonical producer chain in isolated build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f core/build/p44_input_only/features/features.csv
+          test -f core/build/p44_input_only/old_reference/condition_detail_manifest.csv
+          python scripts/p2_phase44_full_fresh_optimized_end_to_end_20261016.py \
+            --core core \
+            --source core/build/p44_input_only/features/features.csv \
+            --reference core/build/p44_input_only/old_reference \
+            --report "$RUNNER_TEMP/phase44_full_fresh_e2e.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ['RUNNER_TEMP'])/'phase44_full_fresh_e2e.json').read_text(encoding='utf-8'))
+          assert d['status']=='PASS_PHASE44_TRUE_FRESH_OPTIMIZED_ALL225_SEMANTIC_OR_29_CSV_E2E'
+          assert (d['source_rows'],d['source_tickers'])==(181318,225)
+          assert (d['newly_computed_semantic_csv'],d['newly_computed_or_csv'])==(23,5)
+          assert len(d['component_numeric_file_proofs'])==29
+          assert sum(x['new_calculation'] for x in d['component_numeric_file_proofs'].values())==28
+          assert d['actual_immutable_source_common_assembler_called'] is True
+          assert d['same_runner_new_semantic_used_as_new_or_input'] is True
+          assert d['same_runner_new_semantic_and_or_used_as_assembler_inputs'] is True
+          assert d['complete_new_producer_numeric_same_old_29_csv'] is True
+          assert d['phase44_pass'] is True and d['release_ready'] is False
+          assert d['phase48_authorized'] is False
+          assert d['previous_success_artifacts_recomputed'] is False
+          assert d['old_original_csv_html_modified'] is False
+          print('PASS_FULL_PHASE44_TRUE_NEW_ALL225_NUMERIC_E2E_ONLY_NO_RELEASE',flush=True)
+          PY
+      - name: Erase ephemeral all225 private and new CSV and preserve pinned code tree
+        if: always()
+        shell: bash
+        run: |
+          rm -rf core/build/p44_input_only core/build/phase44_true_fresh_optimized_full_pipeline
+          if [ -d core ]; then
+            test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+            test -z "$(git -C core diff --name-only)"
+            test -z "$(git -C core diff --cached --name-only)"
+          fi
+      - name: Upload count/SHA-only completion and numeric comparison audit JSON
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase44-true-fresh-all225-29csv-e2e-status-20261016
+          path: ${{ runner.temp }}/phase44_full_fresh_e2e.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Scope statement
+        if: always()
+        run: |
+          echo 'Public runner ephemeral original-core canary only.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'No private original edits, no prior production/artifact rerun and NO PR merge, release, deploy.' >> "$GITHUB_STEP_SUMMARY"
