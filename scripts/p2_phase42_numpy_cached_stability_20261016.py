@@ -239,8 +239,11 @@ def verify(core,reference,source,proof,dataset,output):
         same_original_order=left_key.tolist()==right_key.tolist()
         # Compare EXACT SAME condition+period and all 3 horizon numeric values.
         # Do not treat lexical/report presentation order as numeric logic.
-        aligned=fresh.set_index(keycols).reindex(old.set_index(keycols).index).reset_index()
-        aligned=aligned[old.columns]
+        # The original CSV parses calendar years as integers while fresh
+        # year labels are strings; align on the already-validated textual
+        # composite key, not a mixed-dtype pandas MultiIndex.
+        aligned=fresh.set_index(right_key.to_numpy(),drop=False).loc[left_key.tolist()]
+        aligned=aligned.reset_index(drop=True)[old.columns]
         try:
             pd.testing.assert_frame_equal(old,aligned,check_dtype=False,
                 check_exact=False,atol=1e-7,rtol=1e-10,check_index_type=False)
