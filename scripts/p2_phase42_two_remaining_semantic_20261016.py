@@ -90,9 +90,9 @@ def verify(core:Path,ref:Path,external:Path,proof38:Path,proof42:Path,dataset:st
         # Fail on even one missing, extra or duplicate candidate identity.
         if saved.duplicated(list(key)).any() or new.duplicated(list(key)).any():
             raise ValueError(out+": duplicate canonical condition key")
-        keys_old=[tuple(str(v) for v in row)
+        keys_old=["\\x1f".join(str(v) for v in row)
                   for row in saved[list(key)].itertuples(index=False,name=None)]
-        keys_new=[tuple(str(v) for v in row)
+        keys_new=["\\x1f".join(str(v) for v in row)
                   for row in new[list(key)].itertuples(index=False,name=None)]
         if set(keys_old)!=set(keys_new):
             raise ValueError(out+": original vs new condition key coverage differs")
