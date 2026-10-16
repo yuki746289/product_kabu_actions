@@ -225,6 +225,34 @@ def align(old,fresh,name):
         for col in ("year","window_start","window_end"):
             if col in old:
                 fresh[col]=pd.to_numeric(fresh[col],errors="raise")
+    elif name in ("monthly_candidate_stability_summary.csv","parameter_plateau.csv"):
+        # Saved end-report files use a different stable presentation order
+        # from the underlying canonical function. Align by unique condition
+        # identity, never by numeric values or by sorted row positions.
+        keys=(["condition_id"] if name.startswith("monthly_candidate")
+              else ["feature_family","feature","category"])
+        def ids(df):
+            if not set(keys).issubset(df.columns):
+                raise ValueError("Canonical result identity columns missing")
+            return df[keys].astype("string").fillna("<MISSING>").agg(
+                "\x1f".join,axis=1)
+        left=ids(old)
+        right=ids(fresh)
+        if (left.duplicated().any() or right.duplicated().any()
+            or set(left)!=set(right)):
+            raise ValueError("Canonical candidate or plateau identities differ")
+        fresh=fresh.set_index(right.to_numpy(),drop=False).loc[left.tolist()]
+        fresh=fresh.reset_index(drop=True)[old.columns]
+    elif name=="signal_level_features.csv":
+        # Original saved CSV serializes dates to ISO. The new in-memory
+        # producer still has datetime dtype; this is formatting, not a
+        # change to source date/data or a numerical tolerance exception.
+        if list(old.columns)!=list(fresh.columns):
+            raise ValueError("Pinned 112-column feature schema changed")
+        if "as_of" not in fresh.columns:
+            raise ValueError("Immutable source date field is missing")
+        fresh=fresh.copy()
+        fresh["as_of"]=pd.to_datetime(fresh["as_of"],errors="raise").dt.strftime("%Y-%m-%d")
     elif name=="combination_walkforward_results.csv":
         keys=["test_year","condition_type","horizon"]
         def tuples(df):return list(map(tuple,df[keys].to_numpy()))
