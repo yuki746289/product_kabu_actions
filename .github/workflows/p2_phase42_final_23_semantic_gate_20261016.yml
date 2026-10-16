@@ -130,7 +130,7 @@ jobs:
               place.mkdir()
               for type,(prefix,suffix) in folder.items():
                   source=root/type/(prefix+dataset+suffix)/(
-                      "audit.json" if type=="phase38" or type=="monthly" else "report.json")
+                      "audit.json" if type=="phase38" else "report.json")
                   if type=="monthly" and dataset=="transportation_utilities":
                       source=root/"transport_monthly"/"report.json"
                   assert source.is_file(),source
