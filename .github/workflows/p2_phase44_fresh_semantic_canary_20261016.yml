@@ -7,6 +7,7 @@ on:
     branches: [automation/p2-common-postextract-20261012]
     paths:
       - .github/workflows/p2_phase44_fresh_semantic_canary_20261016.yml
+      - scripts/p2_phase44_fresh_all225_semantic_optimized_20261016.py
 permissions:
   contents: read
   actions: read
