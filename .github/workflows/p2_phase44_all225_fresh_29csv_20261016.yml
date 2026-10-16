@@ -1,0 +1,146 @@
+# Phase44 only: original all_225, 181318 rows/225 symbols.
+# No Production P2 v12, old successful CSV/HTML/artifact, PR/release/deploy updates.
+name: "P2 Phase44 all225 isolated fresh 29 CSV parity"
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - ".github/workflows/p2_phase44_all225_fresh_29csv_20261016.yml"
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-all225-fresh-29csv-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: "52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+  PYTHONUNBUFFERED: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+jobs:
+  preflight:
+    name: "Preflight: saved prior PASS plus source/reference availability"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Selftest and pin Phase42/43 completion"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          python -m py_compile scripts/p2_phase44_all225_fresh_newproducer_29csv_20261016.py
+          python scripts/p2_phase44_all225_fresh_newproducer_29csv_20261016.py --selftest
+          test "$(gh api repos/yuki746289/product_kabu_actions/actions/runs/38850891084 --jq '.conclusion + " " + .head_sha')" = "success f9709aabbfbac6769e9d5d464693085f2416cfd5"
+          test "$(gh api repos/yuki746289/product_kabu_actions/actions/runs/38851469805 --jq '.conclusion + " " + .head_sha')" = "success 66de76edec787516e44c5fcc466f6aafeb09bcef"
+          gh api "repos/yuki746289/product_kabu_actions/actions/runs/36844054546/artifacts?per_page=100" --jq '.artifacts[] | select(.id==11154711638 and .expired==false) | .name' | grep -Fx "p2-225-raw-canonical-mirror-final"
+          gh api "repos/yuki746289/product_kabu_actions/actions/runs/36703088996/artifacts?per_page=100" --jq '.artifacts[] | select(.id==11093338366 and .expired==false) | .name' | grep -Fx "p2-225-raw-features-20260930"
+          echo "PRIOR_PHASES_42_43_AND_ORIGINAL_ARTIFACTS_VERIFIED"
+  full_parity:
+    name: "All225: new Semantic/OR/29 CSV only in isolated Private-core build"
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Checkout exact immutable Private core SHA without credentials persistence"
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+          persist-credentials: false
+      - name: "Mandatory runner/policy/core SHA/no Private workflow gate"
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions detected"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: "Install Private fixed producer dependencies"
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: "Load saved original 29 CSV mirror into isolated build (no regeneration)"
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          run-id: 36844054546
+          github-token: ${{ github.token }}
+          path: core/build/phase44_saved_20261016/reference
+      - name: "Load fixed saved source features into isolated build (no regeneration)"
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: core/build/phase44_saved_20261016/features
+      - name: "Strict new fixed-core producers, complete original 29 CSV numeric independent comparison"
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f core/build/phase44_saved_20261016/features/features.csv
+          test -f core/build/phase44_saved_20261016/reference/condition_detail_manifest.csv
+          python scripts/p2_phase44_all225_fresh_newproducer_29csv_20261016.py \
+            --core core \
+            --source core/build/phase44_saved_20261016/features/features.csv \
+            --reference core/build/phase44_saved_20261016/reference \
+            --report "$RUNNER_TEMP/phase44_pass.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          x=json.loads((Path(os.environ["RUNNER_TEMP"])/"phase44_pass.json").read_text())
+          assert x["status"]=="PASS_PHASE44_ALL225_FRESH_NEWPRODUCER_29CSV_NUMERIC_PARITY"
+          assert x["dataset"]=="all_225" and x["csv_count"]==len(x["files"])==29
+          assert x["input"]["rows"]==181318 and x["input"]["tickers"]==225
+          assert x["new_producer_executed"]==["semantic","or","normalized"]
+          assert all(v["equivalent"] is True for v in x["files"].values())
+          assert x["old_signals_recomputed"] is False
+          assert x["old_csv_html_modified"] is False
+          assert x["prior_success_artifacts_recomputed"] is False
+          assert x["release_ready"] is False and x["phase48_authorized"] is False
+          print("PASS_FULL_PHASE44_29_CSV_NEW_PRODUCER_NUMERIC",flush=True)
+          PY
+      - name: "Delete only this ephemeral old source/reference staging"
+        if: always()
+        shell: bash
+        run: |
+          rm -rf -- core/build/phase44_saved_20261016
+          if [ -d core ]; then
+            test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+            test -z "$(git -C core diff --name-only)"
+            test -z "$(git -C core diff --cached --name-only)"
+          fi
+      - name: "Upload only Phase44 non-sensitive hashes/counts/verdict JSON"
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase44-all225-fresh-29csv-numeric-20261016
+          path: ${{ runner.temp }}/phase44_pass.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: "Phase44 scope statement"
+        if: always()
+        run: |
+          echo "No original historical signal/CSV/HTML/artifact rewritten; no Private Actions run." >> "$GITHUB_STEP_SUMMARY"
+          echo "No Phase45/46/47/48 or PR merge/release/deployment started." >> "$GITHUB_STEP_SUMMARY"
