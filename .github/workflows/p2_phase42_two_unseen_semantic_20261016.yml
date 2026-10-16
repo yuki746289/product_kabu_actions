@@ -1,0 +1,379 @@
+# Created 2026-10-16 JST. User authorized follow-up Phase42.
+# Only unproven MonthlyCandidate and parameter plateau new canonical functions;
+# Skip Phase29 monthly baseline, Phase40/41, Phase42 certified 5 CSVs.
+name: P2 Phase42 next two unverified semantic CSV functions
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase42_two_unseen_semantic_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase42-two-unseen-semantic-only-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  preflight:
+    name: Confirm fixed source and prior Phase42 5 CSV fully successful gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check previous complete successful Phase42 proof and Python syntax
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_phase42_two_remaining_semantic_20261016.py
+          python scripts/p2_phase42_two_remaining_semantic_20261016.py --selftest
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38840450229 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success dafbbcd1b0c4f82d2a4cc9e46dcebdd954291ae3'
+
+  canary:
+    name: Unseen monthly candidates and parameter plateau (${{ matrix.dataset }})
+    needs: preflight
+    if: ${{ needs.preflight.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      max-parallel: 2
+      fail-fast: true
+      matrix:
+        include:
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read SHA-pinned original Private canonical functions and saved CSVs only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/candidate_registry.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/monthly_stability.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/all_single_categories.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/representative_single_categories.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/monthly_candidate_stability_summary.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/parameter_plateau.csv
+          persist-credentials: false
+      - name: Before any computation require Public only fixed source SHA zero Private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse exact saved external exclusion features, never recalculate signals
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: old_features
+      - name: Reuse Phase38 immutable old all-29CSV reference ledger
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: proof38
+      - name: Reuse Phase42 five already certified outputs; never rerun
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase42-${{ matrix.dataset }}-five-semantic-cached-parity
+          run-id: 38840450229
+          github-token: ${{ github.token }}
+          path: proof42
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Pinned original canonical function dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Independently execute only two remaining semantic functions and numerical parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase42_two_remaining_semantic_20261016.py \
+            --core core --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root old_features --dataset "$DATASET" \
+            --phase38 proof38/audit.json --phase42 proof42/report.json \
+            --report "$RUNNER_TEMP/report.json"
+      - name: Independent per-dataset two-output numeric/unique-key full coverage gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE42_TWO_UNSEEN_SEMANTIC_OUTPUTS"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert set(d["newly_verified_files"])=={"monthly_candidate_stability_summary.csv","parameter_plateau.csv"}
+          assert d["newly_verified_count"]==2
+          assert all(x["all_fields_numeric_parity"] and x["full_unique_key_coverage"]
+                     for x in d["newly_verified_files"].values())
+          for k in ("existing_phase42_five_recomputed","other_prior_success_recomputed",
+                    "production_p2_v12_modified","old_csv_html_modified",
+                    "all_29_csv_new_producer_certified","phase43_full_semantic_or_numeric_certified",
+                    "release_ready"):
+              assert d[k] is False,k
+          print("PASS_PHASE42_NEW_TWO",d["dataset"])
+          PY
+      - name: Require pinned original saved files remain unmodified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only numerical verification metadata no Private data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase42-${{ matrix.dataset }}-two-unseen-semantic
+          path: ${{ runner.temp }}/report.json
+          retention-days: 30
+          if-no-files-found: error
+
+
+  remaining:
+    name: Unseen monthly candidates and parameter plateau (${{ matrix.dataset }})
+    needs: canary
+    if: ${{ needs.canary.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      max-parallel: 2
+      fail-fast: true
+      matrix:
+        include:
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read SHA-pinned original Private canonical functions and saved CSVs only
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+            /preview/kabu/analysis/${{ matrix.dir }}/signal_level_features.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/candidate_registry.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/monthly_stability.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/all_single_categories.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/representative_single_categories.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/monthly_candidate_stability_summary.csv
+            /preview/kabu/analysis/${{ matrix.dir }}/parameter_plateau.csv
+          persist-credentials: false
+      - name: Before any computation require Public only fixed source SHA zero Private workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse exact saved external exclusion features, never recalculate signals
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: old_features
+      - name: Reuse Phase38 immutable old all-29CSV reference ledger
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: proof38
+      - name: Reuse Phase42 five already certified outputs; never rerun
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase42-${{ matrix.dataset }}-five-semantic-cached-parity
+          run-id: 38840450229
+          github-token: ${{ github.token }}
+          path: proof42
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - name: Pinned original canonical function dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+      - name: Independently execute only two remaining semantic functions and numerical parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase42_two_remaining_semantic_20261016.py \
+            --core core --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root old_features --dataset "$DATASET" \
+            --phase38 proof38/audit.json --phase42 proof42/report.json \
+            --report "$RUNNER_TEMP/report.json"
+      - name: Independent per-dataset two-output numeric/unique-key full coverage gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          d=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text(encoding="utf-8"))
+          assert d["status"]=="PASS_PHASE42_TWO_UNSEEN_SEMANTIC_OUTPUTS"
+          assert d["dataset"]==os.environ["DATASET"]
+          assert d["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert set(d["newly_verified_files"])=={"monthly_candidate_stability_summary.csv","parameter_plateau.csv"}
+          assert d["newly_verified_count"]==2
+          assert all(x["all_fields_numeric_parity"] and x["full_unique_key_coverage"]
+                     for x in d["newly_verified_files"].values())
+          for k in ("existing_phase42_five_recomputed","other_prior_success_recomputed",
+                    "production_p2_v12_modified","old_csv_html_modified",
+                    "all_29_csv_new_producer_certified","phase43_full_semantic_or_numeric_certified",
+                    "release_ready"):
+              assert d[k] is False,k
+          print("PASS_PHASE42_NEW_TWO",d["dataset"])
+          PY
+      - name: Require pinned original saved files remain unmodified
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload only numerical verification metadata no Private data
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase42-${{ matrix.dataset }}-two-unseen-semantic
+          path: ${{ runner.temp }}/report.json
+          retention-days: 30
+          if-no-files-found: error
+
+  final_gate:
+    name: Verify two unverified functions x eight original datasets numerical parity
+    needs: [preflight,canary,remaining]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Final gate cannot PASS unless preflight, canary and remaining all SUCCESS
+        shell: bash
+        env:
+          PRE: ${{ needs.preflight.result }}
+          CAN: ${{ needs.canary.result }}
+          REM: ${{ needs.remaining.result }}
+        run: |
+          set -euo pipefail
+          test "$PRE" = success && test "$CAN" = success && test "$REM" = success
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase42-*-two-unseen-semantic
+          path: evidence
+      - name: Exact full 16 new independent CSV numerical proofs across 8 datasets
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          ds=("technology","financials","consumer_goods","materials","capital_goods_others",
+              "transportation_utilities","exclude_capital_goods_transportation_utilities",
+              "exclude_transportation_utilities")
+          root=Path("evidence")
+          expect={"p2-phase42-"+d+"-two-unseen-semantic" for d in ds}
+          got={x.name for x in root.iterdir() if x.is_dir()}
+          assert expect==got,(expect-got,got-expect)
+          for d in ds:
+              s=json.loads((root/("p2-phase42-"+d+"-two-unseen-semantic")/"report.json").read_text())
+              assert s["status"]=="PASS_PHASE42_TWO_UNSEEN_SEMANTIC_OUTPUTS"
+              assert s["dataset"]==d and s["newly_verified_count"]==2
+              assert all(x["full_unique_key_coverage"] and x["all_fields_numeric_parity"]
+                         for x in s["newly_verified_files"].values())
+              assert s["existing_phase42_five_recomputed"] is False
+              assert s["other_prior_success_recomputed"] is False
+              assert s["phase43_full_semantic_or_numeric_certified"] is False
+              print("PASS_PHASE42_TWOFUNCTION",d)
+          print("PASS_PHASE42_TWO_UNSEEN_SEMANTIC_OUTPUTS_EIGHT_DATASETS")
+          PY
+      - name: Keep Phase43 complete producer and release unverified
+        if: always()
+        run: |
+          echo "Phase42 two new semantic CSV outputs independently verified, previously certified outputs not regenerated." >> "$GITHUB_STEP_SUMMARY"
+          echo "Full 29-CSV new producer chain/Phase43, all225, browser full UI behavior and Phase47 release are NOT certified." >> "$GITHUB_STEP_SUMMARY"
+          echo "No Private Actions, P2 Production changes, merge, release or deploy." >> "$GITHUB_STEP_SUMMARY"
