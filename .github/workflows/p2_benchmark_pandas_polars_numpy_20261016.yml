@@ -1,0 +1,110 @@
+# User approved BENCHMARK-ONLY test. No Production/semantic/OR/CSV producer reruns.
+name: P2 benchmark read-only pandas Polars NumPy
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_benchmark_pandas_polars_numpy_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-benchmark-readonly-polars-pandas-numpy-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  benchmark:
+    name: Original 48782 technology rows, identical group-by numeric aggregation benchmark
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read only immutable original Private source and architecture policy
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv
+          persist-credentials: false
+      - name: Confirm original immutable source and Public-only Actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflow forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python -m py_compile scripts/p2_benchmark_pandas_polars_numpy_20261016.py
+      - name: Reuse exact saved Phase38 source SHA proof without regenerating any source
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-technology-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: proof38
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install only benchmark libraries (not producer)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install 'pandas>=2.2,<3' 'numpy>=2,<3' 'polars>=1,<2' 'pyarrow>=17,<25'
+          python - <<'PY'
+          import pandas,numpy,polars
+          print("BENCHMARK_VERSIONS",{"pandas":pandas.__version__,"numpy":numpy.__version__,"polars":polars.__version__})
+          PY
+      - name: Synthetic null / Boolean / year-group numerical parity selftest
+        run: |
+          set -euo pipefail
+          python scripts/p2_benchmark_pandas_polars_numpy_20261016.py --selftest
+      - name: Benchmark three clean subprocesses on exact pinned original technology CSV
+        run: |
+          set -euo pipefail
+          python scripts/p2_benchmark_pandas_polars_numpy_20261016.py \
+            --source core/preview/kabu/analysis/225_group_all_period/technology/signal_level_features.csv \
+            --core core --proof proof38/audit.json \
+            --mode pandas --output "$RUNNER_TEMP/benchmark.json"
+      - name: All engines must match numerical outcomes and old sources remain untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          a=json.loads((Path(os.environ["RUNNER_TEMP"])/"benchmark.json").read_text())
+          assert a["status"]=="PASS_BENCHMARK_PARITY",a["issues"]
+          assert a["source_rows"]==48782 and a["source_tickers"]==60
+          assert a["benchmark_results_equal"] and not a["canonical_p2_logic_modified"]
+          assert set(a["measurements"])=={"pandas","numpy","polars"}
+          assert all(x["group_count"]>0 for x in a["measurements"].values())
+          assert not a["phase42_optimization_authorized"]
+          assert not a["production_or_release_performed"]
+          print("PASS_BENCHMARK_SAME_NUMBERS",a["measurements"])
+          PY
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Upload benchmark timing and peak-RSS metadata JSON only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-benchmark-technology-pandas-polars-numpy-20261016
+          path: ${{ runner.temp }}/benchmark.json
+          retention-days: 14
+          if-no-files-found: error
