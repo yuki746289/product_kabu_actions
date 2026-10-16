@@ -1,0 +1,209 @@
+# v13: independent all225 canonical combo walkforward bounded test-years 2013-2014 ONLY.
+name: P2 Phase44 OR raw all225 remaining 15 independent shards
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths: ['.github/workflows/p2_phase44_or_raw_remaining_20261016.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-or-raw-remaining-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  remaining:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+        - {kind: or2, shard: 1}
+        - {kind: or2, shard: 2}
+        - {kind: or2, shard: 3}
+        - {kind: or3, shard: 0}
+        - {kind: or3, shard: 1}
+        - {kind: or3, shard: 2}
+        - {kind: or3, shard: 3}
+        - {kind: or3, shard: 4}
+        - {kind: or3, shard: 5}
+        - {kind: or3, shard: 6}
+        - {kind: or3, shard: 7}
+        - {kind: or3, shard: 8}
+        - {kind: or3, shard: 9}
+        - {kind: or3, shard: 10}
+        - {kind: or3, shard: 11}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+          persist-credentials: false
+      - name: Preflight immutable Private core and no private workflow
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then exit 1; fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python -m py_compile scripts/p2_phase44_or_raw_numerical_shard_20261016.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+          python scripts/p2_phase44_or_raw_numerical_shard_20261016.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          run-id: 36844054546
+          github-token: ${{ github.token }}
+          path: core/build/phase44_or_raw_remaining/reference
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: core/build/phase44_or_raw_remaining/features
+      - name: Independently recompute bounded full OR raw combination shard
+        env:
+          KIND: ${{ matrix.kind }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_or_raw_numerical_shard_20261016.py \
+            --kind ${{ matrix.kind }} --shard ${{ matrix.shard }} --core core \
+            --source core/build/phase44_or_raw_remaining/features/features.csv \
+            --reference core/build/phase44_or_raw_remaining/reference \
+            --report "$RUNNER_TEMP/shard.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ['RUNNER_TEMP'])/'shard.json').read_text())
+          assert d['status']=='PASS_PHASE44_OR_RAW_DIRECT_METRICS_SHARD'
+          assert d['kind']==os.environ['KIND'] and d['shard']==int(os.environ['SHARD']) and d['rows_compared']==d['range_end']-d['range_start'] and d['canonical_universe_rows']==({'or2':1127,'or3':15184}[os.environ['KIND']])
+          assert d['full_original_key_universe_and_order_match'] is True and d['all_numeric_and_identity_fields_equal'] is True
+          assert d['private_core_sha']=='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+          assert d['previous_success_artifacts_recomputed'] is False
+          assert not d['full_29_end_to_end_certified'] and not d['release_ready']
+          print("PASS_PHASE44_OR2_RAW_CANARY_FIRST281")
+          PY
+      - name: Cleanup original temporary data and verify no source mutations
+        if: always()
+        run: |
+          rm -rf -- core/build/phase44_or_raw_remaining
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: p2-phase44-or-raw-${{ matrix.kind }}-${{ matrix.shard }}-20261016
+          path: ${{ runner.temp }}/shard.json
+          retention-days: 21
+          if-no-files-found: error
+
+  final_or_gate:
+    needs: remaining
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-or-raw-canary-20261016
+          run-id: 38884606735
+          github-token: ${{ github.token }}
+          path: canary
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase44-or-raw-*-20261016
+          path: receipts
+          merge-multiple: false
+      - name: Check 16 disjoint numeric certificates and original OR2/OR3 universe
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          SHA='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+          SRC='71fb0dc947a4777610fec2d07e08fac168a7ab1d49ac5028c39ad1b7ec03bdc9'
+          CONFIG={'or2':(4,1127),'or3':(12,15184)}
+          failed=[]
+          passed=[]
+          rows={}
+          for kind,(n,total) in CONFIG.items():
+              positions=[]
+              shas=set()
+              for index in range(n):
+                  path=(Path('canary/canary.json') if (kind,index)==('or2',0) else
+                      Path('receipts')/
+                      ('p2-phase44-or-raw-'+kind+'-'+str(index)+'-20261016')/
+                      'shard.json')
+                  if not path.is_file():
+                      failed.append(kind+str(index)+':absent')
+                      continue
+                  d=json.loads(path.read_text(encoding='utf-8'))
+                  if (d.get('status')!='PASS_PHASE44_OR_RAW_DIRECT_METRICS_SHARD'
+                      or d.get('kind')!=kind or d.get('shard')!=index
+                      or d.get('total_shards')!=n or d.get('canonical_universe_rows')!=total
+                      or d.get('source_sha256')!=SRC or d.get('private_core_sha')!=SHA
+                      or d.get('all_numeric_and_identity_fields_equal') is not True
+                      or d.get('full_original_key_universe_and_order_match') is not True
+                      or d.get('previous_success_artifacts_recomputed') is not False):
+                      failed.append(kind+str(index)+':invalid')
+                      continue
+                  lo,hi=d['range_start'],d['range_end']
+                  if lo!=total*index//n or hi!=total*(index+1)//n:
+                      failed.append(kind+str(index)+':bounds')
+                      continue
+                  if d['rows_compared']!=hi-lo or d['newly_calculated']!=hi-lo:
+                      failed.append(kind+str(index)+':rows')
+                      continue
+                  positions.append((lo,hi))
+                  shas.add(d['reference_sha256'])
+                  passed.append(kind+str(index))
+              if len(positions)!=n or len(shas)!=1:
+                  failed.append(kind+':not all certificate SHA identical')
+              rows[kind]=sum(b-a for a,b in positions)
+          success=not failed and len(passed)==16 and rows=={'or2':1127,'or3':15184}
+          output={'phase':44,
+                  'status':'PASS_PHASE44_ALL225_FULL_OR_RAW_2_CSV_INDEPENDENT_NUMERIC'
+                  if success else 'BLOCKED_OR_RAW_NUMERIC',
+                  'successful_shards':passed,'issues':failed,
+                  'rows_certified':rows,
+                  'independent_new_raw_or_pair_and_triple_pass':success,
+                  'end_to_end_29_new_producer_certified':False,
+                  'phase44_complete':False,'phase45_allowed':False,
+                  'release_ready':False,'phase48_authorized':False}
+          Path('final.json').write_text(json.dumps(output,ensure_ascii=False,indent=2)+'\n')
+          print('PHASE44_FULL_RAW_OR_NUMERIC_UNIVERSE',output)
+          if not success:raise SystemExit(2)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-phase44-or-raw-complete-two-csv-gate-20261016
+          path: final.json
+          retention-days: 21
+          if-no-files-found: warn
