@@ -109,7 +109,7 @@ jobs:
             --family "$FAMILY" --core core \
             --source core/build/phase44_bounded_saved/features/features.csv \
             --reference core/build/phase44_bounded_saved/reference \
-            --out "$RUNNER_TEMP/result.json"
+            --report "$RUNNER_TEMP/result.json"
           python - <<'PY'
           import json,os
           from pathlib import Path
@@ -119,8 +119,8 @@ jobs:
           assert d['newly_computed_file_count']==expected[os.environ['FAMILY']]
           assert d['source_rows']==181318 and d['source_tickers']==225
           assert d['private_core_sha']=='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
-          assert d['full_new_semantic_or_29_csv_chain_certified'] is False
-          assert not d['release_ready'] and not d['phase48_executed']
+          assert d['full_29_e2e_new_producer_parity'] is False
+          assert not d['release_ready'] and not d['phase48_authorized']
           print('PASS_NUMERIC_FAMILY_ONLY',d['family'],flush=True)
           PY
       - name: Cleanup inputs and verify original Git tree unchanged
