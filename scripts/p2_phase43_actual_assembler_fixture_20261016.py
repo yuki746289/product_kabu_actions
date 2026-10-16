@@ -98,10 +98,24 @@ def go(core:Path,reference:Path,external:Path,p38path:Path,p43path:Path,dataset:
     semantic=root/"01_synthetic_saved_semantic_fixture"
     OR=root/"02_synthetic_saved_OR_fixture"
     output=root/"03_real_assembler_output"
+    # Excluded-population signal features only exist in the exact prior pinned
+    # archive, not in the original per-dataset CSV directory. The assembler
+    # requires a complete reference header folder, so make a throwaway symlink
+    # shadow of ORIGINAL exact saved sources, never change original files.
+    reference_for_contract=reference
     t=time.perf_counter()
     try:
         semantic.mkdir(parents=True,exist_ok=False)
         OR.mkdir(parents=True,exist_ok=False)
+        if dataset in EXCLUSIONS:
+            reference_for_contract=root/"00_exact_saved_reference_header_shadow"
+            reference_for_contract.mkdir(parents=True,exist_ok=False)
+            for item in CSV_FILES:
+                origin=source if item=="signal_level_features.csv" else reference/item
+                if not origin.is_file() or h(origin)!=p38["files"][item]["sha256"]:
+                    raise ValueError("Missing/mutated old reference for exclusion shadow: "+item)
+                (reference_for_contract/item).symlink_to(origin.resolve())
+            print("EXCLUSION_ORIGINAL_HEADER_SHADOW_ISOLATED",dataset,flush=True)
         fixtures={}
         for name in CSV_FILES:
             if name==MANIFEST:continue
@@ -124,7 +138,7 @@ def go(core:Path,reference:Path,external:Path,p38path:Path,p43path:Path,dataset:
         save(OR/"or_status.json",{**common,"stage":"or",
               "output_csv_sha256":OR_ledger,
               "semantic_single_sha256":semantic_ledger["advantage_single_candidates.csv"]})
-        status=assemble(dataset,semantic,OR,reference/MANIFEST,output,reference,
+        status=assemble(dataset,semantic,OR,reference/MANIFEST,output,reference_for_contract,
                  expected_source_sha256=source_sha,
                  expected_manifest_sha256=p38["manifest_sha256"])
         if status["status"]!="STAGED_CSV_QA_REQUIRED":
@@ -154,7 +168,7 @@ def go(core:Path,reference:Path,external:Path,p38path:Path,p43path:Path,dataset:
             raise ValueError("Tamper injection ineffective")
         try:
             assemble(dataset,semantic,OR,reference/MANIFEST,
-                     root/"04_should_reject_tampered_output",reference,
+                     root/"04_should_reject_tampered_output",reference_for_contract,
                      expected_source_sha256=source_sha,
                      expected_manifest_sha256=p38["manifest_sha256"])
         except RuntimeError as err:
@@ -171,7 +185,7 @@ def go(core:Path,reference:Path,external:Path,p38path:Path,p43path:Path,dataset:
         save(OR/"or_status.json",orstatus)
         try:
             assemble(dataset,semantic,OR,reference/MANIFEST,
-                     root/"05_should_reject_wrong_source_link",reference,
+                     root/"05_should_reject_wrong_source_link",reference_for_contract,
                      expected_source_sha256=source_sha,
                      expected_manifest_sha256=p38["manifest_sha256"])
         except RuntimeError as err:
