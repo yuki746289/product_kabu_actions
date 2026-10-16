@@ -1,0 +1,78 @@
+# Metadata-only recovered complete new Semantic->OR->assemble 29 CSV proof.
+# Source Run 38907715027 was cancelled by 38-minute timeout AFTER success of
+# every single job step and AFTER the fully new 29 CSV evidence was uploaded.
+# DO NOT re-run 37-minute computations just to change workflow conclusion.
+name: P2 Phase44 saved complete fresh E2E final evidence gate
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - .github/workflows/p2_phase44_final_saved_true_e2e_certificate_20261016.yml
+permissions:
+  contents: read
+  actions: read
+jobs:
+  final_provenance_gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check exact original cancelled-after-all-successful-steps provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'yuki746289/product_kabu_actions'
+          test "$(gh api repos/yuki746289/product_kabu_actions/actions/runs/38907715027 \
+            --jq '.status + " " + .conclusion + " " + .head_sha')" = \
+            'completed cancelled 33b0c0b6ac871688e08d00e7e59e9a2a550ce168'
+          test "$(gh api repos/yuki746289/product_kabu_actions/actions/jobs/116995405433 \
+            --jq '[.steps[].conclusion] | all(. == "success")')" = 'true'
+          gh api 'repos/yuki746289/product_kabu_actions/actions/runs/38907715027/artifacts?per_page=100' \
+            --jq '.artifacts[] | select(.id==12050967494 and .expired==false) | .name' \
+            | grep -Fx 'p2-phase44-true-fresh-all225-29csv-e2e-status-20261016'
+          python -m py_compile scripts/p2_phase44_existing_true_e2e_receipt_final_20261016.py
+          echo 'PASS_OLD_ORIGINAL_RUN_ALL_COMPLETED_STEPS_SUCCESS'
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-true-fresh-all225-29csv-e2e-status-20261016
+          run-id: 38907715027
+          github-token: ${{ github.token }}
+          path: saved_original
+      - name: Independently verify 29 original SHA headers/rows plus 28 new computation evidence
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_existing_true_e2e_receipt_final_20261016.py \
+            --receipt saved_original/phase44_full_fresh_e2e.json \
+            --out "$RUNNER_TEMP/independent_phase44_final.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          x=json.loads((Path(os.environ['RUNNER_TEMP'])/'independent_phase44_final.json').read_text())
+          assert x['status']=='PASS_PHASE44_TRUE_FRESH_29CSV_INDEPENDENT_METADATA_GATE'
+          assert x['original_run']==38907715027 and x['original_job']==116995405433
+          assert x['original_runner_completed_all_steps'] is True
+          assert x['csv_proof_count']==29 and x['newly_calculated_csv_count']==28
+          assert x['fixed_manifest_csv_count']==1
+          assert x['new_semantic_to_new_or_to_assembler'] is True
+          assert x['all_values_match_original'] is True
+          assert x['phase44_full_fresh_data_qa_pass'] is True
+          assert x['phase45_allowed'] is True
+          assert x['release_ready'] is False and x['phase48_authorized'] is False
+          assert x['errors']==[]
+          print("PASS_PHASE44_FULL_TRUE_FRESH_E2E_INDEPENDENT_META_CERT_29",flush=True)
+          PY
+      - name: Upload only scalar SHA and final state audit
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase44-true-fresh-29csv-independent-final-PASS-20261016
+          path: ${{ runner.temp }}/independent_phase44_final.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Scope and protection confirmation
+        if: always()
+        run: |
+          echo 'Reused prior true fresh 29 CSV E2E proof (source run job all steps SUCCESS; 38min timeout cancelled run).' >> "$GITHUB_STEP_SUMMARY"
+          echo 'No raw Private data/CSV, no P2 v12 recalculation, no release, merge or deploy.' >> "$GITHUB_STEP_SUMMARY"
