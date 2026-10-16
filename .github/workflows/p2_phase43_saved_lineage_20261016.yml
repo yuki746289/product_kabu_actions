@@ -1,0 +1,381 @@
+# Created 2026-10-16 JST; Phase43 source-only crossproof, no fake producer certification.
+# User authorization: continue Phase42 remaining after five numeric successes; Phase48 forbidden.
+name: P2 Phase43 source-linked 29 CSV provenance no-go proof
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase43_saved_lineage_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase43-saved-source-crossproof-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  preflight:
+    name: Exact successful upstream independent SHA certificates and manifest-only source lineage scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require Phase42 prior two and five success and OR ranking without rerun
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_phase43_saved_provenance_crossproof_20261016.py
+          python scripts/p2_phase43_saved_provenance_crossproof_20261016.py --selftest
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38840450229 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success dafbbcd1b0c4f82d2a4cc9e46dcebdd954291ae3'
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38841568372 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success 57142858976697017574ca12ea13b1a322a7845a'
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38518149928 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success 54c5b357a6e8a9c8767fac8b33b4720c260c70d9'
+
+  canary:
+    name: Saved original 29 CSV SHA crossproof for independent Semantic and OR certificates (${{ matrix.dataset }})
+    needs: preflight
+    if: ${{ needs.preflight.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      max-parallel: 2
+      fail-fast: true
+      matrix:
+        include:
+          - dataset: "technology"
+            dir: "225_group_all_period/technology"
+            sourceRun: 0
+            sourceArtifact: ""
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse original immutable 29CSV source and common IO contract
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/p2_html_core/
+            /preview/kabu/analysis/${{ matrix.dir }}/*.csv
+          persist-credentials: false
+      - name: Public-only architecture and zero Private workflows before source access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows prohibited"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original excluded features pinned source artifact only when needed
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: old_features
+      - name: Reuse Phase38 SHA proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: proof38
+      - name: Reuse Phase42 previously certified five fresh numerical functions
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase42-${{ matrix.dataset }}-five-semantic-cached-parity
+          run-id: 38840450229
+          github-token: ${{ github.token }}
+          path: proof42five
+      - name: Reuse Phase42 newly certified monthly candidate and plateau
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase42-${{ matrix.dataset }}-two-unseen-semantic
+          run-id: 38841568372
+          github-token: ${{ github.token }}
+          path: proof42two
+      - name: Reuse Phase36 canonical new OR candidate ranking/unique source SHA proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase36-${{ matrix.dataset }}-or-ranking
+          run-id: 38518149928
+          github-token: ${{ github.token }}
+          path: proof36
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconcile all 29 actual old original SHA with 7 new semantic and 3 OR proof links
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase43_saved_provenance_crossproof_20261016.py \
+            --dataset "$DATASET" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root old_features --phase38 proof38/audit.json \
+            --phase42-five proof42five/report.json \
+            --phase42-two proof42two/report.json \
+            --phase36 proof36/audit.json --report "$RUNNER_TEMP/report.json"
+      - name: Independent saved-lineage status and NO-GO true limits
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          j=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text())
+          assert j["status"]=="PASS_PHASE43_SAVED_SOURCE_PROVENANCE_CHAIN_ONLY"
+          assert j["dataset"]==os.environ["DATASET"]
+          assert j["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert j["saved_original_csv_total"]==29
+          assert j["phase42_independent_numerical_csv_sha_linked"]==7
+          assert j["phase36_or_unique_and_rank_sha_linked"]==3
+          assert j["source_lineage_cross_proof_passed"] is True
+          for name in ("new_semantic_output_sha_ledger_produced",
+                       "new_or_output_sha_ledger_produced",
+                       "new_29csv_producer_executed",
+                       "full_new_semantic_or_numeric_parity_certified",
+                       "phase43_complete","release_ready","old_source_csv_modified",
+                       "old_artifacts_rerun","production_modified"):
+              assert j[name] is False,name
+          print("PASS_SAVED_SOURCE_PHASE43_RESEARCH_PROOF_ONLY",j["dataset"])
+          PY
+      - name: Original Private source files cannot change
+        if: always()
+        run: |
+          set -euo pipefail
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Store source-bound proof SHA JSON, no Private original rows or files
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase43-${{ matrix.dataset }}-saved-lineage-crossproof
+          path: ${{ runner.temp }}/report.json
+          retention-days: 30
+          if-no-files-found: error
+
+
+  remaining:
+    name: Saved original 29 CSV SHA crossproof for independent Semantic and OR certificates (${{ matrix.dataset }})
+    needs: canary
+    if: ${{ needs.canary.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      max-parallel: 2
+      fail-fast: true
+      matrix:
+        include:
+          - dataset: "financials"
+            dir: "225_group_all_period/financials"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "consumer_goods"
+            dir: "225_group_all_period/consumer_goods"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "materials"
+            dir: "225_group_all_period/materials"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "capital_goods_others"
+            dir: "225_group_all_period/capital_goods_others"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "transportation_utilities"
+            dir: "225_group_all_period/transportation_utilities"
+            sourceRun: 0
+            sourceArtifact: ""
+          - dataset: "exclude_capital_goods_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_capital_goods_transportation_utilities"
+            sourceRun: 37201520569
+            sourceArtifact: "p2-225-exclusion-no-capital-transport-features"
+          - dataset: "exclude_transportation_utilities"
+            dir: "225_exclusion_all_period/exclude_transportation_utilities"
+            sourceRun: 37201518110
+            sourceArtifact: "p2-225-exclusion-no-transport-features"
+    env:
+      DATASET: ${{ matrix.dataset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sparse original immutable 29CSV source and common IO contract
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/p2_html_core/
+            /preview/kabu/analysis/${{ matrix.dir }}/*.csv
+          persist-credentials: false
+      - name: Public-only architecture and zero Private workflows before source access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private workflows prohibited"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - name: Reuse original excluded features pinned source artifact only when needed
+        if: ${{ matrix.sourceRun != 0 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sourceArtifact }}
+          run-id: ${{ matrix.sourceRun }}
+          github-token: ${{ github.token }}
+          path: old_features
+      - name: Reuse Phase38 SHA proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase38-${{ matrix.dataset }}-saved-29csv-inventory
+          run-id: 38524279221
+          github-token: ${{ github.token }}
+          path: proof38
+      - name: Reuse Phase42 previously certified five fresh numerical functions
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase42-${{ matrix.dataset }}-five-semantic-cached-parity
+          run-id: 38840450229
+          github-token: ${{ github.token }}
+          path: proof42five
+      - name: Reuse Phase42 newly certified monthly candidate and plateau
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase42-${{ matrix.dataset }}-two-unseen-semantic
+          run-id: 38841568372
+          github-token: ${{ github.token }}
+          path: proof42two
+      - name: Reuse Phase36 canonical new OR candidate ranking/unique source SHA proof
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase36-${{ matrix.dataset }}-or-ranking
+          run-id: 38518149928
+          github-token: ${{ github.token }}
+          path: proof36
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconcile all 29 actual old original SHA with 7 new semantic and 3 OR proof links
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase43_saved_provenance_crossproof_20261016.py \
+            --dataset "$DATASET" --core core \
+            --reference "core/preview/kabu/analysis/${{ matrix.dir }}" \
+            --source-root old_features --phase38 proof38/audit.json \
+            --phase42-five proof42five/report.json \
+            --phase42-two proof42two/report.json \
+            --phase36 proof36/audit.json --report "$RUNNER_TEMP/report.json"
+      - name: Independent saved-lineage status and NO-GO true limits
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,json
+          from pathlib import Path
+          j=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text())
+          assert j["status"]=="PASS_PHASE43_SAVED_SOURCE_PROVENANCE_CHAIN_ONLY"
+          assert j["dataset"]==os.environ["DATASET"]
+          assert j["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert j["saved_original_csv_total"]==29
+          assert j["phase42_independent_numerical_csv_sha_linked"]==7
+          assert j["phase36_or_unique_and_rank_sha_linked"]==3
+          assert j["source_lineage_cross_proof_passed"] is True
+          for name in ("new_semantic_output_sha_ledger_produced",
+                       "new_or_output_sha_ledger_produced",
+                       "new_29csv_producer_executed",
+                       "full_new_semantic_or_numeric_parity_certified",
+                       "phase43_complete","release_ready","old_source_csv_modified",
+                       "old_artifacts_rerun","production_modified"):
+              assert j[name] is False,name
+          print("PASS_SAVED_SOURCE_PHASE43_RESEARCH_PROOF_ONLY",j["dataset"])
+          PY
+      - name: Original Private source files cannot change
+        if: always()
+        run: |
+          set -euo pipefail
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Store source-bound proof SHA JSON, no Private original rows or files
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase43-${{ matrix.dataset }}-saved-lineage-crossproof
+          path: ${{ runner.temp }}/report.json
+          retention-days: 30
+          if-no-files-found: error
+
+  final_gate:
+    name: Verify all eight original source provenance crossproofs, mark full producer unverified
+    needs: [preflight,canary,remaining]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Dependency completion mandatory
+        shell: bash
+        env:
+          P: ${{ needs.preflight.result }}
+          C: ${{ needs.canary.result }}
+          R: ${{ needs.remaining.result }}
+        run: |
+          set -euo pipefail
+          test "$P" = success && test "$C" = success && test "$R" = success
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase43-*-saved-lineage-crossproof
+          path: audits
+      - name: Exact 8 datasets original SHA lineage and independent upstream proof coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          ds=("technology","financials","consumer_goods","materials","capital_goods_others",
+              "transportation_utilities","exclude_capital_goods_transportation_utilities",
+              "exclude_transportation_utilities")
+          p=Path("audits")
+          exp={"p2-phase43-"+d+"-saved-lineage-crossproof" for d in ds}
+          assert {x.name for x in p.iterdir() if x.is_dir()}==exp
+          for d in ds:
+              a=json.loads((p/("p2-phase43-"+d+"-saved-lineage-crossproof")/"report.json").read_text())
+              assert a["status"]=="PASS_PHASE43_SAVED_SOURCE_PROVENANCE_CHAIN_ONLY"
+              assert a["saved_original_csv_total"]==29
+              assert a["phase42_independent_numerical_csv_sha_linked"]==7
+              assert a["phase36_or_unique_and_rank_sha_linked"]==3
+              assert a["phase43_complete"] is False and a["release_ready"] is False
+              print("PASS_PHASE43_SAVED_SOURCE_CROSS_LINK_ONLY",d)
+          print("PASS_PHASE43_EIGHT_DATASETS_SAVED_LINEAGE_NO_NEW_PRODUCER_CERTIFICATION")
+          PY
+      - name: Truthful research-only/no-release summary
+        if: always()
+        run: |
+          echo "Original 29 CSV saved-source lineage and selected independent numeric proofs linked for eight datasets, if all jobs passed." >> "$GITHUB_STEP_SUMMARY"
+          echo "Full semantic->OR->29CSV NEW producer outputs/ledgers have NOT been run and remain uncertified." >> "$GITHUB_STEP_SUMMARY"
+          echo "No Private Actions, no Production changes, no PR merge, release or deploy." >> "$GITHUB_STEP_SUMMARY"
