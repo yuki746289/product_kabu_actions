@@ -81,7 +81,7 @@ jobs:
           assert d['shard']==0 and d['rows_newly_calculated']==5 and d['canonical_total_candidates']==60
           assert d['entire_candidate_key_selection_coverage'] is True and d['numeric_value_and_identity_parity'] is True
           assert d['private_core_sha']=='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
-          assert d['previous_success_artifacts_recomputed'] is False
+          assert d['prior_success_artifacts_recomputed'] is False
           assert not d['phase44_complete'] and not d['release_ready']
           print("PASS_PHASE44_OR_CANDIDATE_FIRST5")
           PY
