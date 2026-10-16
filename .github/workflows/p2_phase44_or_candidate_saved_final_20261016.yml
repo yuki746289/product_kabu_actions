@@ -21,41 +21,30 @@ jobs:
           run-id: 38885382341
           github-token: ${{ github.token }}
           path: evidence/0
-      - name: Fetch saved PASS certificate for shard 1
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: 12043100371
-          run-id: 38893057723
-          github-token: ${{ github.token }}
-          path: evidence/1
-      - name: Fetch saved PASS certificate for shard 2
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: 12043025333
-          run-id: 38893057723
-          github-token: ${{ github.token }}
-          path: evidence/2
-      - name: Fetch saved PASS certificate for shard 3
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: 12042024427
-          run-id: 38893057723
-          github-token: ${{ github.token }}
-          path: evidence/3
-      - name: Fetch saved PASS certificate for shard 4
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: 12042129379
-          run-id: 38893057723
-          github-token: ${{ github.token }}
-          path: evidence/4
-      - name: Fetch saved PASS certificate for shard 5
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: 12042706792
-          run-id: 38893057723
-          github-token: ${{ github.token }}
-          path: evidence/5
+      - name: Download five disjoint saved receipts by artifact ID (not duplicate name)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for pair in \
+            '1:12043100371' \
+            '2:12043025333' \
+            '3:12042024427' \
+            '4:12042129379' \
+            '5:12042706792'; do
+            IFS=: read -r shard artifact_id <<<"$pair"
+            mkdir -p "evidence/$shard"
+            curl --fail --silent --show-error --location \
+              --retry 2 \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/yuki746289/product_kabu_actions/actions/artifacts/$artifact_id/zip" \
+              --output "$RUNNER_TEMP/phase44_shard_$shard.zip"
+            unzip -q "$RUNNER_TEMP/phase44_shard_$shard.zip" -d "evidence/$shard"
+            test -f "evidence/$shard/shard.json"
+            echo "READ_EXISTING_SUCCESS_SHARD" "$shard"
+          done
       - name: Source-bound independent final gate for all 60 computed rows
         run: |
           python - <<'PY'
