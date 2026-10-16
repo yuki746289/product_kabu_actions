@@ -5,6 +5,7 @@ on:
     branches: [automation/p2-common-postextract-20261012]
     paths:
       - '.github/workflows/p2_benchmark_pandas_polars_numpy_20261016.yml'
+      - 'scripts/p2_benchmark_pandas_polars_numpy_20261016.py'
 permissions:
   contents: read
   actions: read
@@ -90,7 +91,7 @@ jobs:
           from pathlib import Path
           a=json.loads((Path(os.environ["RUNNER_TEMP"])/"benchmark.json").read_text())
           assert a["status"]=="PASS_BENCHMARK_PARITY",a["issues"]
-          assert a["source_rows"]==48782 and a["source_tickers"]==60
+          assert a["source_rows"]==48782 and a["source_tickers"]==61
           assert a["benchmark_results_equal"] and not a["canonical_p2_logic_modified"]
           assert set(a["measurements"])=={"pandas","numpy","polars"}
           assert all(x["group_count"]>0 for x in a["measurements"].values())
