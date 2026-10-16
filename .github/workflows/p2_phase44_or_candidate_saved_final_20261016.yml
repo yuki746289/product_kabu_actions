@@ -1,0 +1,116 @@
+# Resume ONLY final audit gate: do not rerun successful OR monthly shards.
+name: P2 Phase44 OR candidate saved six-shard audit
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase44_or_candidate_saved_final_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  saved_evidence_only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch previously certified first five rows, shard zero
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-or-candidate-canary-20261016
+          run-id: 38885382341
+          github-token: ${{ github.token }}
+          path: evidence/0
+      - name: Fetch saved PASS certificate for shard 1
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 12043100371
+          run-id: 38893057723
+          github-token: ${{ github.token }}
+          path: evidence/1
+      - name: Fetch saved PASS certificate for shard 2
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 12043025333
+          run-id: 38893057723
+          github-token: ${{ github.token }}
+          path: evidence/2
+      - name: Fetch saved PASS certificate for shard 3
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 12042024427
+          run-id: 38893057723
+          github-token: ${{ github.token }}
+          path: evidence/3
+      - name: Fetch saved PASS certificate for shard 4
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 12042129379
+          run-id: 38893057723
+          github-token: ${{ github.token }}
+          path: evidence/4
+      - name: Fetch saved PASS certificate for shard 5
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 12042706792
+          run-id: 38893057723
+          github-token: ${{ github.token }}
+          path: evidence/5
+      - name: Source-bound independent final gate for all 60 computed rows
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          SHA="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          SRC="71fb0dc947a4777610fec2d07e08fac168a7ab1d49ac5028c39ad1b7ec03bdc9"
+          IDS={0:0,1:12043100371,2:12043025333,3:12042024427,4:12042129379,5:12042706792}
+          expected=[(0,5),(5,16),(16,27),(27,38),(38,49),(49,60)]
+          covered=set()
+          verified=[]
+          errors=[]
+          old_shas=set()
+          for shard in range(6):
+              p=Path('evidence')/str(shard)/("canary.json" if shard==0 else "shard.json")
+              if not p.is_file():
+                  errors.append(f"missing certificate for shard {shard}")
+                  continue
+              d=json.loads(p.read_text(encoding="utf-8"))
+              lo,hi=expected[shard]
+              if (d.get("status")!="PASS_PHASE44_NEW_OR_CANDIDATE_MONTHLY_SHARD"
+                  or d.get("shard")!=shard or d.get("total_shards")!=6
+                  or d.get("source_sha256")!=SRC or d.get("private_core_sha")!=SHA
+                  or (d.get("start"),d.get("end"))!=(lo,hi)
+                  or d.get("rows_newly_calculated")!=hi-lo
+                  or d.get("numeric_value_and_identity_parity") is not True
+                  or d.get("entire_candidate_key_selection_coverage") is not True
+                  or d.get("old_raw_or_recomputed") is not False
+                  or d.get("prior_success_artifacts_recomputed") is not False):
+                  errors.append(f"invalid prior proof for shard {shard}")
+                  continue
+              old_shas.add(d["original_target_sha256"])
+              r=set(range(lo,hi))
+              if covered.intersection(r):
+                  errors.append(f"overlap on shard {shard}")
+                  continue
+              covered.update(r)
+              verified.append(shard)
+          ok=(not errors and len(old_shas)==1 and len(verified)==6 and
+              covered==set(range(60)))
+          report={"phase":44,"status":"PASS_PHASE44_OR_CANDIDATE_ALL60_SAVED_NEW_CALCULATION_PROOFS" if ok else "BLOCKED_OR_CANDIDATE_FINAL",
+              "certified_shards":verified,"prior_artifact_ids":IDS,
+              "verified_rows":len(covered),"errors":errors,
+              "all_60_new_numeric_outputs_independently_evidenced":ok,
+              "additional_producer_recomputations":0,
+              "full_29_e2e_producer_certified":False,
+              "phase44_complete":False,"phase45_allowed":False,"release_ready":False}
+          Path("final.json").write_text(json.dumps(report,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          print("PHASE44_SAVED_OR_CANDIDATE_GATE",report)
+          if not ok:raise SystemExit(2)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-phase44-all225-or-candidate-all60-evidence-gate-20261016
+          path: final.json
+          retention-days: 30
+          if-no-files-found: warn
