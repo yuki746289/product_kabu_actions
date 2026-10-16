@@ -1,0 +1,249 @@
+# No old P2 recalculation. Read 11 proven 28-component receipts; then call real
+# pinned all225 common assembler with original immutable saved CSV checkpoints.
+# The checkpointed assembly PASS does NOT claim a fresh end-to-end producer.
+name: P2 Phase44 28 component proofs and real checkpoint assembler
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase44_all225_final_component_and_assembler_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-28-components-and-real-assembler-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: '52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+  PYTHONUNBUFFERED: '1'
+jobs:
+  components:
+    name: Independent 28 newly computed numeric outputs and manifest source SHA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile metadata-only fail-closed certificate union
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "yuki746289/product_kabu_actions"
+          python -m py_compile scripts/p2_phase44_all225_incremental_certificate_union_20261016.py
+      - name: Reuse saved validated prior12_stability5 metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-bounded-stability5-20261016
+          run-id: 38878698697
+          github-token: ${{ github.token }}
+          path: saved/prior12_stability5
+      - name: Reuse saved validated prior12_single4 metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-bounded-single4-20261016
+          run-id: 38878698697
+          github-token: ${{ github.token }}
+          path: saved/prior12_single4
+      - name: Reuse saved validated prior12_baseline3 metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-bounded-baseline3-20261016
+          run-id: 38878698697
+          github-token: ${{ github.token }}
+          path: saved/prior12_baseline3
+      - name: Reuse saved validated additional9_dependent4 metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-extension-dependent4-20261016
+          run-id: 38882874198
+          github-token: ${{ github.token }}
+          path: saved/additional9_dependent4
+      - name: Reuse saved validated additional9_walkforward1 metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-extension-walkforward1-20261016
+          run-id: 38882874198
+          github-token: ${{ github.token }}
+          path: saved/additional9_walkforward1
+      - name: Reuse saved validated additional9_pair4 metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-extension-pair4-20261016
+          run-id: 38882874198
+          github-token: ${{ github.token }}
+          path: saved/additional9_pair4
+      - name: Reuse saved validated or_unique metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-all225-or-unique-two-new-20261016
+          run-id: 38883245672
+          github-token: ${{ github.token }}
+          path: saved/or_unique
+      - name: Reuse saved validated walkforward metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-combo-walkforward-all14-years-gate-20261016
+          run-id: 38883946473
+          github-token: ${{ github.token }}
+          path: saved/walkforward
+      - name: Reuse saved validated or_raw metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-or-raw-complete-two-csv-gate-20261016
+          run-id: 38884926052
+          github-token: ${{ github.token }}
+          path: saved/or_raw
+      - name: Reuse saved validated or_candidate metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-all225-or-candidate-all60-evidence-gate-20261016
+          run-id: 38893724438
+          github-token: ${{ github.token }}
+          path: saved/or_candidate
+      - name: Reuse saved validated stability metadata only
+        uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-combo-stability-9812-all-shards-20261016
+          run-id: 38894464548
+          github-token: ${{ github.token }}
+          path: saved/stability
+      - name: Stage only approved numeric receipt JSONs, not private CSVs
+        run: |
+          set -euo pipefail
+          mkdir -p receipts
+          cp saved/prior12_stability5/result.json receipts/prior12_stability5.json
+          cp saved/prior12_single4/result.json receipts/prior12_single4.json
+          cp saved/prior12_baseline3/result.json receipts/prior12_baseline3.json
+          cp saved/additional9_dependent4/result.json receipts/additional9_dependent4.json
+          cp saved/additional9_walkforward1/result.json receipts/additional9_walkforward1.json
+          cp saved/additional9_pair4/result.json receipts/additional9_pair4.json
+          cp saved/or_unique/result.json receipts/or_unique.json
+          cp saved/walkforward/final.json receipts/walkforward.json
+          cp saved/or_raw/final.json receipts/or_raw.json
+          cp saved/or_candidate/final.json receipts/or_candidate.json
+          cp saved/stability/final.json receipts/stability.json
+      - name: Verify exactly 28 independently computed component families with common pinned source
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_all225_incremental_certificate_union_20261016.py \
+            --metadata-dir receipts \
+            --output "$RUNNER_TEMP/union.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads((Path(os.environ['RUNNER_TEMP'])/'union.json').read_text(encoding='utf-8'))
+          assert r['status']=='PASS_28_NEW_FUNCTION_CSV_NUMERIC_COMPONENTS_1_IMMUTABLE_MANIFEST'
+          assert r['fully_new_computed_and_numerically_evidenced_csv_count']==28
+          assert r['complete_staged_csv_contract_count']==29
+          assert r['pinned_immutable_legacy_manifest']['rows']==447
+          assert r['errors']==[]
+          assert r['source_sha256']=='71fb0dc947a4777610fec2d07e08fac168a7ab1d49ac5028c39ad1b7ec03bdc9'
+          assert r['all_new_producer_end_to_end_chain_certified'] is False
+          assert r['phase44_full_end_to_end_pass'] is False
+          assert r['phase45_allowed'] is False and r['release_ready'] is False
+          print('PASS_COMPONENT_SOURCE_BOUND_28_CSV_WITH_FROZEN_MANIFEST_NOT_E2E')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: p2-phase44-28-numeric-component-union-20261016
+          path: ${{ runner.temp }}/union.json
+          retention-days: 30
+          if-no-files-found: error
+  real_checkpoint_assembler:
+    name: Execute pinned original common assemble all225, 29 input/output CSV byte QA
+    needs: components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+          persist-credentials: false
+      - name: Private core SHA source code and Public-only Actions machine policy gate
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Forbidden Private workflow"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python -m py_compile scripts/p2_phase44_assembler_linked_saved_checkpoints_20261016.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: python -m pip install -r core/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-28-numeric-component-union-20261016
+          path: proof
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          run-id: 36844054546
+          github-token: ${{ github.token }}
+          path: core/build/phase44_saved_input_20261016/reference
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: core/build/phase44_saved_input_20261016/features
+      - name: Actual all225 29 CSV common assembler on immutable linked source checkpoints
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_assembler_linked_saved_checkpoints_20261016.py \
+            --core core \
+            --source core/build/phase44_saved_input_20261016/features/features.csv \
+            --reference core/build/phase44_saved_input_20261016/reference \
+            --component-proof proof/union.json \
+            --report "$RUNNER_TEMP/assembly.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          x=json.loads((Path(os.environ['RUNNER_TEMP'])/'assembly.json').read_text(encoding='utf-8'))
+          assert x['status']=='PASS_PHASE44_ALL225_REAL_COMMON_ASSEMBLER_FROM_IMMUTABLE_NUMERICALLY_PROVEN_CHECKPOINTS'
+          assert x['actual_canonical_assemble_called'] is True
+          assert x['source_bound_computed_component_receipts']==28
+          assert x['assembled_csv_count']==len(x['file_ledgers'])==29
+          assert x['manifest_immutable_source_rows']==447
+          assert x['input_rows']==181318 and x['input_tickers']==225
+          assert x['legacy_old_input_bytes_reused_for_assembly'] is True
+          assert x['fresh_semantic_or_producers_executed_in_this_job'] is False
+          assert x['fresh_end_to_end_29_csv_producer_certified'] is False
+          assert x['phase44_full_fresh_producer_pass'] is False
+          assert x['release_ready'] is False and x['phase45_allowed'] is False
+          print('PASS_ALL225_REAL_COMMON_ASSEMBLER_FROM_NUMERICALLY_PROVEN_IMMUTABLE_INPUTS_NOT_NEW_E2E',flush=True)
+          PY
+      - name: Erase only isolated old CSV input copies, ensure original core SHA intact
+        if: always()
+        run: |
+          rm -rf -- core/build/phase44_saved_input_20261016
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: p2-phase44-all225-common-assembler-checkpoint-29csv-20261016
+          path: ${{ runner.temp }}/assembly.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: No false fresh all29 producer PASS, no Phase45/release
+        if: always()
+        run: |
+          echo '28 independently new-function numerical component proofs plus original pinned all225 29-CSV assembler SHA parity.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'NOT a single new Semantic->OR->29 CSV end-to-end producer certificate. Phase44 full gate remains open. No Phase45 or Phase48.' >> "$GITHUB_STEP_SUMMARY"
