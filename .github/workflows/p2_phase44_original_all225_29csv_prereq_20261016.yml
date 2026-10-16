@@ -1,0 +1,120 @@
+# Run only after bounded Phase42 and checkpoint-based Phase43 both PASS.
+# Phase44 is a prerequisite audit. BLOCKED report is valid audit completion,
+# never a claim that all225 29CSV is numerically certified.
+name: P2 Phase44 exact all225 reference prerequisite blocker audit
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase44_original_all225_29csv_prereq_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-original-all225-source-prereq-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  PYTHONUNBUFFERED: '1'
+jobs:
+  prerequisite:
+    name: Check actual original all225 29CSV canonical saved source reference, never invent one
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm Phase42 then bounded Phase43 PASS before starting Phase44
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          python -m py_compile scripts/p2_phase44_all225_original_29_reference_prerequisite_20261016.py
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38850891084 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success f9709aabbfbac6769e9d5d464693085f2416cfd5'
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/38851469805 --jq '.conclusion + " " + .head_sha' | \
+            grep -Fx 'success 66de76edec787516e44c5fcc466f6aafeb09bcef'
+          grep -Fx 'SOURCE_SHA256 = "71fb0dc947a4777610fec2d07e08fac168a7ab1d49ac5028c39ad1b7ec03bdc9"' scripts/p2_common_phase13_all225_direct_saved_20261013.py
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/36703088996 --jq .conclusion | grep -Fx success
+          gh api repos/yuki746289/product_kabu_actions/actions/runs/36703088996/artifacts?per_page=100 \
+            --jq '.artifacts[].name' | grep -Fx p2-225-raw-features-20260930
+      - name: Read only pinned original Private P2 dataset registry and canonical 29 CSV names
+        uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          filter: blob:none
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /scripts/p2_html_core/
+          persist-credentials: false
+      - name: Strict Public-only runner SHA gate and zero Private workflow check
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions are forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install only pandas needed for original canonical P2 I/O registry read
+        run: python -m pip install 'pandas>=2.2,<3' 'numpy>=2,<3'
+      - name: Audit registered all225 original 29 CSV reference without signals or old artifacts recomputation
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_all225_original_29_reference_prerequisite_20261016.py \
+            --core core --out "$RUNNER_TEMP/report.json"
+      - name: Fail-closed BLOCKED is expected evidence, not phase44 certification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          x=json.loads((Path(os.environ["RUNNER_TEMP"])/"report.json").read_text(encoding="utf-8"))
+          assert x["status"] in (
+              "BLOCKED_PHASE44_MISSING_SAVED_ALL225_29CSV_INDEPENDENT_REFERENCE",
+              "INPUT_READY_FOR_PHASE44_INDEPENDENT_ALL225_29CSV_NUMERIC_QA")
+          assert x["dataset"]=="all_225" and x["required_original_reference_csvs"]==29
+          assert x["original_source_rows_previously_certified"]==181318
+          assert x["original_source_tickers_previously_certified"]==225
+          assert x["private_core_sha"]=="52df33a6b26f988a1f71f0b61839d6888a96e1b8"
+          assert x["phase44_completed"] is False
+          assert x["all225_full_new_29_csv_numeric_verified"] is False
+          assert x["release_ready"] is False and x["phase48_started"] is False
+          assert x["prior_success_artifacts_recomputed"] is False
+          assert x["other_sector_reference_substituted"] is False
+          if not x["all_29_old_reference_present"]:
+              assert len(x["missing_original_reference_csvs"])>0
+              print("PHASE44_BLOCKED_EXPECTED_NO_FULL_29_REFERENCE",len(x["missing_original_reference_csvs"]))
+          else:
+              print("PHASE44_INPUT_READY_ONLY_NOT_FULL_CERTIFIED")
+          PY
+      - name: Confirm original Private source unchanged
+        if: always()
+        run: |
+          set -euo pipefail
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - name: Save non-sensitive exact Phase44 NO-GO or source-ready report JSON
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-phase44-all225-original-reference-prerequisite-20261016
+          path: ${{ runner.temp }}/report.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Phase44 gate summary; STOP before Phase45 if missing source
+        if: always()
+        run: |
+          echo "The exact canonical original all225 29 CSV reference is mandatory. Missing source is BLOCKED, not PASS, even if the audit job itself completes successfully." >> "$GITHUB_STEP_SUMMARY"
+          echo "This workflow will not launch Phase45, 46, 47, 48, or deploy anything." >> "$GITHUB_STEP_SUMMARY"
