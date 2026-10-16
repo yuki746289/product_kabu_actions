@@ -1,0 +1,101 @@
+# v13: independent all225 canonical combo walkforward bounded test-years 2013-2014 ONLY.
+name: P2 Phase44 combo stability all225 shard0 NumPy canary
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths: ['.github/workflows/p2_phase44_combo_stability_canary_20261016.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-combo-stability-canary-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  shard_zero:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+          persist-credentials: false
+      - name: Preflight immutable Private core and no private workflow
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then exit 1; fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python -m py_compile scripts/p2_phase44_all225_combo_stability_shard_20261016.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: |
+          set -euo pipefail
+          python -m pip install -r core/requirements.txt
+          python scripts/p2_phase44_all225_combo_stability_shard_20261016.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          run-id: 36844054546
+          github-token: ${{ github.token }}
+          path: core/build/phase44_combo_stability_canary/reference
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: core/build/phase44_combo_stability_canary/features
+      - name: New canonical combo walkforward exactly 2013-2014, all candidate pairs and triples
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_all225_combo_stability_shard_20261016.py \
+            --shard 0 --core core \
+            --source core/build/phase44_combo_stability_canary/features/features.csv \
+            --reference core/build/phase44_combo_stability_canary/reference \
+            --report "$RUNNER_TEMP/canary.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ['RUNNER_TEMP'])/'canary.json').read_text())
+          assert d['status']=='PASS_PHASE44_ALL225_COMBO_STABILITY_CANONICAL_SHARD'
+          assert d['shard']==0 and d['verified_rows']==120 and d['range_start']==0 and d['range_end']==120
+          assert d['all_row_column_numeric_parity'] is True
+          assert d['private_core_sha']=='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+          assert d['previous_success_artifacts_recomputed'] is False
+          assert not d['full_new_29_CSV_certified'] and not d['release_ready']
+          print("PASS_PHASE44_COMBO_STABILITY_CANARY_FIRST120")
+          PY
+      - name: Cleanup original temporary data and verify no source mutations
+        if: always()
+        run: |
+          rm -rf -- core/build/phase44_combo_stability_canary
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: p2-phase44-combo-stability-canary-20261016
+          path: ${{ runner.temp }}/canary.json
+          retention-days: 21
+          if-no-files-found: error
