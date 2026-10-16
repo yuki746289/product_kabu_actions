@@ -132,6 +132,20 @@ def run(core:Path,source:Path,reference:Path,shard:int)->dict:
         fin._uplift=old_uplift
     fresh=pd.concat(out,ignore_index=True,sort=False)
     expected=old.iloc[start:end].reset_index(drop=True)
+    # A bounded pair-only/triple-only shard does not itself contain columns
+    # belonging exclusively to the other kind. The original full CSV is a
+    # concatenation of both kinds. Only canonical all-NA union columns may be
+    # introduced here; never suppress, coerce or reorder mismatched values.
+    missing=set(expected.columns)-set(fresh.columns)
+    permitted={"feature3","category3","incremental_5d_pp",
+               "incremental_10d_pp","incremental_20d_pp"}
+    unexpected=set(fresh.columns)-set(expected.columns)
+    if unexpected or not missing.issubset(permitted):
+        raise ValueError("Unexpected canonical stability union schema difference")
+    for col in missing:
+        if not expected[col].isna().all():
+            raise ValueError("Missing canonical union column has real source values: "+col)
+    fresh=fresh.reindex(columns=expected.columns)
     checked=check_dataframe(expected,fresh,REFERENCE)
     for name,old_sha in old_hashes.items():
         if contract.sha256(reference/name)!=old_sha:
