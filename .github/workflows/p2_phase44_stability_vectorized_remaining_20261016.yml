@@ -1,0 +1,217 @@
+# Stage-bound bounded NumPy vectorized stability numerical audit; no original successes rerun.
+name: P2 Phase44 all225 optimized combo stability remaining 9692
+on:
+  push:
+    branches: [automation/p2-common-postextract-20261012]
+    paths:
+      - '.github/workflows/p2_phase44_stability_vectorized_remaining_20261016.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: p2-phase44-stability-vectorized-remaining-20261016
+  cancel-in-progress: false
+env:
+  CORE_SHA: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+jobs:
+  remainder:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 23
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - {shard: 1, start: 120, end: 927}
+          - {shard: 2, start: 927, end: 1735}
+          - {shard: 3, start: 1735, end: 2543}
+          - {shard: 4, start: 2543, end: 3350}
+          - {shard: 5, start: 3350, end: 4158}
+          - {shard: 6, start: 4158, end: 4966}
+          - {shard: 7, start: 4966, end: 5773}
+          - {shard: 8, start: 5773, end: 6581}
+          - {shard: 9, start: 6581, end: 7389}
+          - {shard: 10, start: 7389, end: 8196}
+          - {shard: 11, start: 8196, end: 9004}
+          - {shard: 12, start: 9004, end: 9812}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: yuki746289/product_kabu
+          ref: 52df33a6b26f988a1f71f0b61839d6888a96e1b8
+          token: ${{ secrets.KABU_PRIVATE_REPO_TOKEN }}
+          path: core
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/ACTIONS_MIGRATION.md
+            /requirements.txt
+            /scripts/
+          persist-credentials: false
+      - name: Architecture and core checksum before numerical calculations
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = yuki746289/product_kabu_actions
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -f core/docs/ACTIONS_MIGRATION.md
+          if git -C core ls-tree -r --name-only HEAD .github/workflows | grep -E '\.ya?ml$'; then
+            echo "::error::Private Actions forbidden"; exit 1
+          fi
+          python scripts/check_actions_architecture.py --core-dir core --expected-core-sha "$CORE_SHA"
+          python -m py_compile scripts/p2_phase44_combo_stability_vectorized_20261016.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: core/requirements.txt
+      - run: |
+          python -m pip install -r core/requirements.txt
+          python scripts/p2_phase44_combo_stability_vectorized_20261016.py --selftest
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-canonical-mirror-final
+          run-id: 36844054546
+          github-token: ${{ github.token }}
+          path: core/build/phase44_new_vector/reference
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-225-raw-features-20260930
+          run-id: 36703088996
+          github-token: ${{ github.token }}
+          path: core/build/phase44_new_vector/features
+      - name: Source-lock NumPy group aggregates, original canonical spot check, all numeric parity
+        run: |
+          set -euo pipefail
+          python scripts/p2_phase44_combo_stability_vectorized_20261016.py \
+            --start ${{ matrix.start }} --end ${{ matrix.end }} --compare-canonical 2 \
+            --core core --source core/build/phase44_new_vector/features/features.csv \
+            --reference core/build/phase44_new_vector/reference \
+            --report "$RUNNER_TEMP/shard.json"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=json.loads((Path(os.environ['RUNNER_TEMP'])/'shard.json').read_text())
+          assert d['status']=='PASS_PHASE44_ALL225_VECTORIZED_COMBO_STABILITY_SHARD'
+          assert d['source_sha256']=='71fb0dc947a4777610fec2d07e08fac168a7ab1d49ac5028c39ad1b7ec03bdc9'
+          assert d['private_core_sha']=='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+          assert (d['start'],d['end'])==(${{ matrix.start }},${{ matrix.end }})
+          assert d['rows_computed']==${{ matrix.end }}-${{ matrix.start }}
+          assert d['numeric_parity_all_rows_columns_and_ids'] is True
+          assert d['original_function_cross_checks']==2
+          assert d['previous_success_artifacts_recomputed'] is False
+          assert d['full_new_29_e2e_certified'] is False
+          print('PASS_SOURCE_LOCKED_VECTORIZED_SHARD',d['start'],d['end'],flush=True)
+          PY
+      - name: Remove only ephemeral private staging and verify Git SHA unchanged
+        if: always()
+        run: |
+          rm -rf -- core/build/phase44_new_vector
+          test "$(git -C core rev-parse HEAD)" = "$CORE_SHA"
+          test -z "$(git -C core diff --name-only)"
+          test -z "$(git -C core diff --cached --name-only)"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: p2-phase44-stability-vector-shard-${{ matrix.shard }}-20261016
+          path: ${{ runner.temp }}/shard.json
+          retention-days: 21
+          if-no-files-found: error
+  aggregate:
+    needs: remainder
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: p2-phase44-combo-stability-canary-20261016
+          run-id: 38892962901
+          github-token: ${{ github.token }}
+          path: previous
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p2-phase44-stability-vector-shard-*-20261016
+          path: receipts
+          merge-multiple: false
+      - name: All 9812 candidate rows exactly one source-bound independently verified shard
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          SHA='52df33a6b26f988a1f71f0b61839d6888a96e1b8'
+          SRC='71fb0dc947a4777610fec2d07e08fac168a7ab1d49ac5028c39ad1b7ec03bdc9'
+          REF='9dd93ab74b66a45d561fa703b7384b162aff4e9f7eef3d798124479d79e6d87e'
+          # Note: legacy origin file SHA is fixed in the Private manifest.
+          receipt=Path('previous/canary.json')
+          errors=[]
+          intervals=[]
+          passed=[]
+          if not receipt.is_file():
+              errors.append('original 120-candidate canary absent')
+          else:
+              c=json.loads(receipt.read_text(encoding='utf-8'))
+              if (c.get('status')!='PASS_PHASE44_ALL225_COMBO_STABILITY_CANONICAL_SHARD'
+                  or c.get('shard')!=0 or c.get('range_start')!=0 or c.get('range_end')!=120
+                  or c.get('source_sha256')!=SRC or c.get('private_core_sha')!=SHA
+                  or c.get('original_reference_sha256')!=REF
+                  or c.get('verified_rows')!=120 or c.get('all_row_column_numeric_parity') is not True):
+                  errors.append('original canary provenance mismatch')
+              else:
+                  intervals.append((0,120))
+                  passed.append(0)
+          for shard in range(1,13):
+              file=(Path('receipts')/
+                    ('p2-phase44-stability-vector-shard-'+str(shard)+'-20261016')/
+                    'shard.json')
+              if not file.is_file():
+                  errors.append('missing optimized shard '+str(shard))
+                  continue
+              d=json.loads(file.read_text(encoding='utf-8'))
+              lo=120+(9812-120)*(shard-1)//12
+              hi=120+(9812-120)*shard//12
+              if (d.get('status')!='PASS_PHASE44_ALL225_VECTORIZED_COMBO_STABILITY_SHARD'
+                  or (d.get('start'),d.get('end'))!=(lo,hi)
+                  or d.get('source_sha256')!=SRC or d.get('private_core_sha')!=SHA
+                  or d.get('canonical_old_csv_sha256')!=REF
+                  or d.get('rows_computed')!=hi-lo
+                  or d.get('original_function_cross_checks')!=2
+                  or d.get('numeric_parity_all_rows_columns_and_ids') is not True
+                  or d.get('previous_success_artifacts_recomputed') is not False):
+                  errors.append('bad optimized shard '+str(shard))
+                  continue
+              intervals.append((lo,hi))
+              passed.append(shard)
+          intervals=sorted(intervals)
+          contiguous=bool(intervals) and intervals[0][0]==0 and intervals[-1][1]==9812
+          contiguous=contiguous and all(intervals[i][1]==intervals[i+1][0] for i in range(len(intervals)-1))
+          success=not errors and passed==list(range(13)) and contiguous
+          result={
+              'phase':44,
+              'status':'PASS_PHASE44_ALL225_COMBO_STABILITY_COMPLETE_9812'
+                  if success else 'BLOCKED_COMBO_STABILITY_EVIDENCE',
+              'shards_passed':passed,
+              'old_canonical_reference_sha256':REF,
+              'all_old_source_rows_verified':sum(hi-lo for lo,hi in intervals),
+              'canonical_grouped_numpy_numeric_comparison':success,
+              'issues':errors,
+              'all29_single_new_e2e_producer_certified':False,
+              'phase44_complete':False,'phase45_allowed':False,
+              'release_ready':False,'phase48_authorized':False,
+          }
+          Path('final.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('PHASE44_STABILITY_FULL_CANONICAL_9812',result)
+          if not success:raise SystemExit(2)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-phase44-combo-stability-9812-all-shards-20261016
+          path: final.json
+          retention-days: 21
+          if-no-files-found: warn
