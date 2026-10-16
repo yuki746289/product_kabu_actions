@@ -133,7 +133,7 @@ def run(core: Path, source: Path, reference: Path, family: str) -> dict:
     import analyze_p2_nikkei_complete_baseline as cb
     import augment_p2_nikkei_complete_daily_rci_groups as aug
     import build_p2_225_canonical_semantic_data as canonical
-    import analyze_p2_nikkei_monthly_baseline as monthly
+    import append_p2_nikkei_monthly_report as monthly
 
     t0 = time.perf_counter()
     frame = sem.prepare_frame(source)
